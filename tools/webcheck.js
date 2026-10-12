@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const WEB = 'D:/c/wgcloud-go/internal/server/web';
+const WEB = path.join(__dirname, '..', 'internal', 'server', 'web');
 const TAGS = ['html','head','body','div','section','nav','main','header','footer',
   'table','thead','tbody','tr','th','td','pre','ul','ol','li','p','span','code',
   'select','option','button','script','a','strong','h1','h2','h3','h4','form','label','input'];
