@@ -235,7 +235,10 @@ func (s *Server) Handler() http.Handler {
 	if err != nil {
 		log.Fatalf("内嵌资源加载失败: %v", err)
 	}
-	mux.Handle("GET /assets/", http.FileServer(http.FS(static)))
+	// 前端界面是编译进二进制的：升级后如果浏览器或反向代理仍拿旧的 app.js，
+	// 就会出现「二进制换了、面板还是老样子 / 按钮点了没反应」的假象。
+	// 统一加 no-cache（可缓存但每次必须回源校验），确保升级即时生效。
+	mux.Handle("GET /assets/", noCache(http.FileServer(http.FS(static))))
 	mux.HandleFunc("GET /screen", func(w http.ResponseWriter, r *http.Request) {
 		serveFile(w, r, static, "screen.html")
 	})
@@ -260,7 +263,18 @@ func serveFile(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) 
 		return
 	}
 	w.Header().Set("Content-Type", detectType(name))
+	// 页面入口同样禁止强缓存，保证升级后立刻拿到引用最新资源的新版 HTML。
+	w.Header().Set("Cache-Control", "no-cache")
 	w.Write(data)
+}
+
+// noCache 给内嵌静态资源加上 no-cache：允许缓存但每次必须回源校验，
+// 避免升级二进制后浏览器/反向代理仍在使用旧的前端文件。
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func detectType(name string) string {

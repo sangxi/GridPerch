@@ -50,16 +50,22 @@ function toast(msg, bad) {
 async function request(url, options) {
   const res = await fetch(url, Object.assign({ credentials: 'same-origin' }, options || {}));
   const text = await res.text();
+  // 先解析后端统一返回体：401 也可能带 msg（如「用户名或密码错误」），
+  // 此前这里把 401 一律改写成「未登录」，登录失败的具体原因就被丢掉了。
+  let parsed;
+  let parsedOK = false;
+  try { parsed = JSON.parse(text); parsedOK = true; } catch (e) { /* 非 JSON 响应 */ }
+  const serverMsg = parsedOK && parsed && parsed.msg ? parsed.msg : '';
   if (res.status === 401) {
+    // 登录接口自身的 401 属于「账号或密码错误」这类正常校验失败：
+    // 页面本来就在登录页，没必要再弹一次登录框，更不该吞掉后端返回的原因，
+    // 否则用户点「登录」后看不到任何反馈 —— 表现为「登录没反应」。
+    if (url.indexOf('/api/login') === 0) throw new Error(serverMsg || '用户名或密码错误');
     showLogin(true);
     throw new Error('未登录');
   }
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try { const j = JSON.parse(text); if (j.msg) msg = j.msg; } catch (e) { /* 非 JSON 响应 */ }
-    throw new Error(msg);
-  }
-  try { return JSON.parse(text); } catch (e) { return text; }
+  if (!res.ok) throw new Error(serverMsg || `HTTP ${res.status}`);
+  return parsedOK ? parsed : text;
 }
 const get = (u) => request(u);
 // asList 保证列表类接口拿到的永远是数组：
@@ -3427,15 +3433,21 @@ document.addEventListener('DOMContentLoaded', () => {
   bootstrap();
   $('#loginForm').onsubmit = async (ev) => {
     ev.preventDefault();
+    const btn = $('#loginForm button[type="submit"]');
     $('#loginErr').textContent = '';
+    if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent; btn.textContent = '登录中…'; }
     try {
       await request('/api/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: $('#username').value, password: $('#password').value }),
       });
-      bootstrap();
+      await bootstrap();
     } catch (e) {
-      if (e.message !== '未登录') $('#loginErr').textContent = e.message || '登录失败';
+      // 直接展示后端原因（「用户名或密码错误」「账号已停用」等），不再静默吞掉，
+      // 避免点登录后毫无反馈让人以为「按钮坏了」。
+      $('#loginErr').textContent = (e && e.message && e.message !== '未登录') ? e.message : '登录失败，请重试';
+    } finally {
+      if (btn) { btn.disabled = false; if (btn.dataset.label) btn.textContent = btn.dataset.label; }
     }
   };
   $('#logoutBtn').onclick = async () => {
@@ -3452,8 +3464,11 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') toggleSidebar(false); });
   window.addEventListener('hashchange', router);
   // 含表单/筛选的页面不做自动重绘，避免把用户正在填写或查询的条件冲掉
-  const NO_AUTO_REFRESH = ['settings', 'audit', 'onboard', 'releases', 'license'];
+  const NO_AUTO_REFRESH = ['settings', 'audit', 'onboard', 'releases', 'license', 'members'];
   setInterval(() => {
+    // 有弹窗打开时先不自动重绘：否则用户正在填的弹窗会被后台刷新打断，
+    // 产生「点了没反应 / 填到一半被清掉」的错觉。
+    if (document.querySelector('.modal-mask.show')) return;
     if (state.user && !window.__paused && NO_AUTO_REFRESH.indexOf(state.route) < 0) render();
   }, REFRESH_SEC * 1000);
 });
