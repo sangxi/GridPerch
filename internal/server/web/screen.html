@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpsMonitor 可视化大屏</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2322d3ee'/%3E%3Cpath d='M8 20l4-6 4 4 4-8 4 6' stroke='%23041a2b' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/screen.css">
+</head>
+<body>
+<div class="screen">
+  <header class="screen-head">
+    <div class="side left">
+      <span class="tag-pill" id="netState">数据连接正常</span>
+      <span class="tag-pill" id="layoutName">经典三栏</span>
+    </div>
+    <h1>OpsMonitor 运维监控中心</h1>
+    <div class="side right">
+      <span id="clock" class="clock">--:--:--</span>
+      <select id="minutesPicker" title="统计时间窗口">
+        <option value="60">近 1 小时</option>
+        <option value="180" selected>近 3 小时</option>
+        <option value="720">近 12 小时</option>
+        <option value="1440">近 1 天</option>
+        <option value="10080">近 7 天</option>
+      </select>
+      <span class="tag-pill" id="windowLabel">近 3 小时</span>
+      <select id="layoutPicker" title="大屏模板，每套模板都有独立地址">
+        <option value="1">模板 1 · 经典三栏</option>
+        <option value="2">模板 2 · KPI 矩阵</option>
+        <option value="3">模板 3 · 环形指标</option>
+        <option value="4">模板 4 · 主机明细</option>
+        <option value="5">模板 5 · 告警视图</option>
+        <option value="6">模板 6 · 资源全景</option>
+        <option value="7">模板 7 · 双屏对称</option>
+        <option value="8">模板 8 · 容量与硬件</option>
+      </select>
+      <button id="refreshBtn" class="ghost" title="立即刷新">刷新</button>
+      <button id="autoBtn" class="ghost" title="每 30 秒自动切换模板">▶ 自动轮播</button>
+      <button id="fullscreenBtn" class="ghost" title="全屏投屏（F）">全屏</button>
+      <button id="exitBtn" class="ghost">退出大屏</button>
+    </div>
+  </header>
+  <main id="stage" class="stage layout layout-1"></main>
+  <footer class="screen-foot">
+    <span>数据源：本地 SQLite · 每 10 秒刷新 · ← → 切换模板 · F 全屏 · Esc 退出全屏 · 每套模板有独立地址 /screen/1 ~ /screen/8</span>
+    <span id="updateTip">最后更新 --</span>
+  </footer>
+</div>
+<!-- ECharts 已内嵌为本地静态资源，内网离线环境同样可用，不依赖任何 CDN -->
+<script src="/assets/echarts.min.js"></script>
+<script src="/assets/screen.js"></script>
+</body>
+</html>

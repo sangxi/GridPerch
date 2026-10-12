@@ -1,0 +1,16 @@
+bin/
+dist/
+release/
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# 部署时生成的东西
+deploy/**/.env
+*.bak
+.tools/
+logs/
+
+# AI 助手记忆与本地配置（不上传）
+.workbuddy/

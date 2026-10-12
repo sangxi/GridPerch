@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpsMonitor 使用教程 · 部署指南与文件清单</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M8 20l4-6 4 4 4-8 4 6' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/docs.css">
+</head>
+<body>
+<div class="docs">
+
+  <nav class="docs-nav">
+    <h2>OpsMonitor</h2>
+    <span class="ver" id="verLine">使用教程 · 部署指南与文件清单</span>
+    <div class="grp">快速开始</div>
+    <a href="#overview">产品概述</a>
+    <a href="#arch">架构与端口</a>
+    <a href="#compose">Docker Compose 部署</a>
+    <a href="#onepanel">1Panel 部署</a>
+    <div class="grp">二进制部署</div>
+    <a href="#binary">Linux 二进制部署</a>
+    <a href="#windows">Windows 部署</a>
+    <div class="grp">文件与挂载</div>
+    <a href="#files">文件挂载清单</a>
+    <a href="#ports">端口与防火墙</a>
+    <div class="grp">采集端接入</div>
+    <a href="#agent">一键安装采集端</a>
+    <a href="#agent-manual">手工部署采集端</a>
+    <a href="#docker-agent">容器内采集主机</a>
+    <a class="grp">运维手册</a>
+    <a href="#config">服务端配置项</a>
+    <a href="#screen">可视化大屏</a>
+    <a href="#backup">备份与恢复</a>
+    <a href="#upgrade">升级与回滚</a>
+    <a href="#trouble">常见问题排查</a>
+  </nav>
+
+  <main class="docs-main">
+    <div class="docs-head">
+      <h1>OpsMonitor 使用教程</h1>
+      <p>开箱即用的轻量级分布式运维监控系统 · 服务端 + 采集端协同工作，可监控数千台主机</p>
+    </div>
+
+    <div class="banner">
+      <h3>三分钟跑起来</h3>
+      <p>
+        下载二进制或使用 Docker Compose 启动服务端 → 浏览器打开控制台并登录 →
+        在「监控 → 添加主机」复制一条命令到目标主机执行 → 主机自动出现在列表中。
+        全程不需要 MySQL、不需要 JDK、不需要模板与脚本。
+      </p>
+    </div>
+
+    <!-- ==================== 产品概述 ==================== -->
+    <section id="overview">
+      <h2>产品概述</h2>
+      <p>
+        OpsMonitor 是一款开箱即用的轻量级分布式运维监控系统，主打<strong>极简部署、自动化运行、零模板零脚本</strong>。
+        服务端与采集端协同工作，可监控数千台主机。
+      </p>
+
+      <h3>核心监控指标</h3>
+      <table>
+        <thead><tr><th>指标</th><th>说明</th><th>采集端</th></tr></thead>
+        <tbody>
+          <tr><td>CPU 使用率</td><td>整体使用率，采样 1 秒取平均</td><td>每秒</td></tr>
+          <tr><td>CPU 温度</td><td>读取内核 hwmon 温度通道，取 CPU 相关传感器最大值</td><td>每轮</td></tr>
+          <tr><td>内存使用率</td><td>物理内存占用百分比</td><td>每轮</td></tr>
+          <tr><td>磁盘容量</td><td>逐分区容量与使用率</td><td>每轮</td></tr>
+          <tr><td>磁盘 IO</td><td>读写速率（KB/s）与 IOPS</td><td>每轮</td></tr>
+          <tr><td>硬盘 SMART</td><td>整体健康度，需要 smartmontools</td><td>每轮</td></tr>
+          <tr><td>系统负载</td><td>1 / 5 / 15 分钟负载（Windows 恒为 0）</td><td>每轮</td></tr>
+          <tr><td>MAC 地址</td><td>主网卡物理地址</td><td>每轮</td></tr>
+          <tr><td>连接数量</td><td>TCP 连接总数与已建立数</td><td>每轮</td></tr>
+          <tr><td>网卡流量</td><td>上下行速率（KB/s）与包速率</td><td>每轮</td></tr>
+          <tr><td>硬件系统信息</td><td>操作系统、CPU 型号、核数、主机名</td><td>每轮</td></tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <b>关于可选指标</b>
+        CPU 温度与硬盘 SMART 依赖物理硬件：虚拟机与云主机通常没有温度传感器，
+        SMART 也需要 root 权限且云盘往往不暴露。此时这两项显示为「未采集」，
+        <strong>不会</strong>被判定为异常。
+      </div>
+
+      <h3>支持的资源监控</h3>
+      <div class="grid2">
+        <div class="card">
+          <strong>服务器进程应用</strong>
+          <p>进程存活检查（按名称），可配置异常时自动执行恢复命令。</p>
+        </div>
+        <div class="card">
+          <strong>文件防篡改</strong>
+          <p>SHA256 指纹基线比对，默认改动后持续告警直到还原或重新基线。</p>
+        </div>
+        <div class="card">
+          <strong>端口监听</strong>
+          <p>本地端口监听检查，从采集端本机视角发起。</p>
+        </div>
+        <div class="card">
+          <strong>日志文件</strong>
+          <p>关键字与正则增量监控，只读新增内容不重复告警。</p>
+        </div>
+        <div class="card">
+          <strong>Docker 容器</strong>
+          <p>容器数量与状态；指定容器后可采集 CPU 与内存并设阈值。</p>
+        </div>
+        <div class="card">
+          <strong>数据库</strong>
+          <p>MySQL / Redis / Kafka / RabbitMQ / Elasticsearch 真实建连探测。</p>
+        </div>
+        <div class="card">
+          <strong>数据表</strong>
+          <p>MySQL 真实连接并执行 SQL，可做行数与状态校验。</p>
+        </div>
+        <div class="card">
+          <strong>服务接口 API</strong>
+          <p>HTTP 接口可用性与状态码校验，支持期望状态码与响应关键字。</p>
+        </div>
+      </div>
+
+      <h3>可视化与告警</h3>
+      <table>
+        <thead><tr><th>能力</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>自研监控大屏</td><td>ECharts 可视化，8 套模板，支持全屏投屏，每套模板有独立地址</td></tr>
+          <tr><td>统计分析图表</td><td>CPU / 内存 / 磁盘 IO / 网络流量 / 系统负载趋势，支持 1 小时到 7 天窗口</td></tr>
+          <tr><td>指令下发批量执行</td><td>向指定主机批量下发 shell 命令，agent 拉取执行并回传退出码与输出</td></tr>
+          <tr><td>告警信息推送</td><td>邮件、钉钉、企业微信、飞书、Slack、通用 Webhook</td></tr>
+          <tr><td>内置使用教程</td><td>本页面：各系统部署指南 + 文件挂载清单</td></tr>
+        </tbody>
+      </table>
+
+      <h3>关键特性</h3>
+      <table>
+        <thead><tr><th>特性</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>极轻量</td><td>Go 语言 + SQLite 单文件，服务端常驻内存 20MB 以内</td></tr>
+          <tr><td>跨平台一致</td><td>采集端基于 OSHI 思路的 gopsutil 组件抽象，Linux / Windows / macOS / Unix 行为一致</td></tr>
+          <tr><td>上报可调</td><td>默认每分钟上报一次，间隔由平台统一下发，无需登录主机修改</td></tr>
+          <tr><td>全中文 UI</td><td>部署即用，界面与文档全中文</td></tr>
+          <tr><td>部署方式</td><td>支持 Docker Compose / 1Panel / 宝塔面板 / docker 与二进制直接运行</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ==================== 架构 ==================== -->
+    <section id="arch">
+      <h2>架构与端口</h2>
+      <pre><code>┌──────────────┐POST /agent/minTask┌───────────────┐     ┌──────────┐
+│ opsmonitor-  │───────────────────►│ opsmonitor-   │────►│ SQLite   │
+│ agent        │  JSON + MD5(token) │ server        │     │ 单文件库 │
+│ 采集端        │◄───────────────────│ 服务端 / 控制台 │◄────│ 读写分离 │
+│ 本地探针│  GET /agent/tasks     └───┬───────┬───┘     └──────────┘
+└──────────────┘                          │       │ 平台代拉（可选）
+                                  内嵌静态资源     ▼       ▼
+                              Web 控制台 + 大屏   ┌──────────────────┐
+                                （浏览器）        │ 授权系统（独立）   │
+                                                  └──────────────────┘</code></pre>
+
+      <table>
+        <thead><tr><th>端口</th><th>协议</th><th>用途</th><th>是否必需</th></tr></thead>
+        <tbody>
+          <tr><td><code>9999</code></td><td>HTTP</td><td>控制台 + 大屏 + 采集端上报 + 安装脚本下发</td><td><span class="tag req">必需</span></td></tr>
+          <tr><td><code>9999</code></td><td>ICMP</td><td>服务端主动探测目标主机连通性</td><td><span class="tag opt">按需</span></td></tr>
+          <tr><td><code>22 / 3389 / 3306 / 6379 / 5672 …</code></td><td>各协议</td><td>服务端探针按监控项配置主动连接目标</td><td><span class="tag opt">按需</span></td></tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <b>默认只有一个端口</b>
+        服务端只监听 9999。目标主机只需要能访问这个端口即可接入采集端，
+        不需要在每台被监控主机上开放任何端口（监控项探测是服务端主动发起的）。
+      </div>
+    </section>
+
+    <!-- ==================== Docker Compose ==================== -->
+    <section id="compose">
+      <h2>Docker Compose 部署<span class="tag ok">推荐</span></h2>
+      <p>最省事的方式。整个系统一个容器、一个数据目录，备份就是拷一个目录。</p>
+
+      <h3>1. 准备目录</h3>
+      <pre><code>mkdir -p /opt/opsmonitor/data
+cd /opt/opsmonitor</code></pre>
+
+      <h3>2. 编写 docker-compose.yml</h3>
+      <pre><code>services:
+  opsmonitor:
+    image: opsmonitor/opsmonitor:latest
+    container_name: opsmonitor
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    volumes:
+      # SQLite 数据库所在目录，必须挂载，否则容器重建后数据全丢
+      - ./data:/opt/opsmonitor/data
+      # 采集端发布物缓存目录（用于一键安装采集端），可选
+      - ./releases:/opt/opsmonitor/releases
+    environment:
+      # 监听地址：保持默认，不要写成 127.0.0.1，否则其他主机接不进来
+      OPSM_ADDR: ":9999"
+      # SQLite 文件路径
+      OPSM_DB: "/opt/opsmonitor/data/opsmonitor.db"
+      # 采集端通信密钥，两端必须一致，建议部署后立即修改
+      OPSM_TOKEN: "请改成你自己的密钥"
+      # 控制台初始账号密码，仅首次启动生效
+      OPSM_ADMIN_USER: "admin"
+      OPSM_ADMIN_PASS: "请改成强密码"
+      # 对外访问地址，反向代理 / 端口映射场景务必显式指定
+      # 安装脚本与采集端升级下载都用它拼装绝对地址
+      OPSM_PUBLIC_URL: "http://192.168.1.10:9999"
+      # 历史数据保留天数，0 表示永久保留
+      OPSM_RETENTION: "30"
+      # 超过该秒数未上报判定主机离线
+      OPSM_OFFLINE_SEC: "180"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9999/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s</code></pre>
+
+      <div class="callout warn">
+        <b>OPSM_PUBLIC_URL 最容易填错</b>
+        填了 <code>127.0.0.1</code> 或 <code>localhost</code> 时，
+        在服务端本机生成的安装命令拷到其他主机执行必然失败。
+        必须是<strong>其他主机能访问到的地址</strong>。
+      </div>
+
+      <h3>3. 启动</h3>
+      <pre><code>docker compose up -d
+docker compose logs -f --tail=100</code></pre>
+      <p>看到 <code>控制台访问地址：http://…:9999</code> 即启动成功，浏览器打开该地址，用上面设置的账号登录。</p>
+
+      <h3>4. 常用运维命令</h3>
+      <pre><code>docker compose restart opsmonitor   # 重启
+docker compose stop opsmonitor      # 停止
+docker compose up -d                # 启动
+docker compose logs -f              # 跟踪日志
+docker compose pull && docker compose up -d   # 拉新版并重建</code></pre>
+    </section>
+
+    <!-- ==================== 1Panel ==================== -->
+    <section id="onepanel">
+      <h2>1Panel 部署</h2>
+      <ol class="steps">
+        <li>
+          <strong>安装 Docker 应用</strong>
+          <p>在 1Panel 左侧「应用商店」搜索并安装 <code>Docker</code>（若已安装可跳过）。</p>
+        </li>
+        <li>
+          <strong>新建容器</strong>
+          <p>「容器」→「创建容器」，填写：</p>
+          <table>
+            <thead><tr><th>字段</th><th>值</th></tr></thead>
+            <tbody>
+              <tr><td>名称</td><td><code>opsmonitor</code></td></tr>
+              <tr><td>镜像</td><td><code>opsmonitor/opsmonitor:latest</code></td></tr>
+              <tr><td>重启策略</td><td>始终重启</td></tr>
+              <tr><td>端口映射</td><td>主机 <code>9999</code> → 容器 <code>9999</code></td></tr>
+              <tr><td>文件夹</td><td>新建 <code>/opt/opsmonitor/data</code></td></tr>
+              <tr><td>挂载</td><td><code>/opt/opsmonitor/data</code> → <code>/opt/opsmonitor/data</code>（读写）</td></tr>
+              <tr><td>环境变量</td><td>见下方表格</td></tr>
+            </tbody>
+          </table>
+        </li>
+        <li>
+          <strong>设置环境变量</strong>
+          <table>
+            <thead><tr><th>变量</th><th>建议值</th></tr></thead>
+            <tbody>
+              <tr><td><code>OPSM_TOKEN</code></td><td>自定义强密钥</td></tr>
+              <tr><td><code>OPSM_ADMIN_USER</code></td><td><code>admin</code></td></tr>
+              <tr><td><code>OPSM_ADMIN_PASS</code></td><td>自定义强密码</td></tr>
+              <tr><td><code>OPSM_PUBLIC_URL</code></td><td><code>http://服务器IP:9999</code></td></tr>
+            </tbody>
+          </table>
+        </li>
+        <li>
+          <strong>配置反向代理（可选）</strong>
+          <p>「网站」→「创建网站 → 反向代理」，域名如 <code>monitor.example.com</code>，
+             代理地址填 <code>http://127.0.0.1:9999</code>。
+             配了反向代理后务必把 <code>OPSM_PUBLIC_URL</code> 改成 <code>https://monitor.example.com</code>。</p>
+        </li>
+        <li>
+          <strong>防火墙放行</strong>
+          <p>服务器防火墙与云安全组都要放行 9999/TCP（或反向代理的 443）。</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ==================== 宝塔 ==================== -->
+    <section id="bt">
+      <h2>宝塔面板部署</h2>
+      <ol class="steps">
+        <li><strong>安装 Docker 管理器</strong><p>「软件商店」→ 搜索 <code>Docker 管理器</code> → 安装。</p></li>
+        <li><strong>添加容器</strong><p>「Docker」→「容器管理」→「添加容器」，镜像填 <code>opsmonitor/opsmonitor:latest</code>，
+           端口映射 <code>9999:9999</code>，目录挂载 <code>/opt/opsmonitor/data</code> 到 <code>/opt/opsmonitor/data</code>。</p></li>
+        <li><strong>设置环境变量</strong><p>同 1Panel，注意 <code>OPSM_PUBLIC_URL</code> 要填对外可达地址。</p></li>
+        <li><strong>反向代理</strong><p>「网站」→ 添加站点 → 反向代理到 <code>http://127.0.0.1:9999</code>。</p></li>
+        <li><strong>放行端口</strong><p>「安全」→ 添加放行端口 <code>9999</code>。</p></li>
+      </ol>
+    </section>
+
+    <!-- ==================== 二进制部署 ==================== -->
+    <section id="binary">
+      <h2>Linux 二进制部署</h2>
+      <p>不想用容器时，直接跑二进制。服务端只需要 glibc 与一个可写目录。</p>
+
+      <h3>1. 下载并安装</h3>
+      <pre><code>mkdir -p /opt/opsmonitor/data && cd /opt/opsmonitor
+curl -fLo opsmonitor-server https://github.com/sangxi/OpsMonitor/releases/latest/download/opsmonitor-server-linux-amd64
+curl -fLo opsmonitor-agent   https://github.com/sangxi/OpsMonitor/releases/latest/download/opsmonitor-agent-linux-amd64
+chmod +x opsmonitor-server opsmonitor-agent
+./opsmonitor-server -version</code></pre>
+
+      <h3>2. 前台试跑</h3>
+      <pre><code>./opsmonitor-server \
+  -addr :9999 \
+  -db ./data/opsmonitor.db \
+  -token '你的通信密钥' \
+  -user admin -pass '你的控制台密码' \
+  -public-url 'http://192.168.1.10:9999'</code></pre>
+      <p>确认能访问 <code>http://服务器IP:9999</code> 后再做成systemd 服务。</p>
+
+      <h3>3. 注册为 systemd 服务</h3>
+      <pre><code>sudo tee /etc/systemd/system/opsmonitor.service &gt;/dev/null &lt;&lt;'EOF'
+[Unit]
+Description=OpsMonitor 运维监控服务端
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/opsmonitor
+ExecStart=/opt/opsmonitor/opsmonitor-server -addr :9999 -db /opt/opsmonitor/data/opsmonitor.db -token 你的通信密钥 -user admin -pass 你的控制台密码 -public-url http://192.168.1.10:9999
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now opsmonitor
+sudo systemctl status opsmonitor --no-pager</code></pre>
+
+      <div class="callout warn">
+        <b>把密钥写进 unit 文件要注意</b>
+        <code>-token</code> 会以明文出现在 <code>/etc/systemd/system/opsmonitor.service</code> 中。
+        该文件默认只有 root 可读，一般可以接受；若安全要求更高，改用环境文件：
+        <code>EnvironmentFile=/etc/opsmonitor/opsmonitor.env</code>（权限设为 600）。
+      </div>
+
+      <h3>4. 常用命令</h3>
+      <pre><code>systemctl restart opsmonitor
+journalctl -u opsmonitor -f          # 实时日志
+journalctl -u opsmonitor --since today</code></pre>
+    </section>
+
+    <!-- ==================== Windows ==================== -->
+    <section id="windows">
+      <h2>Windows 部署</h2>
+
+      <h3>服务端</h3>
+      <pre><code># 解压到 C:\OpsMonitor
+cd C:\OpsMonitor
+.\opsmonitor-server.exe -addr :9999 -db .\data\opsmonitor.db -token 你的通信密钥</code></pre>
+      <p>注册为开机自启（需管理员 PowerShell）：</p>
+      <pre><code>$action = New-ScheduledTaskAction -Execute 'C:\OpsMonitor\opsmonitor-server.exe' `
+  -Argument '-addr :9999 -db C:\OpsMonitor\data\opsmonitor.db -token 你的通信密钥'
+$trigger= New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
+Register-ScheduledTask -TaskName 'opsmonitor' -Action $action -Trigger $trigger `
+  -Principal $principal -Force
+Start-ScheduledTask -TaskName 'opsmonitor'</code></pre>
+
+      <h3>放行防火墙</h3>
+      <pre><code>netsh advfirewall firewall add rule name="OpsMonitor" dir=in action=allow protocol=TCP localport=9999</code></pre>
+
+      <h3>采集端日常运维</h3>
+      <pre><code>Start-ScheduledTask -TaskName opsmonitor-agent                          # 手动重启
+Get-ScheduledTask -TaskName opsmonitor-agent | Select-Object State              # 查看状态（应为 Running）
+Get-ScheduledTaskInfo -TaskName opsmonitor-agent | Select-Object LastRunTime,LastTaskResult
+Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false             # 卸载</code></pre>
+    </section>
+
+    <!-- ==================== 文件挂载清单 ==================== -->
+    <section id="files">
+      <h2>文件挂载清单</h2>
+      <p>部署前按这张表核对，避免出现「重启后数据全丢」这类事故。</p>
+
+      <h3>目录结构</h3>
+      <pre><code>/opt/opsmonitor/
+├── opsmonitor-server          # 服务端二进制（容器内为镜像自带，不用挂）
+├── opsmonitor-agent           # 采集端二进制（仅手工部署采集端时需要）
+├── data/
+│   ├── opsmonitor.db# SQLite 主库 <span class="tag req">必须挂载</span>
+│   ├── opsmonitor.db-wal      # WAL 日志，与主库同目录
+│   └── opsmonitor.db-shm      # 共享内存索引，与主库同目录
+├── releases/                  # 采集端发布物缓存（可选，用于一键安装采集端）
+│   └── opsmonitor-agent-linux-amd64
+└── opsmonitor-file-baseline.json   # 文件防篡改基线（仅采集端，产生在采集端本机）</code></pre>
+
+      <h3>挂载对照表</h3>
+      <table>
+        <thead><tr><th>宿主机路径</th><th>容器内路径</th><th>读写</th><th>必需性</th><th>不挂的后果</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>/opt/opsmonitor/data</code></td>
+            <td><code>/opt/opsmonitor/data</code></td>
+            <td>读写</td>
+            <td><span class="tag req">必需</span></td>
+            <td>容器重建后所有历史指标、告警、资产、账号全部丢失</td>
+          </tr>
+          <tr>
+            <td><code>/opt/opsmonitor/releases</code></td>
+            <td><code>/opt/opsmonitor/releases</code></td>
+            <td>读写</td>
+            <td><span class="tag opt">可选</span></td>
+            <td>一键安装采集端时提示「服务端尚未发布 xx/xx 的采集端版本」</td>
+          </tr>
+          <tr>
+            <td>—</td>
+            <td><code>/etc/localtime</code></td>
+            <td>只读</td>
+            <td><span class="tag opt">建议</span></td>
+            <td>容器内时区变成 UTC，告警时间与主机时间差8 小时</td>
+          </tr>
+          <tr>
+            <td><code>/opt/opsmonitor/opsmonitor-file-baseline.json</code></td>
+            <td>—</td>
+            <td>读写</td>
+            <td><span class="tag opt">仅采集端</span></td>
+            <td>采集端重启后文件防篡改基线丢失，首次运行会重建基线</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout danger">
+        <b>最关键的一条</b>
+        <code>data</code> 目录必须挂载。SQLite 数据库是整个系统唯一的状态存储，
+        不挂载等于每次重建容器都从零开始。
+      </div>
+
+      <h3>时区配置</h3>
+      <pre><code>services:
+  opsmonitor:
+    environment:
+      TZ: "Asia/Shanghai"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro</code></pre>
+
+      <h3>文件权限参考</h3>
+      <table>
+        <thead><tr><th>文件</th><th>属主</th><th>权限</th></tr></thead>
+        <tbody>
+          <tr><td><code>opsmonitor-server</code></td><td><code>root</code></td><td><code>755</code></td></tr>
+          <tr><td><code>opsmonitor-agent</code></td><td><code>root</code></td><td><code>755</code></td></tr>
+          <tr><td><code>data/</code></td><td>运行用户</td><td><code>750</code></td></tr>
+          <tr><td><code>data/opsmonitor.db</code></td><td>运行用户</td><td><code>640</code></td></tr>
+          <tr><td><code>releases/</code></td><td>运行用户</td><td><code>755</code></td></tr>
+          <tr><td>systemd unit</td><td><code>root</code></td><td><code>644</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ==================== 端口 ==================== -->
+    <section id="ports">
+      <h2>端口与防火墙</h2>
+      <table>
+        <thead><tr><th>系统</th><th>命令</th></tr></thead>
+        <tbody>
+          <tr><td>CentOS / RHEL / Rocky</td><td><code>firewall-cmd --add-port=9999/tcp --permanent &amp;&amp; firewall-cmd --reload</code></td></tr>
+          <tr><td>Ubuntu / Debian</td><td><code>ufw allow 9999/tcp</code></td></tr>
+          <tr><td>Windows</td><td><code>netsh advfirewall firewall add rule name="OpsMonitor" dir=in action=allow protocol=TCP localport=9999</code></td></tr>
+        </tbody>
+      </table>
+      <div class="callout ok">
+        <b>验证连通性</b>
+        在目标主机上先执行 <code>curl http://服务端IP:9999/</code>，
+        能返回页面再执行安装命令。这一步能提前 90% 的连通性问题。
+      </div>
+    </section>
+
+    <!-- ==================== 采集端接入 ==================== -->
+    <section id="agent">
+      <h2>一键安装采集端</h2>
+      <ol class="steps">
+        <li>
+          <strong>控制台生成命令</strong>
+          <p>登录控制台 → 左侧「监控」→「添加主机」→ 选择系统与架构、填写主机名 → 复制命令。</p>
+        </li>
+        <li>
+          <strong>确认目标平台已发布</strong>
+          <p>页面会提前校验该「系统 + 架构」是否已有可下发的采集端版本。
+             平台是<strong>按系统 + 架构分别发布</strong>的，
+             <code>linux/amd64</code> 发布过不等于 <code>linux/arm64</code> 就能装。</p>
+        </li>
+        <li>
+          <strong>在目标主机执行</strong>
+          <p>Linux / macOS：</p>
+          <pre><code>curl -fsSL "http://服务端IP:9999/install.sh?wgToken=密钥MD5&amp;name=web-01" | sudo bash</code></pre>
+          <p>Windows（管理员 PowerShell，单行）：</p>
+          <pre><code>Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://服务端IP:9999/install.ps1?wgToken=密钥MD5&amp;name=win-01").Content</code></pre>
+        </li>
+        <li>
+          <strong>脚本自动完成的事</strong>
+          <p>识别系统与架构 → 查询平台下发版本 → 下载二进制 → 校验 SHA256 →
+             拉取平台下发的运行配置 → 注册开机自启的系统服务
+             （Linux 用 systemd、macOS 用 launchd、Windows 用计划任务）。</p>
+        </li>
+        <li>
+          <strong>确认上线</strong>
+          <p>主机自动出现在「主机监控」列表中，默认每分钟上报一次。</p>
+        </li>
+      </ol>
+
+      <div class="callout">
+        <b>命令里为什么只有一个 MD5</b>
+        安装命令只带 <code>-server</code> / <code>-token-hash</code> / <code>-name</code> 三个必要参数。
+        通信密钥以 MD5 指纹形式下发，命令行历史与 systemd 单元文件里都不会留下明文口令。
+        其余运行配置（上报间隔、执行指令开关、更新策略等）全部由平台统一下发并热更新，
+        <strong>改配置不需要登录任何一台主机</strong>。
+      </div>
+    </section>
+
+    <section id="agent-manual">
+      <h2>手工部署采集端</h2>
+      <p>不便执行脚本的场景（安全管控、离线环境）可以手工安装。</p>
+
+      <h3>Linux（systemd）</h3>
+      <pre><code>sudo install -m 0755 opsmonitor-agent /usr/local/bin/
+sudo tee /etc/systemd/system/opsmonitor-agent.service &gt;/dev/null &lt;&lt;'EOF'
+[Unit]
+Description=OpsMonitor 采集端
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/opsmonitor-agent -server http://服务端IP:9999 -token 你的通信密钥 -name 本机名
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now opsmonitor-agent
+sudo systemctl status opsmonitor-agent --no-pager
+journalctl -u opsmonitor-agent -f</code></pre>
+
+      <h3>macOS（launchd）</h3>
+      <pre><code>sudo install -m 0755 opsmonitor-agent /usr/local/bin/
+sudo tee /Library/LaunchDaemons/opsmonitor-agent.plist &gt;/dev/null &lt;&lt;'EOF'
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;plist version="1.0"&gt;
+&lt;dict&gt;
+  &lt;key&gt;Label&lt;/key&gt;&lt;string&gt;opsmonitor-agent&lt;/string&gt;
+  &lt;key&gt;ProgramArguments&lt;/key&gt;
+  &lt;array&gt;
+    &lt;string&gt;/usr/local/bin/opsmonitor-agent&lt;/string&gt;
+    &lt;string&gt;-server&lt;/string&gt;&lt;string&gt;http://服务端IP:9999&lt;/string&gt;
+    &lt;string&gt;-token&lt;/string&gt;&lt;string&gt;你的通信密钥&lt;/string&gt;
+  &lt;/array&gt;
+  &lt;key&gt;RunAtLoad&lt;/key&gt;&lt;true/&gt;
+  &lt;key&gt;KeepAlive&lt;/key&gt;&lt;true/&gt;
+  &lt;key&gt;StandardOutPath&lt;/key&gt;&lt;string&gt;/var/log/opsmonitor-agent.log&lt;/string&gt;
+  &lt;key&gt;StandardErrorPath&lt;/key&gt;&lt;string&gt;/var/log/opsmonitor-agent.log&lt;/string&gt;
+&lt;/dict&gt;
+&lt;/plist&gt;
+EOF
+
+sudo launchctl load -w /Library/LaunchDaemons/opsmonitor-agent.plist</code></pre>
+
+      <h3>卸载</h3>
+      <pre><code># Linux
+sudo systemctl disable --now opsmonitor-agent
+sudo rm -f /etc/systemd/system/opsmonitor-agent.service /usr/local/bin/opsmonitor-agent
+
+# macOS
+sudo launchctl unload /Library/LaunchDaemons/opsmonitor-agent.plist
+sudo rm -f /Library/LaunchDaemons/opsmonitor-agent.plist /usr/local/bin/opsmonitor-agent
+
+# Windows
+Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
+      <p>主机记录会保留，历史数据按服务端保留天数自动清理。</p>
+    </section>
+
+    <section id="docker-agent">
+      <h2>容器内采集宿主主机</h2>
+      <p>需要监控 Docker 所在宿主机的物理指标时，把宿主机根目录挂进容器。</p>
+      <pre><code>services:
+  opsmonitor-agent:
+    image: opsmonitor/opsmonitor-agent:latest
+    container_name: opsmonitor-agent
+    restart: unless-stopped
+    pid: host
+    network_mode: host
+    volumes:
+      # 只读挂载宿主机根目录，让采集端看到真实的 /proc、/sys
+      - /:/host:ro,rslave
+    environment:
+      - TZ=Asia/Shanghai
+    command:
+      - -server=http://服务端IP:9999
+      - -token=你的通信密钥
+      - -name=容器宿主机名</code></pre>
+      <div class="callout warn">
+        <b>只读挂载</b>
+        <code>ro</code> 一定要加。采集端只需要读 <code>/proc</code>、<code>/sys</code>，
+        不需要也不应该能修改宿主机文件。
+      </div>
+    </section>
+
+    <!-- ==================== 配置项 ==================== -->
+    <section id="config">
+      <h2>服务端配置项</h2>
+      <p>命令行参数优先于环境变量。完整清单如下。</p>
+      <table>
+        <thead><tr><th>参数</th><th>环境变量</th><th>默认值</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><code>-addr</code></td><td><code>OPSM_ADDR</code></td><td><code>:9999</code></td><td>HTTP 监听地址</td></tr>
+          <tr><td><code>-db</code></td><td><code>OPSM_DB</code></td><td><code>./data/opsmonitor.db</code></td><td>SQLite 文件路径</td></tr>
+          <tr><td><code>-token</code></td><td><code>OPSM_TOKEN</code></td><td><code>opsmonitor</code></td><td>采集端通信密钥，两端必须一致</td></tr>
+          <tr><td><code>-user</code></td><td><code>OPSM_ADMIN_USER</code></td><td><code>admin</code></td><td>控制台账号（仅首次启动生效）</td></tr>
+          <tr><td><code>-pass</code></td><td><code>OPSM_ADMIN_PASS</code></td><td><code>opsmonitor</code></td><td>控制台密码（仅首次启动生效）</td></tr>
+          <tr><td><code>-retention</code></td><td><code>OPSM_RETENTION</code></td><td><code>30</code></td><td>历史数据保留天数，0 表示永久</td></tr>
+          <tr><td><code>-purge</code></td><td><code>OPSM_PURGE_INTERVAL</code></td><td><code>3600</code></td><td>历史清理间隔（秒）</td></tr>
+          <tr><td><code>-offline</code></td><td><code>OPSM_OFFLINE_SEC</code></td><td><code>180</code></td><td>超过该秒数未上报判定离线</td></tr>
+          <tr><td><code>-public-url</code></td><td><code>OPSM_PUBLIC_URL</code></td><td>自动反推</td><td>对外访问地址，反向代理下务必显式指定</td></tr>
+          <tr><td><code>-cpu-alert</code></td><td><code>OPSM_CPU_ALERT</code></td><td><code>90</code></td><td>CPU 告警阈值（%）</td></tr>
+          <tr><td><code>-mem-alert</code></td><td><code>OPSM_MEM_ALERT</code></td><td><code>90</code></td><td>内存告警阈值（%）</td></tr>
+          <tr><td><code>-disk-alert</code></td><td><code>OPSM_DISK_ALERT</code></td><td><code>90</code></td><td>磁盘告警阈值（%）</td></tr>
+          <tr><td><code>-load-alert</code></td><td><code>OPSM_LOAD_ALERT</code></td><td><code>10</code></td><td>系统负载告警阈值</td></tr>
+          <tr><td><code>-alert-cooldown</code></td><td><code>OPSM_ALERT_COOLDOWN_MIN</code></td><td><code>10</code></td><td>同类告警去重冷却（分钟）</td></tr>
+          <tr><td><code>-login-alert</code></td><td><code>OPSM_LOGIN_ALERT</code></td><td><code>true</code></td><td>主机登录用户变化时生成提醒</td></tr>
+          <tr><td><code>-probe-workers</code></td><td><code>OPSM_PROBE_WORKERS</code></td><td><code>64</code></td><td>服务端主动探测并发度</td></tr>
+          <tr><td><code>-read-conns</code></td><td><code>OPSM_READ_CONNS</code></td><td><code>8</code></td><td>SQLite 读连接池大小</td></tr>
+          <tr><td><code>-write-queue</code></td><td><code>OPSM_WRITE_QUEUE</code></td><td><code>8192</code></td><td>上报写队列容量</td></tr>
+          <tr><td><code>-release-dir</code></td><td><code>OPSM_RELEASE_DIR</code></td><td>数据库同级 <code>releases/</code></td><td>采集端发布包目录</td></tr>
+          <tr><td><code>-hub</code></td><td><code>OPSM_HUB</code></td><td><code>https://1999091.xyz</code></td><td>授权中心地址，留空则完全离线</td></tr>
+          <tr><td><code>-hub-token</code></td><td><code>OPSM_HUB_TOKEN</code></td><td>内置</td><td>授权中心拉取令牌。<strong>默认使用程序内置令牌，无需配置</strong>；仅当改用自建授权中心时才需覆盖。令牌不以明文出现在源码、二进制、界面与日志中</td></tr>
+          <tr><td><code>-hub-interval</code></td><td><code>OPSM_HUB_INTERVAL_MIN</code></td><td><code>5</code></td><td>代拉间隔（分钟）</td></tr>
+          <tr><td><code>-hub-auto-update</code></td><td><code>OPSM_HUB_AUTO_UPDATE</code></td><td><code>download</code></td><td>服务端自更新：<code>download</code> 自动就位 / <code>check</code> 只提示 / <code>off</code> 关闭</td></tr>
+          <tr><td><code>-hub-ua</code></td><td><code>OPSM_HUB_UA</code></td><td>空</td><td>访问授权中心的 User-Agent，被网关按 UA 拦截时可覆盖</td></tr>
+        </tbody>
+      </table>
+
+      <h3>授权中心通信</h3>
+      <p>平台默认已接入授权中心 <code>https://1999091.xyz</code>，每次同步做四件事：</p>
+      <ol>
+        <li>拉取并校验导入授权码（授权中心签发后最长一个间隔内生效）</li>
+        <li>下载各平台采集端发布物到本地 <code>releases/</code>，设为下发版本</li>
+        <li>检测到服务端自身有新版本时自动下载、校验 SHA256、替换二进制（就位后等重启生效）</li>
+        <li>把采集端升级结果回执授权中心</li>
+      </ol>
+      <div class="callout">
+        <b>采集端不直接访问授权中心</b>
+        内网采集端只需要能连到监控端的 9999 端口，不需要为每台被监控主机开通任何出网策略。
+        只有监控端需要访问公网。
+      </div>
+      <div class="callout warn">
+        <b>网关拦截是最常见的问题</b>
+        若授权中心前置了开启 Bot 防护的 CDN（Cloudflare 等），
+        程序客户端会被人机校验挡下并返回 403，页面上会明确提示这一点。
+        处理方式是在网关上为 <code>/api/*</code> 路径放行，或改用不挂代理的接口子域，
+        或直接加 <code>-hub ""</code> 转为完全离线模式（功能不受影响）。
+      </div>
+
+      <h3>采集端配置项</h3>
+      <table>
+        <thead><tr><th>参数</th><th>环境变量</th><th>默认值</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><code>-server</code></td><td><code>OPSM_SERVER</code></td><td><code>http://127.0.0.1:9999</code></td><td>服务端地址</td></tr>
+          <tr><td><code>-token</code></td><td><code>OPSM_TOKEN</code></td><td><code>opsmonitor</code></td><td>通信密钥，与服务端一致</td></tr>
+          <tr><td><code>-token-hash</code></td><td>—</td><td>空</td><td>密钥的 MD5，与 <code>-token</code> 二选一</td></tr>
+          <tr><td><code>-name</code></td><td><code>OPSM_HOSTNAME</code></td><td>本机主机名</td><td>平台显示名称</td></tr>
+          <tr><td><code>-interval</code></td><td><code>OPSM_INTERVAL</code></td><td><code>60</code></td><td>上报间隔（秒），平台下发时被覆盖</td></tr>
+          <tr><td><code>-update</code></td><td><code>OPSM_UPDATE</code></td><td><code>auto</code></td><td><code>auto</code> 自动升级 / <code>check</code> 只检查 / <code>off</code> 关闭</td></tr>
+          <tr><td><code>-update-interval</code></td><td><code>OPSM_UPDATE_INTERVAL_MIN</code></td><td><code>30</code></td><td>版本检查间隔（分钟）</td></tr>
+          <tr><td><code>-allow-command</code></td><td><code>OPSM_ALLOW_COMMAND</code></td><td><code>true</code></td><td>是否执行服务端下发的指令</td></tr>
+          <tr><td><code>-remote-config</code></td><td><code>OPSM_REMOTE_CONFIG</code></td><td><code>auto</code></td><td><code>auto</code> 接受平台下发 / <code>off</code> 只用本地参数</td></tr>
+          <tr><td><code>-install-dir</code></td><td><code>OPSM_INSTALL_DIR</code></td><td>可执行文件目录</td><td>升级时替换二进制的目标目录</td></tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <b>运行时改配置不用重装</b>
+        控制台「系统设置 → 采集端配置」改全局默认值，
+        「主机监控 → 主机行的采集端配置」给单台主机覆盖。
+        采集端在下个刷新周期自动生效，不需要登录主机、不需要重启进程。
+      </div>
+    </section>
+
+    <!-- ==================== 大屏 ==================== -->
+    <section id="screen">
+      <h2>可视化大屏</h2>
+      <p>大屏共 8 套模板，全部用 ECharts 渲染（已内嵌为本地资源，内网离线可用）。</p>
+
+      <table>
+        <thead><tr><th>模板</th><th>名称</th><th>独立地址</th><th>适合场景</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>经典三栏</td><td><code>/screen/1</code></td><td>常规值班大屏，左概览中趋势右告警</td></tr>
+          <tr><td>2</td><td>KPI 矩阵</td><td><code>/screen/2</code></td><td>领导汇报，十个核心指标一目了然</td></tr>
+          <tr><td>3</td><td>环形指标</td><td><code>/screen/3</code></td><td>整体健康度展示，四个大圆环</td></tr>
+          <tr><td>4</td><td>主机明细</td><td><code>/screen/4</code></td><td>资产规模大、需要逐台核对时</td></tr>
+          <tr><td>5</td><td>告警视图</td><td><code>/screen/5</code></td><td>以告警为核心的处理中心大屏</td></tr>
+          <tr><td>6</td><td>资源全景</td><td><code>/screen/6</code></td><td>十二宫格，趋势与排行一屏看完</td></tr>
+          <tr><td>7</td><td>双屏对称</td><td><code>/screen/7</code></td><td>左右双屏拼接，左主机右告警</td></tr>
+          <tr><td>8</td><td>容量与硬件</td><td><code>/screen/8</code></td><td>容量规划与硬盘健康巡检</td></tr>
+        </tbody>
+      </table>
+
+      <h3>操作方式</h3>
+      <table>
+        <thead><tr><th>操作</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><code>←</code> <code>→</code></td><td>切换上/下一套模板，地址同步变为 /screen/N</td></tr>
+          <tr><td><code>F</code></td><td>进入/退出全屏投屏</td></tr>
+          <tr><td><code>Esc</code></td><td>退出全屏</td></tr>
+          <tr><td>时间窗口下拉</td><td>切换 1 小时 / 3 小时 / 12 小时 / 1 天 / 7 天</td></tr>
+          <tr><td>自动轮播按钮</td><td>每 30 秒自动切换模板，投屏长时间无人值守时用</td></tr>
+        </tbody>
+      </table>
+
+      <h3>投屏建议</h3>
+      <ul>
+        <li>浏览器按 <code>F11</code> 或点大屏内的「全屏」按钮，隐藏浏览器边框</li>
+        <li>1920×1080 用模板 2 或 6；3840×1080 双屏用模板 7</li>
+        <li>不同屏幕固定不同地址，例如主屏 <code>/screen/2</code>、副屏 <code>/screen/5</code></li>
+      </ul>
+    </section>
+
+    <!-- ==================== 备份 ==================== -->
+    <section id="backup">
+      <h2>备份与恢复</h2>
+      <p>全部状态都在一个 SQLite 文件里，备份就是拷文件。</p>
+
+      <h3>在线热备份（推荐）</h3>
+      <p>直接复制 <code>opsmonitor.db</code> 可能在写入过程中拿到不一致的快照。
+        用 SQLite 自带的备份命令更稳妥：</p>
+      <pre><code># 需要容器内有 sqlite3，或用官方镜像临时起一个
+sqlite3 /opt/opsmonitor/data/opsmonitor.db ".backup '/opt/opsmonitor/backup/opsmonitor-$(date +%F).db'"</code></pre>
+
+      <h3>停机冷备份（最简单可靠）</h3>
+      <pre><code>docker compose stop opsmonitor
+tar czf /backup/opsmonitor-$(date +%F).tar.gz -C /opt/opsmonitor data
+docker compose start opsmonitor</code></pre>
+
+      <h3>恢复</h3>
+      <pre><code>docker compose stop opsmonitor
+tar xzf /backup/opsmonitor-2026-10-11.tar.gz -C /opt/opsmonitor
+docker compose start opsmonitor</code></pre>
+
+      <h3>建议的定时备份</h3>
+      <pre><code># 每天 03:17 冷备一次，保留 14 天
+17 3 * * * cd /opt/opsmonitor &amp;&amp; \
+  tar czf /backup/opsmonitor-$(date +\%F).tar.gz data &amp;&amp; \
+  find /backup -name 'opsmonitor-*.tar.gz' -mtime +14 -delete</code></pre>
+      <div class="callout ok">
+        <b>备份一定要演练恢复</b>
+        备份文件存在不等于能恢复。至少每季度在测试环境完整恢复一次。
+      </div>
+    </section>
+
+    <!-- ==================== 升级 ==================== -->
+    <section id="upgrade">
+      <h2>升级与回滚</h2>
+
+      <h3>服务端升级</h3>
+      <pre><code># Docker
+docker compose pull &amp;&amp; docker compose up -d
+
+# 二进制
+sudo systemctl stop opsmonitor
+sudo cp /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.bak
+sudo cp 新版/opsmonitor-server /opt/opsmonitor/opsmonitor-server
+sudo systemctl start opsmonitor</code></pre>
+
+      <h3>采集端自动升级</h3>
+      <p>
+        采集端按平台配置的检查间隔（默认 30 分钟）查询版本，发现新版本会自行
+        下载 → 校验 SHA256 → 替换二进制 → 重启，全程不需要登录目标主机。
+      </p>
+      <ul>
+        <li>由 systemd / launchd 托管时直接退出交给服务管理器拉起，不会同时跑两个进程</li>
+        <li>替换走「旧文件改名 → 新文件落位」的原子流程，Windows 上正在运行的 exe 也能安全替换</li>
+        <li>校验不过直接中止并保留原进程；替换失败会回滚旧文件</li>
+      </ul>
+
+      <h3>回滚</h3>
+      <p>
+        采集端发布物按「系统 + 架构」分别登记，每个平台可保留多个版本，
+        其中一个是<strong>下发版本</strong>——改它就是灰度或回滚。
+        在控制台「在线升级」页操作即可。
+      </p>
+    </section>
+
+    <!-- ==================== 排查 ==================== -->
+    <section id="trouble">
+      <h2>常见问题排查</h2>
+
+      <h3>部署类</h3>
+      <table>
+        <thead><tr><th>现象</th><th>原因</th><th>处理</th></tr></thead>
+        <tbody>
+          <tr><td>其他主机打不开控制台</td><td>只监听了回环地址</td><td>改用 <code>-addr :9999</code>，启动日志会主动提示</td></tr>
+          <tr><td>采集端装不上</td><td>目标主机访问不到服务端地址</td><td>先在目标主机 <code>curl http://服务端IP:9999/</code> 自测</td></tr>
+          <tr><td><code>服务端尚未发布 xx/xx 的采集端版本</code></td><td>该「系统 + 架构」没有发布物</td><td>在「添加主机」页看已发布平台列表，按系统+架构分别发布</td></tr>
+          <tr><td>Windows 报「无法连接到远程服务器」</td><td>地址填了 <code>127.0.0.1</code> 或防火墙未放行</td><td>换成目标机可达地址，放行 9999/TCP</td></tr>
+          <tr><td>Linux 提示未找到 curl</td><td>精简镜像缺工具</td><td><code>yum install -y curl</code> 或 <code>apt-get install -y curl</code></td></tr>
+          <tr><td>提示需要管理员权限</td><td>Windows 安装脚本要求管理员 PowerShell</td><td>右键「以管理员身份运行」</td></tr>
+          <tr><td>重启后数据全丢</td><td><code>data</code> 目录没挂载</td><td>按文件挂载清单挂上 <code>/opt/opsmonitor/data</code></td></tr>
+          <tr><td>告警时间差 8 小时</td><td>容器时区是 UTC</td><td>设置 <code>TZ=Asia/Shanghai</code> 并挂载 <code>/etc/localtime</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>数据类</h3>
+      <table>
+        <thead><tr><th>现象</th><th>原因</th><th>处理</th></tr></thead>
+        <tbody>
+          <tr><td>主机显示离线但实际在线</td><td>采集端没在跑，或网络不通</td><td>检查采集端服务状态；确认能访问服务端 9999</td></tr>
+          <tr><td>指标全是 0</td><td>采集端刚重启，首轮采样缺基准</td><td>磁盘 IO 与网速第二轮上报起生效，属正常</td></tr>
+          <tr><td>温度、SMART 显示「未采集」</td><td>虚拟机/云主机没有对应硬件</td><td>属正常现象，不影响判定</td></tr>
+          <tr><td>Windows 负载恒为 0</td><td>Windows 无 loadavg 机制</td><td>属正常现象，页面已标注</td></tr>
+          <tr><td>监控项一直正常但没数据</td><td>目标配置写错</td><td>看监控项的最近一次消息，失败原因会写明</td></tr>
+        </tbody>
+      </table>
+
+      <h3>授权中心类</h3>
+      <table>
+        <thead><tr><th>现象</th><th>原因</th><th>处理</th></tr></thead>
+        <tbody>
+          <tr><td>同步返回 401 提示<code>拉取令牌不正确</code></td><td>授权中心当前配置的令牌与平台发出的不一致</td><td>授权中心的令牌已改为编译内置，核对两侧内置值是否一致；或临时用 <code>-hub-token</code> 显式覆盖</td></tr>
+          <tr><td>同步返回 403 + <code>Just a moment...</code></td><td>CDN 人机校验拦下程序客户端</td><td>在网关上为 <code>/api/*</code> 配置跳过规则；或改用不挂代理的接口子域；或 <code>-hub ""</code> 转离线</td></tr>
+          <tr><td>同步返回 HTML 而非 JSON</td><td><code>-hub</code> 指向了网页</td><td>地址应为 <code>https://1999091.xyz</code>，不要带接口路径</td></tr>
+          <tr><td>一直显示「尚未签发授权」</td><td>授权中心还没给本机机器码签发</td><td>拿控制台显示的机器码去授权中心后台签发</td></tr>
+          <tr><td>授权导入后校验失败（提示签名校验失败）</td><td>公钥抄错，或旧格式密钥不一致</td><td>新格式（<code>OPSM2-</code>）看启动日志的「授权验签公钥指纹」是否与授权中心一致，不一致就是公钥抄错了；旧格式（<code>WGC-</code>/<code>OPSM1-</code>/<code>OPSM-</code>）才需要两端 <code>-license-secret</code> 一致</td></tr>
+          <tr><td>日志反复刷「同步失败」</td><td>授权中心不可达</td><td>已自动退避（最长 30 分钟一次），无需处理</td></tr>
+          <tr><td>发现新版本但不自动升级</td><td><code>-hub-auto-update</code> 为 check/off</td><td>改回 <code>download</code>，或手动点「拉取并升级」</td></tr>
+        </tbody>
+      </table>
+
+    <h3>排查顺序</h3>
+      <ol class="steps">
+        <li>看服务端日志：<code>docker compose logs --tail=200</code> 或 <code>journalctl -u opsmonitor -n 200</code></li>
+        <li>看采集端日志：Linux <code>journalctl -u opsmonitor-agent -n 200</code>，
+            Windows <code>Get-ScheduledTaskInfo -TaskName opsmonitor-agent</code></li>
+        <li>在目标主机自测连通性：<code>curl http://服务端IP:9999/</code></li>
+        <li>自测授权中心：<code>curl -o /dev/null -w '%{http_code}' "https://1999091.xyz/api/v1/check?token=xxx"</code>，期望 200</li>
+        <li>看控制台「操作审计」，确认配置改动是否生效</li>
+        <li>看控制台「系统设置 → 机器人推送 / 邮件」，确认告警通道是否可用（可点测试）</li>
+      </ol>
+    </section>
+
+    <footer class="docs-foot">
+      <span>OpsMonitor · 开箱即用的轻量级分布式运维监控系统</span>
+      <span id="footVer">—</span>
+    </footer>
+  </main>
+</div>
+
+<script>
+// 目录高亮跟随滚动，让长页面也能快速定位
+(function () {
+  var links = [].slice.call(document.querySelectorAll('.docs-nav a'));
+  var map = {};
+  links.forEach(function (a) {
+    var id = a.getAttribute('href').slice(1);
+    var sec = document.getElementById(id);
+    if (sec) map[id] = a;
+  });
+
+  function onScroll() {
+    var top = window.scrollY + 90;
+    var current = '';
+    Object.keys(map).forEach(function (id) {
+      if (document.getElementById(id).offsetTop <= top) current = id;
+    });
+    links.forEach(function (a) { a.classList.remove('active'); });
+    if (map[current]) map[current].classList.add('active');
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // 版本号从登录后的会话接口取，未登录时静默跳过
+  fetch('/api/profile', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (p) {
+      if (!p || !p.serverVersion) return;
+      var v = 'v' + p.serverVersion;
+      document.getElementById('footVer').textContent = v;
+      document.getElementById('verLine').textContent = '使用教程 · 部署指南与文件清单 · ' + v;
+    })
+    .catch(function () { /* 未登录或离线时忽略 */ });
+})();
+</script>
+</body>
+</html>

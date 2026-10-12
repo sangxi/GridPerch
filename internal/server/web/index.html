@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">OpsMonitor 运维监控</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M8 20l4-6 4 4 4-8 4 6' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="layout">
+  <!-- 左侧模块栏 -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img id="brandLogo" class="logo" alt="logo" hidden>
+      <svg id="brandLogoDefault" viewBox="0 0 32 32" class="logo"><rect width="32" height="32" rx="7" fill="#2563eb"/><path d="M8 20l4-6 4 4 4-8 4 6" stroke="white" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span id="systemName">OpsMonitor</span>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot">
+      <span class="user-badge" id="userBadge"></span>
+      <span class="ver-badge" id="verBadge"></span>
+      <span class="refresh-tip" id="refreshTip"></span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="btn ghost sidebar-toggle" id="sidebarToggle" type="button" aria-label="展开模块栏">☰</button>
+      <h1 class="page-title" id="pageTitleBar">仪表盘</h1>
+      <div class="topbar-right">
+        <a class="btn ghost" href="/screen" target="_blank">可视化大屏</a>
+        <a class="btn ghost" href="/docs" target="_blank">使用教程</a>
+        <button class="btn ghost" id="refreshBtn">刷新</button>
+        <button class="btn ghost" id="logoutBtn">退出</button>
+      </div>
+    </header>
+
+    <main id="app" class="container"></main>
+
+    <footer class="page-footer" id="pageFooter">
+      <span id="footerText">OpsMonitor · 轻量运维监控平台（Go + SQLite，零外部依赖）</span>
+    </footer>
+  </div>
+</div>
+
+<div class="sidebar-mask" id="sidebarMask"></div>
+
+<div class="login-mask" id="loginMask">
+  <form class="login-box" id="loginForm">
+    <h2 id="loginTitle">OpsMonitor</h2>
+    <p class="sub">轻量运维监控平台</p>
+    <label>用户名<input type="text" name="username" id="username" autocomplete="username" value="admin"></label>
+    <label>密码<input type="password" name="password" id="password" autocomplete="current-password"></label>
+    <div class="err" id="loginErr"></div>
+    <button class="btn primary block" type="submit">登 录</button>
+  </form>
+</div>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>
