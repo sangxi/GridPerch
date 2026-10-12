@@ -35,18 +35,22 @@ import (
 
 // HubStatus 平台与授权系统的同步状态，供控制台「在线升级」「授权购买」页展示。
 type HubStatus struct {
-	Configured    bool              `json:"configured"`
-	URL           string            `json:"url"`
-	Machine       string            `json:"machine"`
-	LastCheck     string            `json:"lastCheck"`
-	LastError     string            `json:"lastError"`
-	Current       string            `json:"current"`
-	ServerLatest  *hubRel           `json:"serverLatest"`
-	AgentCached   map[string]string `json:"agentCached"`
-	LicenseState  string            `json:"licenseState"`
-	LicenseMsg    string            `json:"licenseMsg"`
-	LicensePulled string            `json:"licensePulled"`
-	IntervalSec   int               `json:"intervalSec"`
+	Configured   bool              `json:"configured"`
+	URL          string            `json:"url"`
+	Machine      string            `json:"machine"`
+	LastCheck    string            `json:"lastCheck"`
+	LastError    string            `json:"lastError"`
+	Current      string            `json:"current"`
+	ServerLatest *hubRel           `json:"serverLatest"`
+	AgentCached  map[string]string `json:"agentCached"`
+	// AgentError 记录最近一次「缓存采集端发布物」失败的原因。
+	// 以前这类失败只写服务端日志、不进同步状态，控制台会一直显示「0 个平台」
+	// 却没有任何解释——用户只能看到「明明更新了却不生效」。现在把它带到页面。
+	AgentError    string `json:"agentError"`
+	LicenseState  string `json:"licenseState"`
+	LicenseMsg    string `json:"licenseMsg"`
+	LicensePulled string `json:"licensePulled"`
+	IntervalSec   int    `json:"intervalSec"`
 
 	// TokenSource 只说明令牌来自哪里（builtin / custom / none），
 	// 永远不回显令牌内容本身 —— 这个结构体会整个序列化给前端。
@@ -209,7 +213,12 @@ func (s *Server) hubSync() {
 	// 2) 采集端发布物：下载并缓存到本地，供内网采集端升级
 	if resp.Agent != nil {
 		if err := s.cacheAgentRelease(resp.Agent); err != nil {
-			log.Printf("缓存采集端发布物失败：%s", s.redactHubToken(err.Error()))
+			// 先脱敏再落库/落日志：err 里可能带着含令牌的完整下载地址。
+			em := s.redactHubToken(err.Error())
+			log.Printf("缓存采集端发布物失败：%s", em)
+			s.setHub(func(h *HubStatus) { h.AgentError = em })
+		} else {
+			s.setHub(func(h *HubStatus) { h.AgentError = "" })
 		}
 	}
 
@@ -486,6 +495,26 @@ func (s *Server) hubCheck() (*hubCheckResp, error) {
 	return &out, nil
 }
 
+// withHubToken 在 URL 上补齐 token 查询参数；已带 token 时保持原样
+// （兼容授权端下发带签名的预发下载地址）。授权端下载接口只认查询串鉴权，
+// 与 hubCheck 用同一套令牌传递方式，避免两处鉴权行为漂移。
+func withHubToken(rawURL, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return rawURL
+	}
+	p, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := p.Query()
+	if q.Get("token") == "" {
+		q.Set("token", token)
+		p.RawQuery = q.Encode()
+	}
+	return p.String()
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -716,6 +745,11 @@ func (s *Server) hubDownloadTo(r *hubRel, dst string) error {
 	if strings.HasPrefix(u, "/") {
 		u = strings.TrimRight(s.cfg.HubURL, "/") + u
 	}
+	// 授权端的下载接口按 ?token= 鉴权，且不认 X-Opsm-Hub-Token 请求头
+	// （实测该中心：带 query token 返回 200、仅带头返回 401）。check 一直把令牌放进
+	// 查询串，下载这里原本只带头部，于是「授权系统下载返回 401」——采集端发布物永远
+	// 缓存不下来，控制台一直显示「0 个平台」而安装脚本报「尚未发布」。这里与 check 对齐。
+	u = withHubToken(u, s.cfg.HubToken)
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return err

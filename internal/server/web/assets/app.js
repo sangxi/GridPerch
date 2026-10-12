@@ -1428,6 +1428,12 @@ async function renderUpgrade() {
       + '</tbody></table></div>';
     cacheBody += `<div class="seg-note" style="margin-top:10px">这些版本已落在本机 <code>releases/</code> 目录，内网主机安装与自动更新都从这里取，无需访问公网。</div>`;
   }
+  if (hub.agentError) {
+    cacheBody += `<div class="alert-box warn" style="margin-top:10px">
+      最近一次从授权系统缓存采集端失败：<span class="mono">${esc(hub.agentError)}</span><br>
+      这通常意味着授权端的下载接口拒绝本平台取包（例如令牌未随下载地址下发，或下载鉴权方式与 check 不一致）。
+    </div>`;
+  }
   html += panel('采集端发布物（已缓存）', `<div class="panel-body">${cacheBody}</div>`);
 
   html += `<div class="toolbar" style="margin-top:4px">
