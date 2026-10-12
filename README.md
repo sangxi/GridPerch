@@ -92,7 +92,7 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 - **内置使用教程**：控制台顶栏「使用教程」或直接访问 `/docs`，含各系统部署指南与文件挂载清单
 
 ## 快速开始
-
+详细部署教程：https://opsmonitor-docs.pages.dev/macos
 ### Docker Compose（推荐）
 
 ```bash
