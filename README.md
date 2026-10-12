@@ -17,7 +17,7 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
                                                  │ 授权系统（独立）   │
                                                  └──────────────────┘
 ```
-
+## 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / opsmonitor`。
 ## 界面预览
 
 | 控制台 · 仪表盘 | 可视化大屏（8 套模板） |
@@ -112,7 +112,7 @@ docker compose logs -f --tail=100
 ./bin/opsmonitor-server -addr :9999 -db ./data/opsmonitor.db -token opsmonitor -public-url http://<服务器IP>:9999
 ```
 
-浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / opsmonitor`。
+## 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / opsmonitor`。
 
 ### 接入采集端
 
