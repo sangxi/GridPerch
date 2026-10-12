@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/sangxi/OpsMonitor/internal/config"
@@ -315,7 +317,40 @@ func (s *Server) Run() error {
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	return srv.ListenAndServe()
+	return listenAndServeWithRetry(srv)
+}
+
+// listenAndServeWithRetry 在端口被占用时重试一段时间再放弃。
+//
+// 自动升级的重启顺序是「先拉起新进程、旧进程再退出」，新进程启动时端口可能还
+// 被旧进程占着；systemd 的 RestartSec 与容器重启也可能撞上 TIME_WAIT。
+// 给一个短暂重试窗口，可把升级过程中的服务中断降到最低，避免
+// 「升级后端口占用导致新版本起不来」进而被 confirmSelfUpgrade 误判回滚。
+func listenAndServeWithRetry(srv *http.Server) error {
+	const retryWindow = 20 * time.Second
+	const retryStep = 500 * time.Millisecond
+	deadline := time.Now().Add(retryWindow)
+	for {
+		err := srv.ListenAndServe()
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		if !isAddrInUse(err) || time.Now().After(deadline) {
+			return err
+		}
+		log.Printf("监听 %s 暂不可用（%v），%v 后重试……", srv.Addr, err, retryStep)
+		time.Sleep(retryStep)
+	}
+}
+
+// isAddrInUse 判断是否为「端口被占用」类错误（跨平台，含容器内代理的文案差异）。
+func isAddrInUse(err error) bool {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "address already in use") ||
+		strings.Contains(msg, "only one usage of each socket address")
 }
 
 // accessURLs 列出控制台可能的访问地址，帮助用户在「添加主机」时填对地址，

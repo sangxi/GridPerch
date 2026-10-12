@@ -416,11 +416,11 @@ func (s *Server) autoUpdateSelf(r *hubRel) {
 	if s.pendingSelfVersion() == r.Version {
 		s.setHub(func(h *HubStatus) {
 			h.ServerUpgraded = r.Version
-			h.ServerNote = "版本 " + r.Version + " 已就位，重启服务后生效"
+			h.ServerNote = "版本 " + r.Version + " 已就位，正在自动重启生效；若长时间未变请手工重启服务"
 		})
 		return
 	}
-	msg, err := s.hubPullSelf()
+	msg, _, err := s.hubPullSelf()
 	if err != nil {
 		// ServerNote 会显示在控制台，回执也会出网，两处都先脱敏
 		em := s.redactHubToken(err.Error())
@@ -988,34 +988,36 @@ func (s *Server) confirmSelfUpgrade() {
 }
 
 // hubPullSelf 下载授权系统最新的平台版本并就地替换自身二进制。
-// 替换后需要重启服务进程才会真正生效。
-func (s *Server) hubPullSelf() (string, error) {
+//
+// 返回值 replaced 表示「这次确实换了文件」；换了之后会按策略自动重启进程，
+// 让新版本真正生效 —— 只换文件不重启正是「平台自己没法更新自己」的根因。
+func (s *Server) hubPullSelf() (msg string, replaced bool, err error) {
 	hs := s.hubState()
 	if !hs.Configured {
-		return "", fmt.Errorf("尚未配置授权系统地址")
+		return "", false, fmt.Errorf("尚未配置授权系统地址")
 	}
 	// 重新拉一次，确保拿到最新信息
 	resp, err := s.hubCheck()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if resp.Server == nil || strings.TrimSpace(resp.Server.Version) == "" {
-		return "", fmt.Errorf("授权系统尚未发布 %s/%s 的平台版本", runtime.GOOS, runtime.GOARCH)
+		return "", false, fmt.Errorf("授权系统尚未发布 %s/%s 的平台版本", runtime.GOOS, runtime.GOARCH)
 	}
 	r := resp.Server
 	// 已经是最新就别再替换一次，避免无谓的重启
 	if !version.IsNewer(r.Version, version.Version) && s.pendingSelfVersion() != r.Version {
 		s.clearPendingSelf()
-		return fmt.Sprintf("当前已是最新版本 %s", version.Version), nil
+		return fmt.Sprintf("当前已是最新版本 %s", version.Version), false, nil
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("无法定位当前程序路径：%w", err)
+		return "", false, fmt.Errorf("无法定位当前程序路径：%w", err)
 	}
 	exe, _ = filepath.EvalSymlinks(exe)
 	newFile := exe + ".new"
 	if err := s.hubDownloadTo(r, newFile); err != nil {
-		return "", err
+		return "", false, err
 	}
 	// Windows 上运行中的可执行文件不能被覆盖，但可以改名：
 	// 先把当前程序改名为 .bak，再把新文件改名为当前程序名。
@@ -1023,22 +1025,24 @@ func (s *Server) hubPullSelf() (string, error) {
 	_ = os.Remove(bak)
 	if err := os.Rename(exe, bak); err != nil {
 		_ = os.Remove(newFile)
-		return "", fmt.Errorf("备份当前版本失败：%w", err)
+		return "", false, fmt.Errorf("备份当前版本失败：%w", err)
 	}
 	if err := os.Rename(newFile, exe); err != nil {
 		// 回滚，避免目录里没有可执行文件
 		_ = os.Rename(bak, exe)
 		_ = os.Remove(newFile)
-		return "", fmt.Errorf("替换新版本失败：%w", err)
+		return "", false, fmt.Errorf("替换新版本失败：%w", err)
 	}
 	_ = os.Chmod(exe, 0o755)
 	s.markPendingSelf(r.Version)
 	s.setHub(func(h *HubStatus) {
 		h.LicensePulled = time.Now().Format("2006-01-02 15:04:05")
 	})
-	msg := fmt.Sprintf("已就位版本 %s，重启服务后生效（旧版本备份为 %s）", r.Version, filepath.Base(bak))
+	msg = fmt.Sprintf("已就位版本 %s，正在自动重启以生效（旧版本备份为 %s）", r.Version, filepath.Base(bak))
 	log.Printf("平台升级：%s", msg)
-	return msg, nil
+	// 关键一步：换完文件必须让新版本真正跑起来
+	s.scheduleSelfRestart("升级到 " + r.Version)
+	return msg, true, nil
 }
 
 /* ---------------- HTTP 接口 ---------------- */
@@ -1079,14 +1083,14 @@ func (s *Server) handleHubCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	msg := "已与授权系统 " + s.cfg.HubURL + " 同步"
 	if hs.ServerUpgraded != "" {
-		msg += "；检测到服务端新版本 " + hs.ServerUpgraded + "，已就位，重启服务后生效"
+		msg += "；检测到服务端新版本 " + hs.ServerUpgraded + "，已就位，正在自动重启生效"
 	}
 	writeJSON(w, map[string]any{"ok": true, "msg": msg, "hub": hs})
 }
 
 // handleHubPull 拉取并安装平台自身的最新版本（手动触发，忽略自动更新策略）。
 func (s *Server) handleHubPull(w http.ResponseWriter, r *http.Request) {
-	msg, err := s.hubPullSelf()
+	msg, _, err := s.hubPullSelf()
 	if err != nil {
 		// 这个 msg 会直接回给浏览器，必须脱敏
 		em := s.redactHubToken(err.Error())

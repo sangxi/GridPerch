@@ -1402,14 +1402,15 @@ async function renderUpgrade() {
     </div>`;
     if (hub.serverUpgraded) {
       upBody += `<div class="alert-box warn" style="margin-top:12px">
-        版本 <b>${esc(hub.serverUpgraded)}</b> 已下载并就位，<strong>重启服务后生效</strong>。
-        重启由 systemd / Docker 的重启策略自动完成；若新版本启动失败会自动回滚到 .bak。</div>`;
+        版本 <b>${esc(hub.serverUpgraded)}</b> 已下载并就位，<strong>正在自动重启以生效</strong>。
+        重启由 systemd / Docker 的重启策略自动完成，手工启动的会自行拉起新进程；若新版本启动失败会自动回滚到 .bak。<br>
+        若提示长时间不消失，说明当前环境没有可用的重启机制（如容器未配置 restart 策略），请手工重启服务。</div>`;
       upBody += `<div class="row-acts" style="margin-top:10px">
         <button class="btn primary" id="upRestartHint">知道了</button></div>`;
     } else if (hasNew) {
       upBody += `<div class="row-acts" style="margin-top:12px">
         <button class="btn primary" id="upPull">拉取并升级到 ${esc(latest.version)}</button>
-        <span class="panel-note">下载并替换本机程序，<strong>重启服务后生效</strong>，旧版本会备份为 .bak</span>
+        <span class="panel-note">下载并替换本机程序，替换完成后<strong>自动重启生效</strong>，旧版本会备份为 .bak</span>
       </div>`;
       if (hub.autoUpdate === 'download') {
         upBody += `<div class="seg-note" style="margin-top:8px">当前策略为自动下载，通常无需手动点击——下次同步（约
@@ -1463,13 +1464,13 @@ async function renderUpgrade() {
   const pull = $('#upPull');
   if (pull) {
     pull.onclick = async () => {
-      if (!confirm('确认从授权系统拉取并安装新版本？安装完成后需要重启服务端才会生效。')) return;
+      if (!confirm('确认从授权系统拉取并安装新版本？替换完成后平台会自动重启以生效。')) return;
       pull.disabled = true;
       pull.textContent = '下载中…';
       try {
         const r = await post('/api/hub/pull', {});
-        toast(r.msg || '已就位，重启后生效');
-        pull.textContent = '已就位，请重启服务';
+        toast(r.msg || '已就位，正在自动重启生效');
+        pull.textContent = '已就位，正在自动重启';
       } catch (e) {
         toast(e.message, true);
         pull.disabled = false;

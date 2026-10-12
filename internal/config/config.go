@@ -46,6 +46,10 @@ type Server struct {
 	// HubAutoUpdate 服务端自身的自动更新策略：
 	// check 只在控制台提示 / download 自动下载并就位（默认，重启后生效）/ off 关闭
 	HubAutoUpdate string
+	// HubRestart 平台自升级「就位后是否自动重启」：
+	// auto 自动重启让新版本立即生效（默认）/ off 只替换文件、等人工重启。
+	// 关掉它会退回「换了文件但版本号不变」的旧行为，一般无需修改。
+	HubRestart string
 	// HubUserAgent 访问授权系统时的 User-Agent。
 	// 部分网关（如 Cloudflare 的 Bot Fight Mode）会按 UA 拦截程序客户端，
 	// 这时可改成带浏览器特征的 UA 绕过；但更根本的做法是在网关上放行。
@@ -141,6 +145,7 @@ func ParseServer() *Server {
 	cfg.LicenseFreeUser = envInt("OPSM_LICENSE_FREE_USERS", 3)
 	cfg.HubURL = env("OPSM_HUB", DefaultHubURL)
 	cfg.HubAutoUpdate = env("OPSM_HUB_AUTO_UPDATE", "download")
+	cfg.HubRestart = env("OPSM_HUB_RESTART", "auto")
 	cfg.HubUserAgent = env("OPSM_HUB_UA", "")
 	// 令牌优先级：-hub-token 参数 > OPSM_HUB_TOKEN 环境变量 > 内置令牌。
 	// 内置令牌不以明文写在代码里，见 hubtoken.go 的 defaultHubToken。
@@ -179,6 +184,8 @@ func ParseServer() *Server {
 	flag.IntVar(&hubMin, "hub-interval", hubMin, "从授权系统拉取更新与授权的间隔（分钟）")
 	flag.StringVar(&cfg.HubAutoUpdate, "hub-auto-update", cfg.HubAutoUpdate,
 		"服务端自身的自动更新策略：download 自动下载并就位（重启后生效）/ check 只提示 / off 关闭")
+	flag.StringVar(&cfg.HubRestart, "hub-restart", cfg.HubRestart,
+		"平台自升级就位后是否自动重启：auto 自动重启生效（默认）/ off 只替换不重启，需人工重启")
 	flag.StringVar(&cfg.HubUserAgent, "hub-ua", cfg.HubUserAgent,
 		"访问授权系统时的 User-Agent，留空用默认 opsmonitor-server/<版本>；被网关按 UA 拦截时可改")
 	flag.BoolVar(&cfg.PrintVersion, "version", false, "打印版本号后退出")
@@ -199,6 +206,14 @@ func ParseServer() *Server {
 	default:
 		// 未识别的值按「只提示」处理，不擅自替换正在运行的服务端二进制
 		cfg.HubAutoUpdate = "check"
+	}
+	// 只有显式写 off/false/no/manual 才关闭自动重启，其余（含空值）都按 auto：
+	// 默认必须能自升级，否则会退回「换了文件却不生效」的老问题。
+	switch strings.ToLower(strings.TrimSpace(cfg.HubRestart)) {
+	case "off", "false", "no", "0", "manual", "none":
+		cfg.HubRestart = "off"
+	default:
+		cfg.HubRestart = "auto"
 	}
 	if loginAlert {
 		cfg.LoginAlert = "true"
