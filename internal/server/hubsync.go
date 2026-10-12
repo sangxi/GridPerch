@@ -210,17 +210,20 @@ func (s *Server) hubSync() {
 		})
 	}
 
-	// 2) 采集端发布物：下载并缓存到本地，供内网采集端升级
+	// 2) 采集端发布物：下载并缓存到本地，供内网采集端升级。
+	//    先处理本机平台（它随本次 check 一起回来），再逐个平台补拉其余平台 ——
+	//    授权端的 check 按平台返回，只查本机平台的话内网里别的平台永远装不上。
+	var agentErrs []string
 	if resp.Agent != nil {
 		if err := s.cacheAgentRelease(resp.Agent); err != nil {
 			// 先脱敏再落库/落日志：err 里可能带着含令牌的完整下载地址。
 			em := s.redactHubToken(err.Error())
-			log.Printf("缓存采集端发布物失败：%s", em)
-			s.setHub(func(h *HubStatus) { h.AgentError = em })
-		} else {
-			s.setHub(func(h *HubStatus) { h.AgentError = "" })
+			log.Printf("缓存采集端发布物失败（%s/%s）：%s", resp.Agent.OS, resp.Agent.Arch, em)
+			agentErrs = append(agentErrs, resp.Agent.OS+"/"+resp.Agent.Arch+"："+em)
 		}
 	}
+	agentErrs = append(agentErrs, s.syncOtherAgents()...)
+	s.setHub(func(h *HubStatus) { h.AgentError = strings.Join(agentErrs, "；") })
 
 	// 3) 服务端自身：检测到新版本就自动拉取并就位
 	s.autoUpdateSelf(resp.Server)
@@ -457,13 +460,22 @@ func (s *Server) hubReport(action, from, to, result, message string) {
 	}
 }
 
-// hubCheck 调用授权系统 check 接口。
+// hubCheck 调用授权系统 check 接口，查询本机平台。
 func (s *Server) hubCheck() (*hubCheckResp, error) {
+	return s.hubCheckFor(runtime.GOOS, runtime.GOARCH)
+}
+
+// hubCheckFor 以指定平台调用授权系统 check 接口。
+//
+// 授权端的 check 是「按请求平台返回」的：os/arch 传什么，agent（以及服务端发布物）
+// 就只回什么；不带 os/arch 时 agent/server 直接为空（实测）。所以想缓存别的平台的采集端，
+// 只能按平台逐个查 —— 见 syncOtherAgents。
+func (s *Server) hubCheckFor(goos, goarch string) (*hubCheckResp, error) {
 	q := url.Values{}
 	q.Set("token", s.cfg.HubToken)
 	q.Set("machine", s.licenseMachine())
-	q.Set("os", runtime.GOOS)
-	q.Set("arch", runtime.GOARCH)
+	q.Set("os", goos)
+	q.Set("arch", goarch)
 	q.Set("version", version.Version)
 	q.Set("hostname", s.hostnameForHub())
 
@@ -733,6 +745,55 @@ func (s *Server) markAgentCached(r *hubRel) {
 		}
 		h.AgentCached[r.OS+"/"+r.Arch] = r.Version
 	})
+}
+
+// agentSyncPlatforms 是采集端覆盖的全部「系统 + 架构」组合，与 build.sh / release.sh 保持一致。
+var agentSyncPlatforms = [][2]string{
+	{"linux", "amd64"},
+	{"linux", "arm64"},
+	{"darwin", "amd64"},
+	{"darwin", "arm64"},
+	{"windows", "amd64"},
+}
+
+// syncOtherAgents 把「非本机平台」的采集端发布物也缓存到本机，返回各平台的失败原因。
+//
+// 为什么必须单独补拉一轮：授权系统的 /api/v1/check 是「按请求平台返回」的 ——
+// 传 os=linux&arch=amd64 就只回 linux/amd64 的采集端，不带 os/arch 时 agent 直接为空，
+// 也没有任何「列出全部平台」的接口。服务端过去只按自己的 GOOS/GOARCH 查一次，
+// 于是永远只缓存到自己那一个平台：一台 Linux 服务端带一堆 Windows 内网主机时，
+// 这些主机执行安装命令，服务端一律回「尚未发布 windows/amd64 的采集端版本」——
+// 这正是「同步明明正常、却始终装不上」的根因。
+//
+// 授权端尚未发布的平台不算失败，直接跳过（它可能就没构建那个平台）。
+func (s *Server) syncOtherAgents() []string {
+	if strings.TrimSpace(s.cfg.HubURL) == "" || strings.TrimSpace(s.cfg.HubToken) == "" {
+		return nil
+	}
+	self := runtime.GOOS + "/" + runtime.GOARCH
+	var errs []string
+	for _, pf := range agentSyncPlatforms {
+		key := pf[0] + "/" + pf[1]
+		if key == self {
+			continue // 本机平台已在主同步流程里处理过
+		}
+		resp, err := s.hubCheckFor(pf[0], pf[1])
+		if err != nil {
+			em := s.redactHubToken(err.Error())
+			log.Printf("查询 %s 采集端发布物失败：%s", key, em)
+			errs = append(errs, key+"："+em)
+			continue
+		}
+		if resp.Agent == nil || strings.TrimSpace(resp.Agent.Version) == "" {
+			continue // 授权端未发布该平台，跳过即可，不是错误
+		}
+		if err := s.cacheAgentRelease(resp.Agent); err != nil {
+			em := s.redactHubToken(err.Error())
+			log.Printf("缓存采集端发布物失败（%s）：%s", key, em)
+			errs = append(errs, key+"："+em)
+		}
+	}
+	return errs
 }
 
 // hubDownloadTo 从授权系统下载发布物到指定路径，并校验 SHA256。
