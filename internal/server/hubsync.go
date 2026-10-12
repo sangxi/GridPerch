@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sangxi/OpsMonitor/internal/config"
@@ -46,11 +48,15 @@ type HubStatus struct {
 	// AgentError 记录最近一次「缓存采集端发布物」失败的原因。
 	// 以前这类失败只写服务端日志、不进同步状态，控制台会一直显示「0 个平台」
 	// 却没有任何解释——用户只能看到「明明更新了却不生效」。现在把它带到页面。
-	AgentError    string `json:"agentError"`
-	LicenseState  string `json:"licenseState"`
-	LicenseMsg    string `json:"licenseMsg"`
-	LicensePulled string `json:"licensePulled"`
-	IntervalSec   int    `json:"intervalSec"`
+	AgentError string `json:"agentError"`
+	// AgentErrors 按「系统/架构」记录缓存采集端失败的原因，AgentError 是它的汇总串。
+	// 补拉是后台分批完成的：某个平台转好后应当只把它自己从报错里去掉，
+	// 所以这里逐平台记录，而不是一个整串反复覆盖。
+	AgentErrors   map[string]string `json:"agentErrors"`
+	LicenseState  string            `json:"licenseState"`
+	LicenseMsg    string            `json:"licenseMsg"`
+	LicensePulled string            `json:"licensePulled"`
+	IntervalSec   int               `json:"intervalSec"`
 
 	// TokenSource 只说明令牌来自哪里（builtin / custom / none），
 	// 永远不回显令牌内容本身 —— 这个结构体会整个序列化给前端。
@@ -142,10 +148,19 @@ func (s *Server) setHub(fn func(*HubStatus)) {
 //
 // 连续失败时按指数退避拉长下次间隔，避免授权端宕机期间把日志刷爆；
 // 一旦成功立刻恢复常规间隔。
+// hubSyncMu 保证同一时间只有一轮同步在跑。定时器和控制台「立即检查更新」都会触发
+// hubSync，两者叠加会重复下载同一批发布物：既拖慢彼此，又让控制台状态互相覆盖。
+// 用 TryLock —— 已在同步时后来的这一轮直接跳过，而不是排到队尾再跑一遍。
+var hubSyncMu sync.Mutex
+
 func (s *Server) hubSync() {
 	if strings.TrimSpace(s.cfg.HubURL) == "" {
 		return
 	}
+	if !hubSyncMu.TryLock() {
+		return
+	}
+	defer hubSyncMu.Unlock()
 	// 还在退避窗口内则跳过这一轮
 	s.hubMu.Lock()
 	if s.hub.NextRetrySec > 0 {
@@ -210,20 +225,21 @@ func (s *Server) hubSync() {
 		})
 	}
 
-	// 2) 采集端发布物：下载并缓存到本地，供内网采集端升级。
-	//    先处理本机平台（它随本次 check 一起回来），再逐个平台补拉其余平台 ——
-	//    授权端的 check 按平台返回，只查本机平台的话内网里别的平台永远装不上。
-	var agentErrs []string
+	// 2) 采集端发布物：先处理本机平台（它随本次 check 一起回来）。
+	//    其余平台放到后台补拉：授权端的 check 是按平台返回的，只查本机平台的话
+	//    内网里别的平台永远装不上；但补拉要再发 4 次请求、下载几十 MB，若跟着主同步
+	//    一起阻塞，会把「立即检查更新」拖过云网关的 100s 超时（现象就是 HTTP 524）。
 	if resp.Agent != nil {
 		if err := s.cacheAgentRelease(resp.Agent); err != nil {
 			// 先脱敏再落库/落日志：err 里可能带着含令牌的完整下载地址。
 			em := s.redactHubToken(err.Error())
 			log.Printf("缓存采集端发布物失败（%s/%s）：%s", resp.Agent.OS, resp.Agent.Arch, em)
-			agentErrs = append(agentErrs, resp.Agent.OS+"/"+resp.Agent.Arch+"："+em)
+			s.noteAgentError(resp.Agent.OS+"/"+resp.Agent.Arch, err)
+		} else {
+			s.noteAgentError(resp.Agent.OS+"/"+resp.Agent.Arch, nil)
 		}
 	}
-	agentErrs = append(agentErrs, s.syncOtherAgents()...)
-	s.setHub(func(h *HubStatus) { h.AgentError = strings.Join(agentErrs, "；") })
+	s.startOtherAgentsSync()
 
 	// 3) 服务端自身：检测到新版本就自动拉取并就位
 	s.autoUpdateSelf(resp.Server)
@@ -756,9 +772,56 @@ var agentSyncPlatforms = [][2]string{
 	{"windows", "amd64"},
 }
 
-// syncOtherAgents 把「非本机平台」的采集端发布物也缓存到本机，返回各平台的失败原因。
+// noteAgentError 记录某个平台缓存采集端的结果：err 为 nil 表示成功，清除该平台的旧错误。
+// 汇总串 AgentError 由各平台条目拼出，供控制台直接展示。
+func (s *Server) noteAgentError(platform string, err error) {
+	s.setHub(func(h *HubStatus) {
+		if h.AgentErrors == nil {
+			h.AgentErrors = map[string]string{}
+		}
+		if err == nil {
+			delete(h.AgentErrors, platform)
+		} else {
+			h.AgentErrors[platform] = s.redactHubToken(err.Error())
+		}
+		if len(h.AgentErrors) == 0 {
+			h.AgentError = ""
+			return
+		}
+		keys := make([]string, 0, len(h.AgentErrors))
+		for k := range h.AgentErrors {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, k := range keys {
+			parts = append(parts, k+"："+h.AgentErrors[k])
+		}
+		h.AgentError = strings.Join(parts, "；")
+	})
+}
+
+// otherAgentsRunning 防止后台补拉重叠：网络慢时上一轮可能还没跑完。
+var otherAgentsRunning atomic.Bool
+
+// startOtherAgentsSync 在后台补拉非本机平台的采集端发布物。
 //
-// 为什么必须单独补拉一轮：授权系统的 /api/v1/check 是「按请求平台返回」的 ——
+// 必须放后台：一次补拉要发 4 次 check、下载几十 MB。若同步执行，「立即检查更新」
+// 这个 HTTP 请求会一直挂到网关超时（实测云主机上表现为 HTTP 524），
+// 页面反而看不到任何结果。后台跑则在下一轮刷新时逐个平台出现。
+func (s *Server) startOtherAgentsSync() {
+	if !otherAgentsRunning.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer otherAgentsRunning.Store(false)
+		s.syncOtherAgents()
+	}()
+}
+
+// syncOtherAgents 逐个补拉「非本机平台」的采集端并缓存到本机。
+//
+// 为什么必须补拉：授权系统的 /api/v1/check 是「按请求平台返回」的 ——
 // 传 os=linux&arch=amd64 就只回 linux/amd64 的采集端，不带 os/arch 时 agent 直接为空，
 // 也没有任何「列出全部平台」的接口。服务端过去只按自己的 GOOS/GOARCH 查一次，
 // 于是永远只缓存到自己那一个平台：一台 Linux 服务端带一堆 Windows 内网主机时，
@@ -766,12 +829,11 @@ var agentSyncPlatforms = [][2]string{
 // 这正是「同步明明正常、却始终装不上」的根因。
 //
 // 授权端尚未发布的平台不算失败，直接跳过（它可能就没构建那个平台）。
-func (s *Server) syncOtherAgents() []string {
+func (s *Server) syncOtherAgents() {
 	if strings.TrimSpace(s.cfg.HubURL) == "" || strings.TrimSpace(s.cfg.HubToken) == "" {
-		return nil
+		return
 	}
 	self := runtime.GOOS + "/" + runtime.GOARCH
-	var errs []string
 	for _, pf := range agentSyncPlatforms {
 		key := pf[0] + "/" + pf[1]
 		if key == self {
@@ -781,19 +843,19 @@ func (s *Server) syncOtherAgents() []string {
 		if err != nil {
 			em := s.redactHubToken(err.Error())
 			log.Printf("查询 %s 采集端发布物失败：%s", key, em)
-			errs = append(errs, key+"："+em)
+			s.noteAgentError(key, err)
 			continue
 		}
 		if resp.Agent == nil || strings.TrimSpace(resp.Agent.Version) == "" {
 			continue // 授权端未发布该平台，跳过即可，不是错误
 		}
 		if err := s.cacheAgentRelease(resp.Agent); err != nil {
-			em := s.redactHubToken(err.Error())
-			log.Printf("缓存采集端发布物失败（%s）：%s", key, em)
-			errs = append(errs, key+"："+em)
+			log.Printf("缓存采集端发布物失败（%s）：%s", key, s.redactHubToken(err.Error()))
+			s.noteAgentError(key, err)
+			continue
 		}
+		s.noteAgentError(key, nil)
 	}
-	return errs
 }
 
 // hubDownloadTo 从授权系统下载发布物到指定路径，并校验 SHA256。
