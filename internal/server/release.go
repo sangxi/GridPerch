@@ -478,7 +478,8 @@ if ! fetch "$SERVER/" >/dev/null 2>&1; then
   echo "  1) 服务端是否已经启动；" >&2
   echo "  2) 服务端启动参数 -addr 是否为 :9999（只绑 127.0.0.1 时，其他机器访问不到）；" >&2
   echo "  3) 本机到服务端 9999 端口是否被防火墙拦截；" >&2
-  echo "  4) 命令里的地址是否就是本机能访问到的地址。" >&2
+  echo "  4) 命令里的地址是否是本机能访问到的地址——生成命令时可能带上服务端本机的 127.0.0.1，或云主机的内网 IP（10.x / 192.168.x），这些别的机器都连不上；" >&2
+  echo "     云主机请在服务端设置 -public-url http://公网IP:9999（或 OPSM_PUBLIC_URL）后重新生成命令。" >&2
   exit 1
 fi
 
@@ -634,7 +635,8 @@ try {
     Write-Host '  1) 服务端是否已经启动；'
     Write-Host '  2) 服务端启动参数 -addr 是否为 :9999（只绑 127.0.0.1 时，其他机器访问不到）；'
     Write-Host '  3) 本机到服务端 9999 端口是否被防火墙拦截（服务端可用 netsh advfirewall firewall add rule name=OpsMonitor dir=in action=allow protocol=TCP localport=9999 放行）；'
-    Write-Host '  4) 命令里的地址是否就是本机能访问到的地址（在服务端本机生成命令时，容易带上 127.0.0.1）。'
+    Write-Host '  4) 命令里的地址是否是本机能访问到的地址——生成命令时可能带上服务端本机的 127.0.0.1，或云主机的内网 IP（10.x / 192.168.x），这些别的机器都连不上；'
+    Write-Host '     云主机请在服务端设置 -public-url http://公网IP:9999（或 OPSM_PUBLIC_URL）后重新生成命令。'
     Write-Host "  原始错误：$($_.Exception.Message)"
     throw '安装中止：无法连接平台。'
   }

@@ -920,25 +920,53 @@ function defaultAgentName(os) {
   return 'web-01';
 }
 
-// isLoopbackURL 判断地址是否指向服务端本机 —— 这种地址给别的机器用必然连不上。
-function isLoopbackURL(u) {
-  return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(String(u || '').trim());
+// isUnreachableURL 判断地址是否落在「别的机器访问不到」的网段 —— 这种地址给其它主机用必然连不上。
+// 覆盖：回环（127/8、::1、localhost）、私有内网（10/8、172.16/12、192.168/16）、
+// 运营商级 NAT（100.64/10）、链路本地（169.254/16、fe80::/10）、IPv6 唯一本地（fc00::/7）、以及 0.0.0.0。
+// 云主机尤其容易踩：网卡上只有内网 IP（如 10.0.4.7），公网 IP 是 NAT 映射，反推出来就是不可达地址。
+function isUnreachableURL(u) {
+  const m = String(u || '').trim().match(/^https?:\/\/([^/?#]+)/i);
+  if (!m) return false;
+  let host = m[1].split('@').pop();        // 去掉 http://user:pass@ 里的 userinfo
+  host = host.replace(/:\d+$/, '');        // 去掉端口
+  host = host.replace(/^\[|\]$/g, '').toLowerCase(); // 去掉 IPv6 的方括号
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.localhost') ||
+      host === '0.0.0.0' || host === '::' || host === '::1') return true;
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = +v4[1], b = +v4[2];
+    return a === 0 || a === 127 || a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254);
+  }
+  // IPv6：唯一本地 fc00::/7、链路本地 fe80::/10
+  return /^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host);
 }
 
-// renderAddrWarn 提示回环地址问题：在服务端本机打开控制台时，
-// 反推出的地址就是 127.0.0.1，生成的命令拿到别的机器上执行会直接连不上。
+// renderAddrWarn 在生成命令前提示「地址别的机器连不上」，避免命令拷到目标主机执行才发现。
+// 两种典型来源：① 在服务端本机打开控制台 → 反推出 127.0.0.1；
+// ② 云主机 / 反代没透传 Host → 反推出内网 IP（如 10.0.4.7），跨网段的主机同样连不上。
 function renderAddrWarn() {
   const el = document.getElementById('obAddrWarn');
   if (!el) return;
   const cur = (state.onboard && state.onboard.server) || '';
-  if (!isLoopbackURL(cur)) { el.innerHTML = ''; return; }
+  if (!isUnreachableURL(cur)) { el.innerHTML = ''; return; }
+  const loop = /^https?:\/\/(127\.|localhost\b|\[::1\])/i.test(cur.trim());
+  const why = loop
+    ? `命令里的 <code>${esc(cur)}</code> 只在服务端本机执行才有效。`
+    : `命令里的 <code>${esc(cur)}</code> 是<strong>内网 / 私有网段地址</strong>，公网或跨网段的其它主机访问不到` +
+      `（云主机常见：网卡上只有内网 IP，公网 IP 是 NAT 映射）。`;
   el.innerHTML = `<div class="warn-box">
-    <strong>当前填的是服务端本机地址，装到其他主机上会连不上。</strong>
-    命令里的 <code>${esc(cur)}</code> 只在本机执行才有效。给其他主机装采集端时，请把上方
-    「服务端地址」改成<strong>目标主机能访问到的地址</strong>（通常是服务端的内网 IP，例如
-    <code>http://192.168.1.10:9999</code>）。
-    想一劳永逸：给服务端加启动参数 <code>-public-url http://内网IP:9999</code>，
-    并改用这个地址打开控制台，之后生成的命令都是可达地址。
+    <strong>当前的服务端地址，装到其它主机上会连不上。</strong>
+    ${why}
+    请把上方「服务端地址」改成<strong>目标主机能访问到的地址</strong>（同一内网填内网 IP；公网填
+    <code>http://公网IP:9999</code> 或域名）。
+    想一劳永逸：给服务端设置 <code>-public-url http://可达地址:9999</code>（或环境变量
+    <code>OPSM_PUBLIC_URL</code>），之后生成的命令都按它来；反向代理场景还需透传
+    <code>Host</code> / <code>X-Forwarded-Host</code>。
   </div>`;
 }
 

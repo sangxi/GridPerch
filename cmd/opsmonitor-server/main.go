@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"strings"
 
 	"github.com/sangxi/OpsMonitor/internal/config"
 	"github.com/sangxi/OpsMonitor/internal/license"
@@ -34,6 +35,12 @@ func main() {
 		log.Printf("授权验签公钥指纹：%s（应与授权中心启动日志一致）", license.Fingerprint(pub))
 	} else {
 		log.Printf("警告：内置授权验签公钥无法解析：%v", err)
+	}
+	// 未显式配置对外地址时提前提醒：安装命令会按「控制台访问地址」反推，
+	// 云主机（网卡只有内网 IP）或反向代理后面很容易反推出别的机器连不上的地址。
+	if strings.TrimSpace(cfg.PublicURL) == "" {
+		log.Printf("提示：未设置 -public-url / OPSM_PUBLIC_URL，采集端安装命令将按控制台访问地址自动生成；" +
+			"若服务端在云主机或反向代理后面，请显式设为对外可达地址（如 http://公网IP:9999），否则生成的命令可能指向内网地址")
 	}
 	if err := server.New(cfg, st).Run(); err != nil {
 		log.Fatalf("服务退出: %v", err)
