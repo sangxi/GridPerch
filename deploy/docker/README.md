@@ -16,7 +16,7 @@ docker compose logs -f
 
 | 方式 | Dockerfile | 特点 |
 |---|---|---|
-| 用现成二进制 | `Dockerfile.binary` | 不用 Go 环境、不用联网拉模块，几十秒出镜像。依赖仓库里已有 `release/1.1.4/opsmonitor-server-linux-amd64` |
+| 用现成二进制 | `Dockerfile.binary` | 不用 Go 环境、不用联网拉模块，几十秒出镜像。依赖仓库里已有 `release/1.1.5/opsmonitor-server-linux-amd64` |
 | 从源码构建 | `Dockerfile` | 适合 GitHub 用户 / CI，需要能拉取 Go 模块 |
 
 > 构建上下文必须是**仓库根目录**（compose 里已配好 `context: ../..`），因为 `Dockerfile.binary`
@@ -107,7 +107,7 @@ docker compose up -d --build
 
 | 现象 | 处理 |
 |---|---|
-| `docker compose up` 报找不到 `release/1.1.4/...` | 构建上下文不对。必须在仓库根目录执行，或 `docker compose -f deploy/docker/docker-compose.yml --project-directory . build` |
+| `docker compose up` 报找不到 `release/1.1.5/...` | 构建上下文不对。必须在仓库根目录执行，或 `docker compose -f deploy/docker/docker-compose.yml --project-directory . build` |
 | 容器起来就退出 | `docker compose logs` 看日志；常见是 `/data` 挂载点权限或端口占用 |
 | 页面能开、别的机器打不开 | 宿主机防火墙 / 云安全组没放行 9999 |
 | 授权显示社区版且「等待签发」 | 先确认 `.env` 里 `OPSM_LICENSE_MACHINE` 与授权中心签发时绑定的机器码一致；再点「立即从授权系统拉取授权」 |

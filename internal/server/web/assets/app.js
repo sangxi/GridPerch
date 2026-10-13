@@ -649,10 +649,14 @@ async function renderHosts() {
   let catalogs = [];
   try { catalogs = asList((await get('/api/host-catalogs')).list); } catch (e) { catalogs = []; }
   window.__catalogs = catalogs;
+  // 主机改名 / 删除会级联改动历史数据，只给管理员开放
+  const isAdmin = !!(state.user && state.user.role === 'admin');
   const hostActions = (h) => `<span class="row-acts">
       <button class="btn small" data-cmd="${esc(h.hostname)}">下发指令</button>
       ${state.user && state.user.role === 'viewer' ? '' : `<button class="btn small ghost" data-hcfg="${esc(h.hostname)}">采集端配置</button>`}
       ${state.user && state.user.role === 'viewer' ? '' : `<button class="btn small ghost" data-hcat="${esc(h.hostname)}">归类</button>`}
+      ${isAdmin ? `<button class="btn small ghost" data-hren="${esc(h.hostname)}">重命名</button>` : ''}
+      ${isAdmin ? `<button class="btn small ghost danger" data-hdel="${esc(h.hostname)}">删除</button>` : ''}
     </span>`;
   // 双击主机名进入四方格详情，链接本身保留单击跳转抽屉的可发现性
   const hostCell = (h) => `<a href="javascript:openHost('${esc(h.hostname)}')" data-dbl="${esc(h.hostname)}" title="双击查看四方格详情">${esc(h.hostname)}</a>`;
@@ -680,7 +684,8 @@ async function renderHosts() {
     <a class="btn ghost small" href="/api/export/hosts?format=csv">导出 CSV</a>
     <a class="btn ghost small" href="/api/export/hosts?format=xlsx">导出 Excel</a>
   </div>`;
-  html += `<div class="hint-line">提示：<b>双击主机名</b>进入四方格详情（CPU / 内存 / 历史告警 / 网络速率）。</div>`;
+  html += `<div class="hint-line">提示：<b>双击主机名</b>进入四方格详情（CPU / 内存 / 历史告警 / 网络速率）。`
+    + (isAdmin ? '管理员可对主机行执行<b>重命名</b>（历史数据一并迁移）与<b>删除</b>。' : '') + '</div>';
   html += panel('主机列表', dataTable(HEAD, rows, '尚未有主机接入'), '');
   app().innerHTML = html;
 
@@ -729,6 +734,76 @@ function bindHostActions() {
   document.querySelectorAll('[data-hcatq]').forEach((btn) => {
     btn.onclick = () => openHostCatalogQuick(btn.dataset.hcatq);
   });
+  document.querySelectorAll('[data-hren]').forEach((btn) => {
+    btn.onclick = () => openHostRename(btn.dataset.hren);
+  });
+  document.querySelectorAll('[data-hdel]').forEach((btn) => {
+    btn.onclick = () => confirmHostDelete(btn.dataset.hdel);
+  });
+}
+
+/* ================= 主机重命名 / 删除（管理员） ================= */
+
+// 重命名主机。主机名由采集端 `-name` 决定并随每次上报携带，平台改不了远端服务参数，
+// 所以平台侧把该主机名下的全部数据搬到新名字下，并登记「旧名 → 新名」映射：
+// 仍在用旧名上报的采集端会被自动归位，无需重装或改配置。
+async function openHostRename(hostname) {
+  const m = ensureModal();
+  m.show(`<div class="modal-head"><h3>重命名主机</h3></div>
+  <div class="modal-body">
+    <div class="muted" style="margin-bottom:8px">当前主机名：<b>${esc(hostname)}</b></div>
+    <div class="form-row"><label>新主机名</label>
+      <input id="hrName" value="${esc(hostname)}" maxlength="64" placeholder="例如：测试主机-01"></div>
+    <div class="warn-box" style="margin-top:10px">
+      该主机的指标、告警、系统事件、目录归属、采集端配置，以及监控项里的「作用主机」都会迁移到新名字。<br>
+      采集端仍会按自身配置的旧名上报，平台自动归到新名字下，<b>无需重装采集端</b>。
+    </div>
+    <div class="modal-msg" id="hrMsg"></div>
+  </div>
+  <div class="modal-foot"><button class="btn ghost" id="hrCancel">取消</button>
+    <button class="btn primary" id="hrSave">保存</button></div>`);
+  $('#hrCancel').onclick = () => m.close();
+  $('#hrSave').onclick = async () => {
+    try {
+      const r = await put(`/api/hosts/${encodeURIComponent(hostname)}/rename`, { name: $('#hrName').value });
+      m.close();
+      toast(r.msg || '已重命名');
+      render();
+    } catch (e) {
+      $('#hrMsg').textContent = e.message;
+      $('#hrMsg').className = 'modal-msg err';
+    }
+  };
+}
+
+// 删除主机及其全部历史数据。采集端若仍在运行会在下次上报时被重新发现，
+// 所以确认框里把这一点明确写出来，避免用户以为「删了还会自己回来」是 bug。
+async function confirmHostDelete(hostname) {
+  const m = ensureModal();
+  m.show(`<div class="modal-head"><h3>删除主机</h3></div>
+  <div class="modal-body">
+    <div class="warn-box danger">
+      将删除主机 <b>${esc(hostname)}</b> 及其全部历史数据（指标、告警、系统事件、采集端配置、目录归属），
+      此操作<b>不可撤销</b>。<br><br>
+      若该主机的采集端仍在运行，它会在下次上报时被<b>重新发现</b>。
+      要让它彻底不再出现，请先在目标主机上停用或卸载采集端。
+    </div>
+    <div class="modal-msg" id="hdMsg"></div>
+  </div>
+  <div class="modal-foot"><button class="btn ghost" id="hdCancel">取消</button>
+    <button class="btn ghost danger" id="hdOk">确认删除</button></div>`);
+  $('#hdCancel').onclick = () => m.close();
+  $('#hdOk').onclick = async () => {
+    try {
+      const r = await del(`/api/hosts/${encodeURIComponent(hostname)}`);
+      m.close();
+      toast(r.msg || '已删除');
+      render();
+    } catch (e) {
+      $('#hdMsg').textContent = e.message;
+      $('#hdMsg').className = 'modal-msg err';
+    }
+  };
 }
 
 /* ================= 主机目录（名称支持中文） ================= */

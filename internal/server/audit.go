@@ -69,8 +69,10 @@ var auditRules = map[string]auditRule{
 	"DELETE /api/audit":                     {Action: "清空审计日志", Category: "data"},
 	"DELETE /api/mail/logs":                 {Action: "清空邮件记录", Category: "data"},
 	"PUT /api/agent-config":                 {Action: "修改采集端全局配置", Category: "agentcfg", Detail: "agentInterval,agentSkipDisk,agentUpdateMode,agentAllowCommand"},
-	"PUT /api/hosts/{host}/agent-config":    {Action: "修改采集端主机配置", Category: "agentcfg", Target: ":path", Detail: "interval,skipDisk,updateMode,allowCommand"},
-	"DELETE /api/hosts/{host}/agent-config": {Action: "恢复采集端默认配置", Category: "agentcfg", Target: ":path"},
+	"PUT /api/hosts/{host}/agent-config":    {Action: "修改采集端主机配置", Category: "agentcfg", Target: ":host", Detail: "interval,skipDisk,updateMode,allowCommand"},
+	"DELETE /api/hosts/{host}/agent-config": {Action: "恢复采集端默认配置", Category: "agentcfg", Target: ":host"},
+	"PUT /api/hosts/{host}/rename":          {Action: "重命名主机", Category: "host", Target: ":host", Detail: "name"},
+	"DELETE /api/hosts/{host}":              {Action: "删除主机", Category: "host", Target: ":host"},
 	"POST /api/webhooks":                    {Action: "新增机器人", Category: "webhook", Target: "name", Detail: "kind,url,enabled,levels"},
 	"PUT /api/webhooks/{id}":                {Action: "修改机器人", Category: "webhook", Target: "name", Detail: "kind,url,enabled,levels"},
 	"DELETE /api/webhooks/{id}":             {Action: "删除机器人", Category: "webhook", Target: ":path"},
@@ -124,6 +126,10 @@ func (s *Server) audit(next http.Handler) http.Handler {
 		}
 		if rule.Target == ":path" {
 			e.Target = lastPathSegment(r.URL.Path)
+		} else if rule.Target == ":host" {
+			// 形如 /api/hosts/{host}/xxx 的路径，倒数第二段是主机，末段是动作名，
+			// 取末段会把「rename」当成操作对象，这里直接取路径里的主机名。
+			e.Target = truncate(r.PathValue("host"), 120)
 		}
 		// 文件上传类接口是 multipart，业务处理器已解析过，这里复用其结果
 		var form map[string][]string

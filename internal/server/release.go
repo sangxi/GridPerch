@@ -364,6 +364,7 @@ func (s *Server) handleAgentUpdateReport(w http.ResponseWriter, r *http.Request)
 		Message  string `json:"message"`
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
+	req.Hostname = s.resolveAgentHost(req.Hostname)
 	result := "ok"
 	if req.Result != "ok" && req.Result != "success" {
 		result = "fail"

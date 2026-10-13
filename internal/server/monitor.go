@@ -31,6 +31,7 @@ func (s *Server) handleAgentTasks(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"result": "error：缺少 hostname"})
 		return
 	}
+	host = s.resolveAgentHost(host)
 	tasks, err := s.store.TasksForAgent(host)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]string{"result": "error：" + err.Error()})
@@ -59,7 +60,7 @@ func (s *Server) handleAgentMonitorResult(w http.ResponseWriter, r *http.Request
 		writeJSON(w, map[string]string{"result": "error：token is invalidate"})
 		return
 	}
-	if err := s.store.SaveMonitorResults(batch.Hostname, batch.Results); err != nil {
+	if err := s.store.SaveMonitorResults(s.resolveAgentHost(batch.Hostname), batch.Results); err != nil {
 		writeJSON(w, map[string]string{"result": "error：" + err.Error()})
 		return
 	}

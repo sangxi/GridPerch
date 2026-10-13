@@ -100,6 +100,9 @@ func Open(cfg *config.Server) (*Store, error) {
 	if err = s.schemaSysEvent(); err != nil {
 		return nil, err
 	}
+	if err = s.schemaHostAdmin(); err != nil {
+		return nil, err
+	}
 	if err = s.migrate(); err != nil {
 		return nil, err
 	}

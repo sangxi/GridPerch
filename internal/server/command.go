@@ -76,7 +76,7 @@ func (s *Server) handleAgentCommands(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"result": "error：token is invalidate"})
 		return
 	}
-	list, err := s.store.PendingCommands(hostname, 5)
+	list, err := s.store.PendingCommands(s.resolveAgentHost(hostname), 5)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]string{"result": "error：" + err.Error()})
 		return
@@ -96,7 +96,7 @@ func (s *Server) handleAgentCommandResult(w http.ResponseWriter, r *http.Request
 		writeJSON(w, map[string]string{"result": "error：token is invalidate"})
 		return
 	}
-	if err := s.store.FinishCommands(body.Hostname, body.Results); err != nil {
+	if err := s.store.FinishCommands(s.resolveAgentHost(body.Hostname), body.Results); err != nil {
 		writeJSON(w, map[string]string{"result": "error：" + err.Error()})
 		return
 	}

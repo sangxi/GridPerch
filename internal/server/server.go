@@ -187,6 +187,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/hosts/{host}/agent-config", s.auth(s.adminOrOperator(http.HandlerFunc(s.handleHostAgentConfig))))
 	mux.Handle("PUT /api/hosts/{host}/agent-config", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleHostAgentConfig)))))
 	mux.Handle("DELETE /api/hosts/{host}/agent-config", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleHostAgentConfig)))))
+	// 主机改名 / 删除：会级联改动历史数据，只开放给管理员
+	mux.Handle("PUT /api/hosts/{host}/rename", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleHostRename)))))
+	mux.Handle("DELETE /api/hosts/{host}", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleHostDelete)))))
 
 	// Webhook 机器人：地址本身即凭据，只开放给管理员
 	mux.Handle("GET /api/webhooks", s.auth(s.admin(http.HandlerFunc(s.handleWebhooks))))
@@ -699,6 +702,9 @@ func (s *Server) handleMinTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"result": "error：token is invalidate"})
 		return
 	}
+	// 主机改名后采集端仍以旧名上报，这里统一归位到当前主机名，避免旧名“复活”成新主机
+	report.Hostname = s.resolveAgentHost(report.Hostname)
+	report.SystemInfo.Hostname = s.resolveAgentHost(report.SystemInfo.Hostname)
 	// 授权配额：只对「新主机」计数，已在册主机继续上报不受影响，
 	// 避免换授权/到期时存量主机集体掉线。
 	st := s.licenseStatus()

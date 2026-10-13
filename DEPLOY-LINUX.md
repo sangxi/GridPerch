@@ -62,7 +62,7 @@ cd /opt/opsmonitor && ./opsmonitor-server -version
 ```
 
 ```
-opsmonitor-server v1.1.4，控制台账号：admin / opsmonitor（首次启动后请在启动参数中修改）
+opsmonitor-server v1.1.5，控制台账号：admin / opsmonitor（首次启动后请在启动参数中修改）
 授权验签公钥指纹：278D-4852-7191-E7CE（应与授权中心启动日志一致）
 服务端启动：监听 :9999，数据库 /opt/opsmonitor/data/opsmonitor.db，数据保留 30 天
 控制台访问地址：http://<本机IP>:9999
@@ -206,7 +206,7 @@ curl -fsSL "http://<监控端IP>:9999/install.sh?wgToken=<MD5>&name=web-01" | su
 
 ⚠️ **前提**：平台里必须已发布过 `linux/amd64` 的采集端。当前授权系统的下载接口返回 401，
 自动拉取发布物不生效，需要**手工上传**：控制台「系统 → 在线升级」→ 上传
-`dist/opsmonitor-agent-linux-amd64` → 版本号填 **1.1.4**（必须与二进制内嵌版本一致）→
+`dist/opsmonitor-agent-linux-amd64` → 版本号填 **1.1.5**（必须与二进制内嵌版本一致）→
 选 `linux` / `amd64` → 设为该平台下发版本。
 
 ### 7.2 手动安装（不依赖平台下载）

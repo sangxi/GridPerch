@@ -144,7 +144,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 	if hostname == "" {
 		hostname = strings.TrimSpace(r.Header.Get("X-Opsm-Hostname"))
 	}
-	writeJSON(w, s.agentConfigFor(hostname))
+	writeJSON(w, s.agentConfigFor(s.resolveAgentHost(hostname)))
 }
 
 /* ---------------- 采集端配置的控制台接口 ---------------- */
