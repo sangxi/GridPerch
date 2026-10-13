@@ -88,14 +88,22 @@ log "芯片：$CHIP  ->  $GOARCH"
 TMP_BIN="$(mktemp /tmp/opsmonitor.XXXXXX)"
 trap 'rm -f "$TMP_BIN"' EXIT
 
+# 候选路径。产物（bin/、dist/、release/）都在 .gitignore 里，仓库不放二进制，
+# 所以从 GitHub 克隆下来的目录天然没有这个文件——见下方报错文案。
+# release/ 下按「版本号倒序」扫，不能写死 VERSION：脚本自带的默认版本号只是占位符。
+REPO_ROOT="$SCRIPT_DIR/../.."
 candidates=(
   "$SRC_FILE"
   "$SCRIPT_DIR/opsmonitor-server-darwin-$GOARCH"
   "$SCRIPT_DIR/../opsmonitor-server-darwin-$GOARCH"
-  "$SCRIPT_DIR/../../opsmonitor-server-darwin-$GOARCH"
-  "$SCRIPT_DIR/../../dist/opsmonitor-server-darwin-$GOARCH"
-  "$SCRIPT_DIR/../../release/$VERSION/opsmonitor-server-darwin-$GOARCH"
+  "$REPO_ROOT/opsmonitor-server-darwin-$GOARCH"
+  "$REPO_ROOT/dist/opsmonitor-server-darwin-$GOARCH"
 )
+if [ -d "$REPO_ROOT/release" ]; then
+  for d in $(ls -1 "$REPO_ROOT/release" 2>/dev/null | sort -Vr); do
+    candidates+=("$REPO_ROOT/release/$d/opsmonitor-server-darwin-$GOARCH")
+  done
+fi
 found=""
 if [ -n "$SRC_FILE" ]; then
   [ -f "$SRC_FILE" ] || die "找不到指定的文件：$SRC_FILE"
@@ -106,7 +114,12 @@ else
   done
 fi
 [ -n "$found" ] || die "没找到 opsmonitor-server-darwin-$GOARCH。
-请把该文件与本脚本放同一目录，或用 -f <路径> 指定。"
+
+  原因：本仓库**不存放二进制**（bin/、dist/、release/ 均在 .gitignore 里），
+        所以从 GitHub 克隆下来的目录里本来就没有这个文件 —— 不是下载失败。
+
+  取法：从打包机/发布包把 opsmonitor-server-darwin-$GOARCH 拷到本脚本同一目录，
+        或用 -f 指定路径：  sudo ./install.sh -f /tmp/opsmonitor-server-darwin-$GOARCH"
 log "使用二进制：$found"
 cp -f "$found" "$TMP_BIN"
 
@@ -116,6 +129,13 @@ case "$MAGIC" in
   cffaedfe|cefaedfe|cafebabe) : ;;
   *) die "这个文件不是 macOS Mach-O 可执行文件，请确认用的是 opsmonitor-server-darwin-$GOARCH" ;;
 esac
+
+# 版本号以二进制自报的为准（老版本没有 -version 时会直接报错退出，不会把服务跑起来）
+chmod +x "$TMP_BIN"
+if _out="$(timeout 5 "$TMP_BIN" -version 2>/dev/null | head -n1)"; then
+  _v="$(printf '%s' "$_out" | awk '{print $2}')"
+  case "$_v" in [0-9]*.[0-9]*) VERSION="$_v" ;; esac
+fi
 
 # ---------------------------------------------------------------- 安装
 log "创建目录"

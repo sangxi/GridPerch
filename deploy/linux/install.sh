@@ -119,14 +119,23 @@ TMP_BIN="$(mktemp)"
 cleanup() { rm -f "$TMP_BIN"; }
 trap cleanup EXIT
 
+# 候选路径。注意：产物（bin/、dist/、release/）都在 .gitignore 里，仓库不放二进制，
+# 所以从 GitHub 克隆下来的目录天然没有这个文件——这不是下载失败，见下方报错文案。
+# release/ 下按「版本号倒序」扫，不能写死 VERSION：脚本自带的默认版本号是占位符，
+# 一旦落后于实际产物（例如脚本写 1.1.0、产物是 1.1.5）就会白找一圈。
+REPO_ROOT="$SCRIPT_DIR/../.."
 candidates=(
   "$SRC_FILE"
   "$SCRIPT_DIR/opsmonitor-server-linux-$GOARCH"
   "$SCRIPT_DIR/../opsmonitor-server-linux-$GOARCH"
-  "$SCRIPT_DIR/../../opsmonitor-server-linux-$GOARCH"
-  "$SCRIPT_DIR/../../dist/opsmonitor-server-linux-$GOARCH"
-  "$SCRIPT_DIR/../../release/$VERSION/opsmonitor-server-linux-$GOARCH"
+  "$REPO_ROOT/opsmonitor-server-linux-$GOARCH"
+  "$REPO_ROOT/dist/opsmonitor-server-linux-$GOARCH"
 )
+if [ -d "$REPO_ROOT/release" ]; then
+  for d in $(ls -1 "$REPO_ROOT/release" 2>/dev/null | sort -Vr); do
+    candidates+=("$REPO_ROOT/release/$d/opsmonitor-server-linux-$GOARCH")
+  done
+fi
 
 if [ -n "$SRC_FILE" ]; then
   [ -f "$SRC_FILE" ] || die "找不到指定的文件：$SRC_FILE"
@@ -146,7 +155,14 @@ else
     [ -n "$c" ] && [ -f "$c" ] && { found="$c"; break; }
   done
   [ -n "$found" ] || die "没找到 opsmonitor-server-linux-$GOARCH。
-请把该文件与本脚本放同一目录，或用 -f <路径> / -u <下载地址> 指定。"
+
+  原因：本仓库**不存放二进制**（bin/、dist/、release/ 均在 .gitignore 里），
+        所以从 GitHub 克隆下来的目录里本来就没有这个文件 —— 不是下载失败。
+
+  三种取法，任选其一：
+    1) 从打包机/发布包把 opsmonitor-server-linux-$GOARCH 拷到本脚本同一目录，重新执行；
+    2) 指定本地路径：  sudo ./install.sh -f /tmp/opsmonitor-server-linux-$GOARCH
+    3) 指定下载地址：  sudo ./install.sh -u http://<文件服务器>/opsmonitor-server-linux-$GOARCH"
   log "使用本地二进制：$found"
   cp -f "$found" "$TMP_BIN"
 fi
@@ -154,6 +170,14 @@ fi
 # 校验是不是真正的 Linux 二进制（防止误拷了 Windows/macOS 的产物）
 if [ "$(head -c 4 "$TMP_BIN" | od -An -tx1 | tr -d ' \n')" != "7f454c46" ]; then
   die "这个文件不是 Linux ELF 可执行文件，请确认下载的是 opsmonitor-server-linux-$GOARCH"
+fi
+
+# 版本号以二进制自报的为准，别信脚本里的默认值（那个只是占位符）。
+# 老版本二进制没有 -version 参数时由 flag 包直接报错退出，不会把服务跑起来。
+chmod +x "$TMP_BIN"
+if _out="$(timeout 5 "$TMP_BIN" -version 2>/dev/null | head -n1)"; then
+  _v="$(printf '%s' "$_out" | awk '{print $2}')"
+  case "$_v" in [0-9]*.[0-9]*) VERSION="$_v" ;; esac
 fi
 
 # ---------------------------------------------------------------- 安装
