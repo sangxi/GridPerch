@@ -8,7 +8,7 @@
 #
 # 用法：
 #   ./release.sh                                  # 构建全部平台并上传到授权系统 http://127.0.0.1:8090
-#   ./release.sh -s https://1999091.xyz           # 指定授权系统地址
+#   ./release.sh -s https://你的授权中心地址         # 指定授权系统地址（默认已内置，不对外展示）
 #   ./release.sh -u admin -p 你的后台密码          # 指定授权系统后台账号（默认 admin/opsmonitor）
 #   ./release.sh -v 1.0.1 -n "修复磁盘统计偏差"    # 指定版本号与更新说明
 #   ./release.sh --only linux/amd64,windows/amd64 # 只处理部分平台
