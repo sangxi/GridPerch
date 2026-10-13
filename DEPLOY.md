@@ -75,7 +75,7 @@
 > 若希望只替换文件、不自动重启（例如想自己挑时间重启），把 `-hub-restart` 设成 `off`
 > （`OPSM_HUB_RESTART=off`）：就位后不重启，等人工重启再生效。
 
-> **附：1.1.1 / 1.1.2 / 1.1.3 能力演进**
+> **附：1.1.1 / 1.1.2 / 1.1.3 / 1.1.4 能力演进**
 > - **1.1.1**：采集端发布物改为**按平台逐个补拉**（覆盖 linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64 五个平台），修复「Linux 服务端装不上 Windows 采集端 / 目标主机报『授权系统尚未发布该平台』」（授权系统 `/api/v1/check` 按请求 os/arch 返回，所以必须按平台逐个查）；其它平台的补拉改到**后台执行**，避免「立即检查更新」被网关超时（HTTP 524）拖死，也不会并发重复下载。授权端下载接口只认 `?token=` 查询串鉴权（平台下载时自动带令牌）。新增启动告警：若 `-public-url` / `OPSM_PUBLIC_URL` 配成了回环/内网/CGNAT 地址，启动日志会打警告——云主机（网卡只有内网 IP）上生成的采集端安装命令会写死这个地址，目标主机必然「无法连接平台」。
 > - **1.1.2**：控制台**登录失败会明确提示原因**（「用户名或密码错误」「账号已停用」）；内嵌前端资源与页面统一 `Cache-Control: no-cache`，升级二进制后浏览器/反向代理不会再用旧前端（建议升级后 Ctrl+F5 一次）。
 > - **1.1.3**：平台自升级后**自动重启生效**（见上方）；新增 `-hub-restart`；启动时端口被占用会**自动重试最多 20 秒**。
@@ -523,8 +523,8 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://192.168.40.111:999
 **方式二：一键发布脚本**
 
 ```bash
-./release.sh-s https://授权系统地址
-./release.sh -v 1.1.3 -n "新增 CPU 温度与 SMART 采集"
+./release.sh -s https://你的授权中心地址
+./release.sh -v 1.1.4 -n "新增 CPU 温度与 SMART 采集"
 ./release.sh --only linux/amd64,linux/arm64
 ```
 
