@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/sangxi/OpsMonitor/internal/config"
 	"github.com/sangxi/OpsMonitor/internal/license"
@@ -411,7 +412,14 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, installSH, base, tokenHash, name)
 }
 
-// sanitizeAgentName 只保留主机名安全字符，避免脚本注入。
+// sanitizeAgentName 清洗主机名，避免把 shell / PowerShell 元字符带进安装脚本。
+//
+// 允许字符：
+//   - ASCII 字母数字与 - _ .
+//   - 任意语言的字母、数字与组合符号（中文 / 日文 / 俄文等都算 Letter）
+//
+// 其余字符（引号、$、反引号、分号、换行、管道、全角标点等）一律替换为 '-'。
+// 这样中文主机名可以正常使用，同时仍然杜绝脚本注入。
 func sanitizeAgentName(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -420,15 +428,18 @@ func sanitizeAgentName(v string) string {
 	var b strings.Builder
 	for _, c := range v {
 		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_', c == '.':
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '-', c == '_', c == '.',
+			unicode.IsLetter(c), unicode.IsDigit(c), unicode.IsMark(c):
 			b.WriteRune(c)
 		default:
 			b.WriteRune('-')
 		}
 	}
 	out := b.String()
-	if len(out) > 64 {
-		out = out[:64]
+	// 按「字符」而非「字节」截断，否则会把多字节汉字劈成半个、显示成乱码
+	if rs := []rune(out); len(rs) > 64 {
+		out = string(rs[:64])
 	}
 	return out
 }
