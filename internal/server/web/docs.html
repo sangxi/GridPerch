@@ -628,7 +628,7 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
           <tr><td><code>-retention</code></td><td><code>OPSM_RETENTION</code></td><td><code>30</code></td><td>历史数据保留天数，0 表示永久</td></tr>
           <tr><td><code>-purge</code></td><td><code>OPSM_PURGE_INTERVAL</code></td><td><code>3600</code></td><td>历史清理间隔（秒）</td></tr>
           <tr><td><code>-offline</code></td><td><code>OPSM_OFFLINE_SEC</code></td><td><code>180</code></td><td>超过该秒数未上报判定离线</td></tr>
-          <tr><td><code>-public-url</code></td><td><code>OPSM_PUBLIC_URL</code></td><td>自动反推</td><td>对外访问地址，反向代理下务必显式指定</td></tr>
+          <tr><td><code>-public-url</code></td><td><code>OPSM_PUBLIC_URL</code></td><td>自动反推</td><td>对外访问地址，反向代理下务必显式指定；若配成回环 / 内网 / CGNAT 地址，启动日志会警告（避免生成的安装命令写死内网地址导致目标主机连不上）</td></tr>
           <tr><td><code>-cpu-alert</code></td><td><code>OPSM_CPU_ALERT</code></td><td><code>90</code></td><td>CPU 告警阈值（%）</td></tr>
           <tr><td><code>-mem-alert</code></td><td><code>OPSM_MEM_ALERT</code></td><td><code>90</code></td><td>内存告警阈值（%）</td></tr>
           <tr><td><code>-disk-alert</code></td><td><code>OPSM_DISK_ALERT</code></td><td><code>90</code></td><td>磁盘告警阈值（%）</td></tr>
@@ -639,22 +639,37 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
           <tr><td><code>-read-conns</code></td><td><code>OPSM_READ_CONNS</code></td><td><code>8</code></td><td>SQLite 读连接池大小</td></tr>
           <tr><td><code>-write-queue</code></td><td><code>OPSM_WRITE_QUEUE</code></td><td><code>8192</code></td><td>上报写队列容量</td></tr>
           <tr><td><code>-release-dir</code></td><td><code>OPSM_RELEASE_DIR</code></td><td>数据库同级 <code>releases/</code></td><td>采集端发布包目录</td></tr>
-          <tr><td><code>-hub</code></td><td><code>OPSM_HUB</code></td><td><code>https://1999091.xyz</code></td><td>授权中心地址，留空则完全离线</td></tr>
+          <tr><td><code>-hub</code></td><td><code>OPSM_HUB</code></td><td>默认内置（地址已内置，无需填写）</td><td>授权中心地址；<code>-hub ""</code> 表示完全离线</td></tr>
           <tr><td><code>-hub-token</code></td><td><code>OPSM_HUB_TOKEN</code></td><td>内置</td><td>授权中心拉取令牌。<strong>默认使用程序内置令牌，无需配置</strong>；仅当改用自建授权中心时才需覆盖。令牌不以明文出现在源码、二进制、界面与日志中</td></tr>
           <tr><td><code>-hub-interval</code></td><td><code>OPSM_HUB_INTERVAL_MIN</code></td><td><code>5</code></td><td>代拉间隔（分钟）</td></tr>
           <tr><td><code>-hub-auto-update</code></td><td><code>OPSM_HUB_AUTO_UPDATE</code></td><td><code>download</code></td><td>服务端自更新：<code>download</code> 自动就位 / <code>check</code> 只提示 / <code>off</code> 关闭</td></tr>
           <tr><td><code>-hub-ua</code></td><td><code>OPSM_HUB_UA</code></td><td>空</td><td>访问授权中心的 User-Agent，被网关按 UA 拦截时可覆盖</td></tr>
+          <tr><td><code>-hub-restart</code></td><td><code>OPSM_HUB_RESTART</code></td><td><code>auto</code></td><td>平台升级换完二进制后的生效方式：<code>auto</code>（默认）自动重启使新版本生效；<code>off</code> 只替换文件不重启，需人工重启</td></tr>
+          <tr><td><code>-license-secret</code></td><td><code>OPSM_LICENSE_SECRET</code></td><td>空</td><td>授权签名密钥；旧格式（<code>WGC-</code> / <code>OPSM1-</code> / <code>OPSM-</code>）需与服务端、授权中心一致，新格式（<code>OPSM2-</code>）改用内置公钥，无需此值</td></tr>
+          <tr><td><code>-license</code></td><td><code>OPSM_LICENSE_KEY</code></td><td>空</td><td>授权码（机器码对应的许可证），启动时导入并校验</td></tr>
+          <tr><td><code>-license-machine</code></td><td><code>OPSM_LICENSE_MACHINE</code></td><td>自动</td><td>本机机器码，离线或特殊场景可显式指定</td></tr>
+          <tr><td><code>-free-hosts</code></td><td><code>OPSM_LICENSE_FREE_HOSTS</code></td><td><code>10</code></td><td>免费额度内可监控的主机数</td></tr>
+          <tr><td><code>-free-users</code></td><td><code>OPSM_LICENSE_FREE_USERS</code></td><td><code>3</code></td><td>免费额度内可创建的控制台用户数</td></tr>
         </tbody>
       </table>
 
       <h3>授权中心通信</h3>
-      <p>平台默认已接入授权中心 <code>https://1999091.xyz</code>，每次同步做四件事：</p>
+      <p>平台默认已接入内置授权中心（地址已内置在程序里，无需手动填写），每次同步做四件事：</p>
       <ol>
         <li>拉取并校验导入授权码（授权中心签发后最长一个间隔内生效）</li>
         <li>下载各平台采集端发布物到本地 <code>releases/</code>，设为下发版本</li>
-        <li>检测到服务端自身有新版本时自动下载、校验 SHA256、替换二进制（就位后等重启生效）</li>
+        <li>检测到服务端自身有新版本时自动下载、校验 SHA256、替换二进制；就位后按 <code>-hub-restart</code> 决定是否自动重启生效（默认自动）</li>
         <li>把采集端升级结果回执授权中心</li>
       </ol>
+
+      <div class="callout">
+        <b>采集端发布物按平台逐个补拉（1.1.1 起）</b>
+        授权系统按请求的 os/arch 返回对应发布物，因此服务端会对
+        <code>linux/amd64</code>、<code>linux/arm64</code>、<code>darwin/amd64</code>、<code>darwin/arm64</code>、<code>windows/amd64</code>
+        共 5 个平台<strong>逐个查询补拉</strong>，彻底修复「Linux 服务端装不上 Windows 采集端 / 提示『授权系统尚未发布该平台』」的问题。
+        除当前平台外的其它平台补拉改到<strong>后台执行</strong>，避免「立即检查更新」被网关超时（HTTP 524）拖死。
+        授权端下载接口只认 <code>?token=</code> 查询串鉴权（不认 <code>X-Opsm-Hub-Token</code> 请求头），平台下载时自动带上。
+      </div>
       <div class="callout">
         <b>采集端不直接访问授权中心</b>
         内网采集端只需要能连到监控端的 9999 端口，不需要为每台被监控主机开通任何出网策略。
@@ -666,6 +681,8 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
         程序客户端会被人机校验挡下并返回 403，页面上会明确提示这一点。
         处理方式是在网关上为 <code>/api/*</code> 路径放行，或改用不挂代理的接口子域，
         或直接加 <code>-hub ""</code> 转为完全离线模式（功能不受影响）。
+        <br><br>
+        控制台「在线升级」「授权购买」页<strong>不再展示授权中心域名</strong>，也去掉了跳转到授权站的按钮（1.1.4 起）。
       </div>
 
       <h3>采集端配置项</h3>
@@ -771,11 +788,40 @@ docker compose start opsmonitor</code></pre>
       <pre><code># Docker
 docker compose pull &amp;&amp; docker compose up -d
 
-# 二进制
+# 二进制（手工替换，务必按下面 5 步）
 sudo systemctl stop opsmonitor
 sudo cp /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.bak
 sudo cp 新版/opsmonitor-server /opt/opsmonitor/opsmonitor-server
 sudo systemctl start opsmonitor</code></pre>
+
+      <h3>手工替换二进制升级步骤</h3>
+      <ol class="steps">
+        <li><strong>备份旧二进制</strong><p><code>sudo cp /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.bak</code></p></li>
+        <li>
+          <strong>清理待生效标记文件</strong>
+          <p><code>sudo rm -f /opt/opsmonitor/.opsmonitor-server.pending</code></p>
+          <p>不清掉的话，启动时程序会认为「上次升级尚未生效」而回滚到 <code>.bak</code>，表现为「换了二进制又变回旧版」。这一步最关键。</p>
+        </li>
+        <li><strong>替换二进制并赋权</strong><p><code>sudo cp 新版/opsmonitor-server /opt/opsmonitor/opsmonitor-server &amp;&amp; sudo chmod +x /opt/opsmonitor/opsmonitor-server</code></p></li>
+        <li><strong>重启服务</strong><p><code>sudo systemctl restart opsmonitor</code></p></li>
+        <li><strong>校验版本</strong><p><code>/opt/opsmonitor/opsmonitor-server -version</code></p></li>
+      </ol>
+      <p>前端（HTML / JS / CSS）通过 <code>//go:embed all:web</code> 编译进同一个二进制，因此升级<strong>只需替换这一个二进制文件</strong>，无需另行部署静态资源。</p>
+
+      <h3>平台自升级与自动重启（1.1.3 起）</h3>
+      <p>服务端自身在平台升级换完二进制后会<strong>自动重启</strong>使新版本生效，不再需要人工 <code>systemctl restart</code>：</p>
+      <ul>
+        <li><strong>systemd</strong>（unit 用 <code>Restart=always</code>）：进程退出后由 systemd 用新版本拉起</li>
+        <li><strong>Docker Compose</strong>（<code>restart: unless-stopped</code>）：容器 PID 1 退出后由 compose 重启容器</li>
+        <li><strong>手工 nohup 启动</strong>：自行拉起同参数的新进程后退出；端口被占用会重试，最多 20 秒</li>
+        <li><strong>新版本启动失败</strong>：下次启动时自动回滚到 <code>.bak</code></li>
+      </ul>
+      <p>行为由 <code>-hub-restart</code> 控制：<code>auto</code>（默认）自动重启生效；<code>off</code> 只替换文件不重启，需人工重启。启动时端口被占用会<strong>自动重试最多 20 秒</strong>，覆盖「新进程先起、旧进程后退」的交接窗口。</p>
+      <div class="callout ok">
+        <b>升级后清一次前端缓存（1.1.2 起）</b>
+        内嵌前端资源统一带 <code>Cache-Control: no-cache</code>，升级后浏览器与反向代理不会再用旧前端。
+        若页面表现异常，仍建议 Ctrl+F5 强制刷新一次。
+      </div>
 
       <h3>采集端自动升级</h3>
       <p>
@@ -833,11 +879,20 @@ sudo systemctl start opsmonitor</code></pre>
         <tbody>
           <tr><td>同步返回 401 提示<code>拉取令牌不正确</code></td><td>授权中心当前配置的令牌与平台发出的不一致</td><td>授权中心的令牌已改为编译内置，核对两侧内置值是否一致；或临时用 <code>-hub-token</code> 显式覆盖</td></tr>
           <tr><td>同步返回 403 + <code>Just a moment...</code></td><td>CDN 人机校验拦下程序客户端</td><td>在网关上为 <code>/api/*</code> 配置跳过规则；或改用不挂代理的接口子域；或 <code>-hub ""</code> 转离线</td></tr>
-          <tr><td>同步返回 HTML 而非 JSON</td><td><code>-hub</code> 指向了网页</td><td>地址应为 <code>https://1999091.xyz</code>，不要带接口路径</td></tr>
+          <tr><td>同步返回 HTML 而非 JSON</td><td><code>-hub</code> 指向了网页</td><td>地址应为默认内置的授权中心地址（已内置程序，无需手动填写），不要带接口路径</td></tr>
           <tr><td>一直显示「尚未签发授权」</td><td>授权中心还没给本机机器码签发</td><td>拿控制台显示的机器码去授权中心后台签发</td></tr>
           <tr><td>授权导入后校验失败（提示签名校验失败）</td><td>公钥抄错，或旧格式密钥不一致</td><td>新格式（<code>OPSM2-</code>）看启动日志的「授权验签公钥指纹」是否与授权中心一致，不一致就是公钥抄错了；旧格式（<code>WGC-</code>/<code>OPSM1-</code>/<code>OPSM-</code>）才需要两端 <code>-license-secret</code> 一致</td></tr>
           <tr><td>日志反复刷「同步失败」</td><td>授权中心不可达</td><td>已自动退避（最长 30 分钟一次），无需处理</td></tr>
           <tr><td>发现新版本但不自动升级</td><td><code>-hub-auto-update</code> 为 check/off</td><td>改回 <code>download</code>，或手动点「拉取并升级」</td></tr>
+        </tbody>
+      </table>
+
+      <h3>登录与控制台类</h3>
+      <table>
+        <thead><tr><th>现象</th><th>原因</th><th>处理</th></tr></thead>
+        <tbody>
+          <tr><td>登录后明确提示「用户名或密码错误」</td><td>账号或密码不正确（1.1.2 起给出明确原因，不再「点了没反应」）</td><td>核对账号密码；注意控制台账号为首次启动时的 <code>-user</code>/<code>-pass</code>（环境变量 <code>OPSM_ADMIN_USER</code>/<code>OPSM_ADMIN_PASS</code>），仅首次启动生效</td></tr>
+          <tr><td>登录后明确提示「账号已停用」</td><td>该控制台用户被停用</td><td>用其他管理员在「系统设置 → 用户管理」重新启用</td></tr>
         </tbody>
       </table>
 
@@ -847,7 +902,7 @@ sudo systemctl start opsmonitor</code></pre>
         <li>看采集端日志：Linux <code>journalctl -u opsmonitor-agent -n 200</code>，
             Windows <code>Get-ScheduledTaskInfo -TaskName opsmonitor-agent</code></li>
         <li>在目标主机自测连通性：<code>curl http://服务端IP:9999/</code></li>
-        <li>自测授权中心：<code>curl -o /dev/null -w '%{http_code}' "https://1999091.xyz/api/v1/check?token=xxx"</code>，期望 200</li>
+        <li>自测授权中心：<code>curl -o /dev/null -w '%{http_code}' "https://&lt;你的授权中心地址&gt;/api/v1/check?token=xxx"</code>，期望 200</li>
         <li>看控制台「操作审计」，确认配置改动是否生效</li>
         <li>看控制台「系统设置 → 机器人推送 / 邮件」，确认告警通道是否可用（可点测试）</li>
       </ol>

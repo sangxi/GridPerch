@@ -62,7 +62,7 @@ cd /opt/opsmonitor && ./opsmonitor-server -version
 ```
 
 ```
-opsmonitor-server v1.1.0，控制台账号：admin / opsmonitor（首次启动后请在启动参数中修改）
+opsmonitor-server v1.1.4，控制台账号：admin / opsmonitor（首次启动后请在启动参数中修改）
 授权验签公钥指纹：278D-4852-7191-E7CE（应与授权中心启动日志一致）
 服务端启动：监听 :9999，数据库 /opt/opsmonitor/data/opsmonitor.db，数据保留 30 天
 控制台访问地址：http://<本机IP>:9999
@@ -184,7 +184,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9999/api/health   # �
   `-license-machine <固定值>` 把机器码钉死（加进 `opsmonitor.env`：`OPSM_LICENSE_MACHINE=xxx`）。
 - 监控端**只验签、不签发**。二进制里只有公钥，反编译也造不出授权码。
 - 完全离线（不与授权中心通信）：用启动参数 `-hub=`（等号后留空）。**注意不能用环境变量
-  `OPSM_HUB=` 来关**——`config.env()` 对空串会回落到默认地址 `https://1999091.xyz`。
+  `OPSM_HUB=` 来关**——`config.env()` 对空串会回落到默认授权中心地址（程序内置的授权站）。
   例如把单元文件的 `ExecStart=` 改成：
   `/opt/opsmonitor/opsmonitor-server -hub=`（此时授权码只能手动导入）。
 
@@ -206,7 +206,7 @@ curl -fsSL "http://<监控端IP>:9999/install.sh?wgToken=<MD5>&name=web-01" | su
 
 ⚠️ **前提**：平台里必须已发布过 `linux/amd64` 的采集端。当前授权系统的下载接口返回 401，
 自动拉取发布物不生效，需要**手工上传**：控制台「系统 → 在线升级」→ 上传
-`dist/opsmonitor-agent-linux-amd64` → 版本号填 **1.1.0**（必须与二进制内嵌版本一致）→
+`dist/opsmonitor-agent-linux-amd64` → 版本号填 **1.1.4**（必须与二进制内嵌版本一致）→
 选 `linux` / `amd64` → 设为该平台下发版本。
 
 ### 7.2 手动安装（不依赖平台下载）
@@ -286,6 +286,15 @@ sudo tar czf /root/opsmonitor-$(date +%F).tar.gz -C /opt/opsmonitor data
 sudo systemctl start opsmonitor
 ```
 
+> **自 1.1.3 起，自动升级会自行重启生效**，无需手工重启。手工替换二进制升级时务必先清掉待确认标记，否则会回滚成旧版：
+> 1. `sudo cp -a /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.bak`
+> 2. **`sudo rm -f /opt/opsmonitor/.opsmonitor-server.pending`**（不清会回滚到 `.bak`，表现「换了又变回旧版」）
+> 3. `sudo mv /tmp/opsmonitor-server.new /opt/opsmonitor/opsmonitor-server && sudo chmod +x /opt/opsmonitor/opsmonitor-server`
+> 4. `sudo systemctl restart opsmonitor`
+> 5. `/opt/opsmonitor/opsmonitor-server -version` 校验
+>
+> 自检就位：`.opsmonitor-server.pending` 写的是「已就位待确认的新版本号」，新进程启动发现与当前版本一致就清掉并记「已升级生效」，不一致则回滚 `.bak`。前端编译进二进制，**只换这一个文件即可**。可用 `-hub-restart off`（`OPSM_HUB_RESTART=off`）关闭自动重启、改为人工重启。
+
 ---
 
 ## 10. 排障对照表
@@ -297,7 +306,7 @@ sudo systemctl start opsmonitor
 | 启动日志「授权验签公钥指纹」不是 `278D-4852-7191-E7CE` | 二进制不是最新源码构建的 → 重新取产物 |
 | 授权码导入报「签名校验失败」 | ①公钥指纹核对；②确认授权码是从授权中心页面**完整**复制（中途截断/带省略号会直接验签失败） |
 | 授权码导入成功但仍显示社区版 | 「授权购买」页点「立即从授权系统拉取授权」；确认机器码与授权中心签发时绑定的机器码一致 |
-| 启动日志「授权系统同步失败 401」 | 监控端到 `https://1999091.xyz` 的网络/DNS 不通，或授权端令牌问题。不影响控制台与采集功能；离线也能跑 |
+| 启动日志「授权系统同步失败 401」 | 监控端到默认授权中心的网络/DNS 不通，或授权端令牌问题。不影响控制台与采集功能；离线也能跑 |
 | 采集端装不上 | 平台是否已发布该「系统 + 架构」的采集端版本（见 §7.1），以及目标主机能否访问监控端 9999 |
 | 主机一直「离线」 | 目标主机到监控端 9999 的连通性；`-token` 是否一致；`journalctl -u opsmonitor-agent` |
 | SQLite 写入告警 / 上报延迟 | 调大 `OPSM_READ_CONNS`、`OPSM_WRITE_QUEUE`（见 §8）；确认 `data/` 所在磁盘不是慢盘、有足够空间 |

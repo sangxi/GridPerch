@@ -3,6 +3,10 @@
 
 const COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed'];
 const REFRESH_SEC = 30;
+// 是否在控制台展示「授权系统地址」及跳转授权站的链接。
+// 授权站遭受 DDoS 期间对外不暴露其域名，故默认关闭；
+// 需要排障时把这里改成 true 重新构建即可（其余功能不受影响）。
+const SHOW_HUB_URL = false;
 
 /* ---------------- 导航结构（左侧模块栏） ---------------- */
 const NAV_GROUPS = [
@@ -1327,7 +1331,7 @@ async function renderUpgrade() {
       <div class="alert-box info">平台未配置授权系统地址（<code>-hub</code> 留空），因此不会与授权中心通信。
         采集端安装与升级改走<strong>本地上传发布物</strong>的方式，功能不受影响，只是不再自动获取授权与更新。</div>
       <div class="kv" style="margin-top:12px">
-        <div><span class="k">启用方式</span><span class="mono">去掉 -hub 参数，或指定为 https://1999091.xyz</span></div>
+        <div><span class="k">启用方式</span><span class="mono">去掉 -hub 参数即可（地址已内置，不在界面显示）</span></div>
         <div><span class="k">拉取令牌</span><span class="mono">已内置，无需配置；改用自建授权中心时才需 -hub-token</span></div>
         <div><span class="k">拉取间隔</span><span class="mono">-hub-interval 5（分钟）</span></div>
         <div><span class="k">自动更新</span><span class="mono">-hub-auto-update download（默认）</span></div>
@@ -1364,7 +1368,7 @@ async function renderUpgrade() {
 
   html += panel('授权系统连接', `<div class="panel-body">
     <div class="kv">
-      <div><span class="k">授权系统地址</span><span class="mono">${esc(hub.url || '')}</span></div>
+      ${SHOW_HUB_URL ? `<div><span class="k">授权系统地址</span><span class="mono">${esc(hub.url || '')}</span></div>` : ''}
       <div><span class="k">本机机器码</span><span class="mono">${esc(data.machine || hub.machine || '')}</span></div>
       <div><span class="k">拉取间隔</span>${hub.intervalSec ? Math.round(hub.intervalSec / 60) + ' 分钟' : '—'}</div>
       <div><span class="k">拉取令牌来源</span>${esc(tokenSrc)}</div>
@@ -1376,11 +1380,11 @@ async function renderUpgrade() {
   if (hub.lastError) {
     html += panel('同步异常', `<div class="panel-body"><div class="alert-box warn">${esc(hub.lastError)}</div>
       <div class="kv" style="margin-top:10px">
-        <div><span class="k">授权系统</span><span class="mono">${esc(hub.url || '')}</span></div>
+        ${SHOW_HUB_URL ? `<div><span class="k">授权系统</span><span class="mono">${esc(hub.url || '')}</span></div>` : ''}
         <div><span class="k">连续失败</span>${hub.serverFail || 0} 次</div>
         ${hub.nextRetrySec ? `<div><span class="k">已退避</span>本轮后再等待 ${Math.ceil(hub.nextRetrySec / 60)} 分钟重试</div>` : ''}
       </div>
-      <div class="seg-note" style="margin-top:10px">请检查平台能否访问 <code>${esc(hub.url || '')}</code>，
+      <div class="seg-note" style="margin-top:10px">请检查平台能否访问授权中心${SHOW_HUB_URL ? `（<code>${esc(hub.url || '')}</code>）` : ''}，
         以及授权中心侧配置的令牌是否与本机一致（令牌内容不会在任何界面或日志中显示）。
         失败会按 1→2→4→8→… 分钟自动退避，最长 30 分钟一次；授权端恢复后自动回到常规间隔。</div>
       <div class="row-acts" style="margin-top:10px"><button class="btn" id="upRetry">立即重试同步</button></div></div>`);
@@ -1487,7 +1491,7 @@ function renderUpgradeOfflineActions() {
   const btn = $('#upCheck');
   if (!btn) return;
   btn.onclick = () => {
-    toast('当前为离线模式，如需自动同步请去掉 -hub 参数或指定为 https://1999091.xyz 后重启', true);
+    toast('当前为离线模式，如需自动同步请去掉 -hub 参数后重启（地址已内置，不在界面显示）', true);
   };
 }
 
@@ -1522,8 +1526,8 @@ async function renderLicenseBuy() {
       <div class="alert-box info">当前为完全离线模式（<code>-hub</code> 留空），平台不会与授权中心通信。
         授权码仍可在本页下方<strong>手动粘贴导入</strong>，功能与在线模式一致。</div>
       <div class="kv" style="margin-top:12px">
-        <div><span class="k">启用在线授权</span><span class="mono">去掉 -hub 参数（默认即 https://1999091.xyz）</span></div>
-        <div><span class="k">或显式指定</span><span class="mono">-hub https://1999091.xyz</span></div>
+        <div><span class="k">启用在线授权</span><span class="mono">去掉 -hub 参数即可（地址已内置）</span></div>
+        <div><span class="k">或显式指定</span><span class="mono">-hub 你的授权中心地址</span></div>
         <div><span class="k">拉取令牌</span><span class="mono">已内置，无需配置（界面与日志均不回显）</span></div>
       </div>
     </div>`);
@@ -1531,7 +1535,7 @@ async function renderLicenseBuy() {
     const stateCN = { active: '已获取授权', pending: '等待授权系统签发', none: '授权系统尚未收到本机申请' }[hub.licenseState] || '未同步';
     html += panel('授权系统授权同步', `<div class="panel-body">
       <div class="kv">
-        <div><span class="k">授权系统地址</span><span class="mono">${esc(hub.url || '')}</span></div>
+        ${SHOW_HUB_URL ? `<div><span class="k">授权系统地址</span><span class="mono">${esc(hub.url || '')}</span></div>` : ''}
         <div><span class="k">同步状态</span>${esc(stateCN)}</div>
         <div><span class="k">本机机器码</span><span class="mono">${esc(data.machine || '')}</span>
           <button class="btn small ghost" id="licCopyMachine">复制</button></div>
@@ -1558,15 +1562,14 @@ async function renderLicenseBuy() {
   });
   planRows += '</tbody></table></div>';
 
-  const hubURL = hub.url || 'https://1999091.xyz';
   html += panel('版本档位（来自授权系统）', `<div class="panel-body">
     ${planRows}
     <div class="seg-note" style="margin-top:10px">商业版价格按主机规模、部署方式与支持年限确定，不做公开标价。</div>
-    <div class="row-acts" style="margin-top:12px">
-      <a class="btn primary" href="${esc(hubURL)}/" target="_blank" rel="noopener">前往授权系统查看详情</a>
-      <a class="btn ghost" href="${esc(hubURL)}/tools.html#request" target="_blank" rel="noopener">生成授权申请单</a>
-      <a class="btn ghost" href="${esc(hubURL)}/tools.html#verify" target="_blank" rel="noopener">校验授权码</a>
-    </div>
+    ${SHOW_HUB_URL ? `<div class="row-acts" style="margin-top:12px">
+      <a class="btn primary" href="${esc(hub.url || '')}/" target="_blank" rel="noopener">前往授权系统查看详情</a>
+      <a class="btn ghost" href="${esc(hub.url || '')}/tools.html#request" target="_blank" rel="noopener">生成授权申请单</a>
+      <a class="btn ghost" href="${esc(hub.url || '')}/tools.html#verify" target="_blank" rel="noopener">校验授权码</a>
+    </div>` : ''}
   </div>`);
 
   html += panel('手动导入授权码', `<div class="panel-body">

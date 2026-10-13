@@ -83,6 +83,14 @@ Register-ScheduledTask -TaskName opsmonitor -Action $action -Trigger $trigger -P
 New-NetFirewallRule -DisplayName 'OpsMonitor' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9999
 ```
 
+## 升级
+
+升级只需替换 `C:\OpsMonitor\opsmonitor-server.exe` 这一个二进制（前端已编译在内）。替换后重启计划任务使新版本生效：
+
+```powershell
+Stop-ScheduledTask -TaskName opsmonitor; Start-ScheduledTask -TaskName opsmonitor
+```
+
 ## 排障
 
 | 现象 | 处理 |

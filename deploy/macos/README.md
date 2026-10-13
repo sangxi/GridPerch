@@ -96,6 +96,10 @@ EOF
 sudo launchctl bootstrap system /Library/LaunchDaemons/com.opsmonitor.server.plist
 ```
 
+## 升级
+
+升级只需替换 `/usr/local/opsmonitor/opsmonitor-server` 这一个二进制（前端已编译在内）。launchd 已配置 `KeepAlive`，进程退出会自动拉起；替换后执行 `sudo launchctl kickstart -k system/com.opsmonitor.server` 即可。
+
 ## 排障
 
 | 现象 | 处理 |

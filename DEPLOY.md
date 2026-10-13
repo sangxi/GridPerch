@@ -1,7 +1,7 @@
 # OpsMonitor 部署方案
 
-> 适用版本：v1.1.0+ · 项目地址：<https://github.com/sangxi/OpsMonitor>
-> 授权中心：<https://1999091.xyz>（平台默认已接入，无需手工配置）
+> 适用版本：v1.1.4+（构建时间 2026-10-13T13:01:08）· 项目地址：<https://github.com/sangxi/OpsMonitor>
+> 授权中心：默认授权中心（地址已内置在程序里，无需手工配置）
 
 本文是 OpsMonitor 从零到上线的完整部署方案，覆盖架构选型、部署拓扑、文件清单、
 容量规划、授权通信、上线检查、升级回滚与排障。控制台内置同一份教程（访问 `/docs`），
@@ -16,7 +16,7 @@
 ```
                     ┌─────────────────────────┐
                     │   授权中心（公有云）       │
-                    │ https://1999091.xyz      │
+                    │ 默认授权中心（地址已内置） │
                     │ · 授权码签发             │
                     │ · 版本发布与下发         │
                     │ · 升级统计               │
@@ -61,26 +61,37 @@
 
 | 取值 | 行为 |
 | --- | --- |
-| `download`（默认） | 自动下载并就位，重启后生效 |
-| `check` | 只在控制台提示，需手动点「拉取并升级」 |
+| `download`（默认） | 自动下载并就位，就位后**自动重启生效**（自 1.1.3 起，见下文） |
+| `check` | 只提示不下载，需手动点「拉取并升级」 |
 | `off` | 完全关闭 |
 
-> **为什么不自动重启？** 重启会影响所有在途上报与控制台会话。实际生产里
-> systemd 的 `Restart=always` 或 Docker 的 `restart: unless-stopped` 会在异常退出时
-> 自动拉起；若要立即生效，手工 `systemctl restart opsmonitor` 即可。
-> 若新版本启动失败，平台会在下次启动时检测到并自动回滚到 `.bak`。
+> **自 1.1.3 起，平台自升级后会自己重启**，换完二进制自动生效，不再需要人工 `systemctl restart`：
+> - systemd（unit 用 `Restart=always`）→ 进程退出，systemd 用新版本拉起；
+> - Docker Compose（`restart: unless-stopped`）→ 容器 PID 1 退出，compose 重启容器；
+> - 手工 `nohup` 启动 → 自行拉起同参数新进程后退出（端口被占用会自动重试，最多 20 秒）；
+> - 新版本启动失败 → 下次启动时自动回滚到 `.bak`。
+>
+> 重启交接窗口与 systemd `RestartSec`、容器重启的 TIME_WAIT 由「启动时端口被占用自动重试最多 20 秒」兜住。
+> 若希望只替换文件、不自动重启（例如想自己挑时间重启），把 `-hub-restart` 设成 `off`
+> （`OPSM_HUB_RESTART=off`）：就位后不重启，等人工重启再生效。
+
+> **附：1.1.1 / 1.1.2 / 1.1.3 能力演进**
+> - **1.1.1**：采集端发布物改为**按平台逐个补拉**（覆盖 linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64 五个平台），修复「Linux 服务端装不上 Windows 采集端 / 目标主机报『授权系统尚未发布该平台』」（授权系统 `/api/v1/check` 按请求 os/arch 返回，所以必须按平台逐个查）；其它平台的补拉改到**后台执行**，避免「立即检查更新」被网关超时（HTTP 524）拖死，也不会并发重复下载。授权端下载接口只认 `?token=` 查询串鉴权（平台下载时自动带令牌）。新增启动告警：若 `-public-url` / `OPSM_PUBLIC_URL` 配成了回环/内网/CGNAT 地址，启动日志会打警告——云主机（网卡只有内网 IP）上生成的采集端安装命令会写死这个地址，目标主机必然「无法连接平台」。
+> - **1.1.2**：控制台**登录失败会明确提示原因**（「用户名或密码错误」「账号已停用」）；内嵌前端资源与页面统一 `Cache-Control: no-cache`，升级二进制后浏览器/反向代理不会再用旧前端（建议升级后 Ctrl+F5 一次）。
+> - **1.1.3**：平台自升级后**自动重启生效**（见上方）；新增 `-hub-restart`；启动时端口被占用会**自动重试最多 20 秒**。
+> - **1.1.4**：控制台「在线升级」「授权购买」页**不再展示授权中心域名**、也没有跳转到授权站的按钮（授权站遭 DDoS 期间降低暴露面），保留机器码与同步状态；前端加 `SHOW_HUB_URL` 开关，需要排障时改回 `true` 重新构建即恢复显示。
 
 ---
 
 ## 〇、⚠️ 授权中心被 Cloudflare 拦截（务必先看）
 
-**实测 `https://1999091.xyz` 当前返回 HTTP 403，响应体是 Cloudflare 人机校验页**
+**实测**默认授权中心（即程序内置地址的授权站）**当前返回 HTTP 403，响应体是 Cloudflare 人机校验页**
 （`Just a moment...`），而不是接口本身返回的错误。三种 User-Agent 实测结果一致：
 
 | User-Agent | 响应 |
 | --- | --- |
 | `Go-http-client/1.1` | 403 Cloudflare 挑战页 |
-| `opsmonitor-server/1.1.0` | 403 Cloudflare 挑战页 |
+| `opsmonitor-server/1.1.4` | 403 Cloudflare 挑战页 |
 | 完整浏览器 UA | 403 Cloudflare 挑战页 |
 
 这意味着**只要授权中心前面挂着开启 Bot 防护的 Cloudflare，监控端就拉不到任何东西**——
@@ -90,7 +101,7 @@
 
 **方案 A：在 Cloudflare 放行 API 路径（推荐）**
 
-登录 Cloudflare 控制台 → 域名 `1999091.xyz` → `Security` → `WAF` → `Custom rules`：
+登录 Cloudflare 控制台管理授权中心的域名 → `Security` → `WAF` → `Custom rules`：
 
 ```
 规则 1（跳过 Bot 防护）:
@@ -110,8 +121,8 @@
 
 **方案 C：给 API 单独一个子域**
 
-例如 `api.1999091.xyz`，该子域不挂 Cloudflare 代理（DNS 设为 DNS only，灰云），
-再用 `-hub https://api.1999091.xyz` 指向它。**这是最干净的方案。**
+例如 `api.<你的授权中心地址>`，该子域不挂 Cloudflare 代理（DNS 设为 DNS only，灰云），
+再用 `-hub https://api.<你的授权中心地址>` 指向它。**这是最干净的方案。**
 
 **方案 D：完全离线**
 
@@ -163,7 +174,7 @@ opsmonitor-server -hub ""        # 或省略 -hub
 ```bash
 # 令牌已内置，无需替换；这条只验证「网关是否放行程序客户端」
 curl -sS -o /dev/null -w '%{http_code}\n' \
-  "https://1999091.xyz/api/v1/check?os=linux&arch=amd64"
+  "https://<你的授权中心地址>/api/v1/check?os=linux&arch=amd64"
 
 # 期望 200；403 是网关仍在拦截；401 + "拉取令牌不正确" 说明网关通了但令牌对不上
 ```
@@ -171,7 +182,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 更省事的办法是看 `/healthz` —— 它不需要令牌：
 
 ```bash
-curl -sS https://1999091.xyz/healthz     # 期望 {"ok":true,...}
+curl -sS https://<你的授权中心地址>/healthz     # 期望 {"ok":true,...}
 ```
 
 控制台「系统 → 在线升级」页也会直接显示具体的拦截原因与处理建议。
@@ -513,7 +524,7 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://192.168.40.111:999
 
 ```bash
 ./release.sh-s https://授权系统地址
-./release.sh -v 1.0.3 -n "新增 CPU 温度与 SMART 采集"
+./release.sh -v 1.1.3 -n "新增 CPU 温度与 SMART 采集"
 ./release.sh --only linux/amd64,linux/arm64
 ```
 
@@ -573,12 +584,15 @@ services:
 | `-release-dir` | `OPSM_RELEASE_DIR` | 数据库同级 `releases/` | 采集端发布包目录 |
 | `-public-url` | `OPSM_PUBLIC_URL` | 自动反推 | 对外访问地址 |
 | `-license-secret` | `OPSM_LICENSE_SECRET` | `opsmonitor-license` | **旧格式**（`WGC-`/`OPSM1-`/`OPSM-`，HMAC）授权码的校验密钥；新格式（`OPSM2-`）用内置 Ed25519 公钥校验，与本参数无关。线上已导入旧码则**不要删**，删了会回落到社区版 |
+| `-license` | `OPSM_LICENSE_KEY` | 空 | 授权码（新格式 `OPSM2-`）手动指定的另一种途径；一般留空由平台自动从授权中心拉取并写入数据库 |
+| `-license-machine` | `OPSM_LICENSE_MACHINE` | 空 | 机器码钉死值（如 `C317-6E8B-BAE5-A8A6`）；多网卡/容器场景用此固定机器码，避免换网卡/重建容器导致授权失效 |
 | `-free-hosts` | `OPSM_LICENSE_FREE_HOSTS` | `10` | 未授权时允许接入的主机数 |
 | `-free-users` | `OPSM_LICENSE_FREE_USERS` | `3` | 未授权时允许创建的账号数 |
-| `-hub` | `OPSM_HUB` | `https://1999091.xyz` | 授权中心地址，留空则完全离线 |
-| `-hub-token` | `OPSM_HUB_TOKEN` | 内置 | 授权中心拉取令牌。**默认用程序内置令牌，无需配置**；仅当改用自建授权中心时才需覆盖 |
+| `-hub` | `OPSM_HUB` | 默认已内置授权中心地址；留空 `-hub ""` = 完全离线 | 授权中心地址；留空则完全离线 |
+| `-hub-token` | `OPSM_HUB_TOKEN` | 留空用内置令牌 | 授权中心拉取令牌。默认用程序内置令牌，无需配置；仅当改用自建授权中心时才需覆盖。优先级：`-hub-token` > `OPSM_HUB_TOKEN` > 内置 |
 | `-hub-interval` | `OPSM_HUB_INTERVAL_MIN` | `5` | 代拉间隔（分钟） |
-| `-hub-auto-update` | `OPSM_HUB_AUTO_UPDATE` | `download` | 服务端自更新：`download` 自动就位 / `check` 只提示 / `off` 关闭 |
+| `-hub-auto-update` | `OPSM_HUB_AUTO_UPDATE` | `download` | 服务端自更新：`download` 自动下载并就位（默认，就位后自动重启生效）/ `check` 只提示不下载 / `off` 关闭 |
+| `-hub-restart` | `OPSM_HUB_RESTART` | `auto` | 自升级就位后的重启策略：`auto` 自动重启生效（默认）/ `off` 只替换文件不重启，需人工重启 |
 | `-hub-ua` | `OPSM_HUB_UA` | 空 | 访问授权中心的 User-Agent，被网关按 UA 拦截时可覆盖 |
 | `-version` | - | - | 打印版本号后退出 |
 
@@ -712,6 +726,16 @@ sudo cp 新版/opsmonitor-server /opt/opsmonitor/opsmonitor-server
 sudo systemctl start opsmonitor
 ```
 
+> **自 1.1.3 起，自动升级会自行重启生效**，无需手工 `systemctl restart`。若是**手工替换二进制**升级（例如离线环境），务必按下面步骤操作，尤其是第 2 步：
+>
+> 1. 备份旧二进制：`sudo cp /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.bak`
+> 2. **`sudo rm -f /opt/opsmonitor/.opsmonitor-server.pending`** —— 不清掉的话，启动时的确认逻辑会认为上次升级未生效，从而回滚到 `.bak`，表现为「换了又变回旧版」
+> 3. 替换二进制并 `sudo chmod +x /opt/opsmonitor/opsmonitor-server`
+> 4. `sudo systemctl restart opsmonitor`
+> 5. `/opt/opsmonitor/opsmonitor-server -version` 校验版本
+>
+> 说明：`.opsmonitor-server.pending` 内容为「已就位待确认的新版本号」；新进程启动时若发现它与当前版本一致就清掉并记「已升级生效」，不一致则回滚 `.bak`。前端通过 `//go:embed all:web` 编译进二进制，**升级只需替换那一个二进制文件**，不需要单独更新 `.js` / `.go` 文件。自 1.1.2 起内嵌前端统一 `Cache-Control: no-cache`，升级后建议浏览器 Ctrl+F5 一次。
+
 数据库结构变更由程序在启动时自动执行（新增表与列都是幂等的），**不需要手动执行 SQL**。
 
 ### 9.2 采集端升级
@@ -785,7 +809,7 @@ sudo systemctl start opsmonitor
 | --- | --- | --- |
 | 同步返回 **403 + `Just a moment...`** | Cloudflare 人机校验拦下了程序客户端 | 见第〇章，四种方案任选；这是最常见的一种 |
 | 同步返回 401 且提示 `拉取令牌不正确` | 授权中心当前配置的令牌与平台发出的不一致 | 授权中心的令牌已改为编译内置，核对两侧内置值是否一致；或临时用 `-hub-token` / `OPSM_HUB_TOKEN` 覆盖 |
-| 同步返回 HTML 而非 JSON | `-hub` 指向了网页而不是接口 | 地址应为 `https://1999091.xyz`，**不要**带 `/api/v1/check` |
+| 同步返回 HTML 而非 JSON | `-hub` 指向了网页而不是接口 | 地址应为默认授权中心地址（程序内置），**不要**带 `/api/v1/check` |
 | 一直「尚未为本机签发授权」 | 授权中心还没给本机机器码签发 | 拿控制台「授权购买」页显示的机器码，去授权中心后台签发 |
 | 授权导入后校验失败（提示签名校验失败） | 公钥抄错，或旧格式密钥不一致 | 新格式（`OPSM2-`）看启动日志的「授权验签公钥指纹」是否与授权中心一致，不一致就抄错公钥了；旧格式（`WGC-`/`OPSM1-`/`OPSM-`）才需要两端 `-license-secret` 一致 |
 | 主机数超限被拒接入 | 授权档位主机数已用满 | 换更高档位授权；存量主机不受影响 |
@@ -798,10 +822,10 @@ sudo systemctl start opsmonitor
 ```bash
 # 在监控端所在机器上执行，期望 200
 curl -sS -o /dev/null -w '%{http_code}\n' \
-  "https://1999091.xyz/api/v1/check?os=linux&arch=amd64&token=<你的-hub-token>"
+  "https://<你的授权中心地址>/api/v1/check?os=linux&arch=amd64&token=<你的-hub-token>"
 
 # 看响应体，正常的应该是 JSON；返回 HTML 就是网关拦截
-curl -sS "https://1999091.xyz/api/v1/check?os=linux&arch=amd64&token=<你的-hub-token>" | head -c 300
+curl -sS "https://<你的授权中心地址>/api/v1/check?os=linux&arch=amd64&token=<你的-hub-token>" | head -c 300
 ```
 
 ### 11.4 排查顺序

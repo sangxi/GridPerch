@@ -18,7 +18,9 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
                                                  └──────────────────┘
 ```
 ### 重要信息
-## 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / opsmonitor`。
+
+> 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / opsmonitor`。
+
 ## 界面预览
 
 | 控制台 · 仪表盘 | 可视化大屏（8 套模板） |
@@ -43,6 +45,17 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
   Debian、Ubuntu、CentOS 7+、RHEL、Rocky、Fedora、openEuler、麒麟、统信、Alpine 都能直接跑
 - **上报可调**：默认每分钟上报一次，间隔由平台统一下发，改配置不用登主机、不用重启
 - **部署即用**：支持 Docker Compose / 1Panel / 宝塔面板 / docker / 二进制直接运行，全中文 UI
+
+## 二开版本更新（1.1.1 → 1.1.4）
+
+| 版本 | 重点 |
+| --- | --- |
+| 1.1.1 | 采集端发布物按 5 个平台（linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64）逐个补拉，修复「Linux 服务端装不上 Windows 采集端 / 授权系统尚未发布该平台」；补拉在后台执行，避免「立即检查更新」被网关超时（HTTP 524）拖死；`-public-url` 配成回环/内网/CGNAT 地址时启动告警 |
+| 1.1.2 | 控制台登录失败明确提示原因（用户名或密码错误 / 账号已停用）；内嵌前端资源统一 `Cache-Control: no-cache`，升级二进制后浏览器/反向代理不会再用旧前端 |
+| 1.1.3 | 平台自升级后自动重启生效（systemd `Restart=always` / Docker Compose `restart: unless-stopped` / 手工 `nohup` 自拉起，启动失败自动回滚 `.bak`）；新增 `-hub-restart` / `OPSM_HUB_RESTART` |
+| 1.1.4 | 控制台「在线升级」「授权购买」页不再展示授权中心域名，也去掉了跳转到授权站的按钮（授权站遭 DDoS 期间降低暴露面），保留机器码与同步状态；前端加 `SHOW_HUB_URL` 开关，排障时可改回显示 |
+
+当前版本 **1.1.4**（构建时间 2026-10-13T13:01:08）。版本沿革：官方 1.0.3 → 二开 1.1.0 → 1.1.1 → 1.1.2 → 1.1.3 → 1.1.4。
 
 ## 监控能力
 
@@ -92,7 +105,9 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 - **内置使用教程**：控制台顶栏「使用教程」或直接访问 `/docs`，含各系统部署指南与文件挂载清单
 
 ## 快速开始
-详细部署教程：https://opsmonitor-docs.pages.dev/macos
+
+完整部署方案见 [DEPLOY.md](DEPLOY.md)。
+
 ### Docker Compose（推荐）
 
 ```bash
@@ -112,8 +127,6 @@ docker compose logs -f --tail=100
 ```bash
 ./bin/opsmonitor-server -addr :9999 -db ./data/opsmonitor.db -token opsmonitor -public-url http://<服务器IP>:9999
 ```
-
-## 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / opsmonitor`。
 
 ### 接入采集端
 
@@ -153,6 +166,24 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://<服务器IP>:9999
 | `-cpu-alert` / `-mem-alert` / `-disk-alert` | `OPSM_CPU_ALERT` 等 | `90` | 告警阈值（%） |
 | `-load-alert` | `OPSM_LOAD_ALERT` | `10` | 系统负载告警阈值 |
 | `-alert-cooldown` | `OPSM_ALERT_COOLDOWN_MIN` | `10` | 同类告警去重冷却（分钟） |
+| `-release-dir` | `OPSM_RELEASE_DIR` | 空 | 采集端发布物缓存目录（默认由程序内部决定） |
+| `-login-alert` | `OPSM_LOGIN_ALERT` | `true` | 控制台登录失败是否推送告警 |
+| `-read-conns` | `OPSM_READ_CONNS` | `8` | SQLite 读连接数 |
+| `-write-queue` | `OPSM_WRITE_QUEUE` | `8192` | SQLite 写队列长度 |
+| `-probe-workers` | `OPSM_PROBE_WORKERS` | `64` | 服务端探针并发数 |
+| `-purge` | `OPSM_PURGE_INTERVAL` | `3600` | 历史数据清理间隔（秒） |
+| `-license-secret` | `OPSM_LICENSE_SECRET` | 空 | 旧格式授权码（HMAC）校验密钥，存量旧码换完后即可去掉 |
+| `-license` | `OPSM_LICENSE_KEY` | 空 | 手工导入的授权码 |
+| `-license-machine` | `OPSM_LICENSE_MACHINE` | 空 | 机器码（Docker 等环境需固定，否则授权失效） |
+| `-free-hosts` | `OPSM_LICENSE_FREE_HOSTS` | `10` | 免费档主机数上限 |
+| `-free-users` | `OPSM_LICENSE_FREE_USERS` | `3` | 免费档控制台账号数上限 |
+| `-hub` | `OPSM_HUB` | 默认已内置授权中心地址；留空=完全离线 | 授权系统地址，不配则纯离线单机模式 |
+| `-hub-token` | `OPSM_HUB_TOKEN` | 留空用内置令牌 | 访问授权系统的令牌 |
+| `-hub-interval` | `OPSM_HUB_INTERVAL_MIN` | `5` 分钟 | 向授权系统轮询间隔（分钟） |
+| `-hub-auto-update` | `OPSM_HUB_AUTO_UPDATE` | `download` | 平台自升级策略：`download` 自动下载并就位 / `check` 只提示不下载 / `off` 关闭 |
+| `-hub-restart` | `OPSM_HUB_RESTART` | `auto` | 自升级后是否自动重启生效：`auto` 自动重启 / `off` 只替换文件不重启（需人工重启） |
+| `-hub-ua` | `OPSM_HUB_UA` | 空 | 访问授权系统时的自定义 User-Agent |
+| `-version` | - | - | 打印版本后退出 |
 
 完整清单见 [DEPLOY.md](DEPLOY.md#六配置项完整清单)。
 

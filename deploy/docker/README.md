@@ -16,7 +16,7 @@ docker compose logs -f
 
 | 方式 | Dockerfile | 特点 |
 |---|---|---|
-| 用现成二进制 | `Dockerfile.binary` | 不用 Go 环境、不用联网拉模块，几十秒出镜像。依赖仓库里已有 `release/1.1.0/opsmonitor-server-linux-amd64` |
+| 用现成二进制 | `Dockerfile.binary` | 不用 Go 环境、不用联网拉模块，几十秒出镜像。依赖仓库里已有 `release/1.1.4/opsmonitor-server-linux-amd64` |
 | 从源码构建 | `Dockerfile` | 适合 GitHub 用户 / CI，需要能拉取 Go 模块 |
 
 > 构建上下文必须是**仓库根目录**（compose 里已配好 `context: ../..`），因为 `Dockerfile.binary`
@@ -101,13 +101,15 @@ docker compose exec opsmonitor wget -qO- http://127.0.0.1:9999/api/health   # �
 docker compose up -d --build
 ```
 
+> 1.1.3+ 平台自升级会替换二进制并退出 PID 1，Docker Compose 以 `restart: unless-stopped` 自动重启容器使新版本生效，无需手动 `docker compose restart`。
+
 ## 排障
 
 | 现象 | 处理 |
 |---|---|
-| `docker compose up` 报找不到 `release/1.1.0/...` | 构建上下文不对。必须在仓库根目录执行，或 `docker compose -f deploy/docker/docker-compose.yml --project-directory . build` |
+| `docker compose up` 报找不到 `release/1.1.4/...` | 构建上下文不对。必须在仓库根目录执行，或 `docker compose -f deploy/docker/docker-compose.yml --project-directory . build` |
 | 容器起来就退出 | `docker compose logs` 看日志；常见是 `/data` 挂载点权限或端口占用 |
 | 页面能开、别的机器打不开 | 宿主机防火墙 / 云安全组没放行 9999 |
 | 授权显示社区版且「等待签发」 | 先确认 `.env` 里 `OPSM_LICENSE_MACHINE` 与授权中心签发时绑定的机器码一致；再点「立即从授权系统拉取授权」 |
-| 容器内访问授权中心超时 | 容器需要出网访问 `https://1999091.xyz`；内网离线环境请用启动参数 `-hub=` 完全离线并手工导入授权码 |
+| 容器内访问授权中心超时 | 容器需要出网访问默认授权中心（地址已内置在程序里，无需手动填写）；内网离线环境请用启动参数 `-hub=` 完全离线并手工导入授权码 |
 | 时间不对（日志/告警时间差 8 小时） | 确认 `TZ=Asia/Shanghai` 已传入，且宿主机时间正确 |

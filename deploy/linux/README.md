@@ -91,6 +91,18 @@ sudo systemctl daemon-reload && sudo systemctl enable --now opsmonitor
 sudo systemctl status opsmonitor --no-pager
 ```
 
+## 升级（替换二进制）
+
+前端已编译进单个二进制（无需单独更新 .js/.go），升级只需替换那一个文件。1.1.3+ 会自动重启生效；旧版本请手动 `systemctl restart opsmonitor`。
+
+手工替换步骤：
+
+1. 备份旧二进制：`cp /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.old`
+2. **`rm -f /opt/opsmonitor/.opsmonitor-server.pending`**（不清掉的话，启动时的自动确认逻辑会认为升级未生效而回滚到 `.bak`）
+3. 替换二进制并 `chmod +x`
+4. `systemctl restart opsmonitor`
+5. `/opt/opsmonitor/opsmonitor-server -version` 校验版本
+
 ## 排障
 
 | 现象 | 原因与处理 |
