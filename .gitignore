@@ -1,6 +1,6 @@
-bin/
-dist/
-release/
+# bin/
+# dist/
+# release/
 data/
 *.db
 *.db-shm
