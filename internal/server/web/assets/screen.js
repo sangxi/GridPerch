@@ -149,11 +149,20 @@ function smoothLine(name, data, color, stack) {
 }
 
 // getChart 拿到（或创建）某个容器的 ECharts 实例。
+// ⚠️ render() 每次刷新都用 stage.innerHTML 重建整块 DOM，新容器的 DOM 节点已经不是
+// 旧实例绑定的那一个。此时若继续对旧实例 setOption，内容会画在**已脱离文档的 canvas**
+// 上——表现就是「大屏刚打开有图，刷新一次（默认 10 秒）后图表全空白」。
+// 所以只要容器换了（或实例已销毁），就必须先 dispose 再重新 init。
 function getChart(id, option) {
+  const dom = el(id);
+  if (!dom || !window.echarts) return null;
+
   let c = charts[id];
-  if (!c || c.isDisposed()) {
-    const dom = el(id);
-    if (!dom || !window.echarts) return null;
+  if (c && (c.isDisposed() || c.getDom() !== dom)) {
+    try { c.dispose(); } catch (e) { /* 忽略 */ }
+    c = null;
+  }
+  if (!c) {
     c = window.echarts.init(dom, null, { renderer: 'canvas' });
     charts[id] = c;
   }
