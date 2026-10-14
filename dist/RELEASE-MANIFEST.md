@@ -63,3 +63,42 @@
 | B | 平台：标签 1.1.8、下发的确是 1.1.8 | 正常就位（exe 自报 1.1.8、`.bak`=旧版、pending=1.1.8） |
 | C | 平台：慢速下载中手动点「拉取并升级」 | 返回「已有一轮升级正在下载并替换，请稍候再试」，随后自动路径正常收敛 |
 | D | 采集端：平台缓存了假标签的「采集端 1.1.8」 | 采集端「发现新版本 1.1.8…开始自动升级」后**拒绝替换**，自身仍是 1.1.7、无 `.old` 残留 |
+
+---
+
+## 附：Windows 7 SP1 / Server 2008 R2 专用采集端
+
+**背景（2026-10-14 追加）**：在 Windows Server 2008 R2 上直接运行
+`opsmonitor-agent-windows-amd64.exe` 会「闪退一下就没有了」——没有窗口、没有报错框、
+没有日志文件。
+
+**根因**：Go **1.21.5** 起，runtime 的随机数源从 `RtlGenRandom`
+（`advapi32.dll` 的 `SystemFunction036`，Windows XP 起就有）换成了 `ProcessPrng`
+（**`bcryptprimitives.dll`，只有 Windows 8 / Server 2012 及以上才有**）。
+在 2008 R2 上 Go 用 `LoadLibraryExW` 加载它失败，拿到的函数指针是 `NULL`，
+runtime 初始化阶段一调用就触发 `0xc0000005` 访问违规，进程当场终止 ——
+崩在 runtime 里，早于任何一行业务日志，所以看不到任何提示。
+官方口径：Go 1.21 起最低要求 Windows 10 / Server 2016；最后一个支持并在
+Server 2008 R2 上实际测试过的版本是 **Go 1.20**。
+
+**判据**（直接对二进制 `grep` 即可判定，无需上机）：
+
+| 特征字符串 | Go 1.23.9 正式产物 | Go 1.20.14 兼容产物 |
+|---|---|---|
+| `bcryptprimitives` | 2 | **0** |
+| `ProcessPrng` | 3 | **0** |
+| `SystemFunction036` | 0 | **1** |
+| `RtlGenRandom` | 0 | **1** |
+
+**产物**：`opsmonitor-agent-windows-amd64-win7.exe`，6,360,064 字节，
+sha256 `83d831c8cb64e19e240fdda0b384781da252b3c103c4957048edcbaaef67bb3f`，
+自报 `opsmonitor-agent 1.1.7 (windows/amd64)`。
+
+**构建**：`./build-win7.sh` —— Go 1.20.14（`D:\c\opsmonitor-buildtools\goroot120`）
++ 裁剪版 modfile `go120.mod`（去掉声明 `go 1.21` 的 sqlite/mysql，采集端本就不依赖它们；
+间接依赖全部对齐主 go.mod 的版本，让产物差异只来自工具链）。
+**该产物不参与 `release.sh` 上传**，平台下发的正式采集端版本不受影响。
+
+**部署要点**：启动参数必须带 `-remote-config off -update off`。
+否则平台下发的 `updateMode=auto` 会让它按正常的 30 分钟周期下载平台上的
+Go 1.23 版采集端并替换自己 —— 换完又闪退。
