@@ -165,16 +165,17 @@ Windows Server 2008 R2 自带的 PowerShell 只有 **2.0**，**没有 `Register-
 :: 1) 先验证二进制能在本机跑起来（应打印 opsmonitor-agent 1.1.7 (windows/amd64) …）
 C:\OpsMonitor\opsmonitor-agent-windows-amd64-win7.exe -version
 
-:: 2) 新建 C:\OpsMonitor\start-agent.cmd，内容如下（参数按实际替换）
-@echo off
-cd /d C:\OpsMonitor
-"C:\OpsMonitor\opsmonitor-agent-windows-amd64-win7.exe" -server http://平台IP:9999 -token-hash 密钥MD5 -name 主机名 -update off -remote-config off >> "C:\OpsMonitor\agent.log" 2>&1
+:: 2) 把本目录的 start-agent.cmd 与 exe 放在同一目录，用记事本改开头那 4 项
+::    （平台地址 / 密钥MD5 / 主机名 / 上报间隔）—— 其余参数已在脚本里固化
 
-:: 3) 注册开机自启并立即启动
-schtasks /create /tn opsmonitor-agent /tr "C:\OpsMonitor\start-agent.cmd" /sc onstart /ru SYSTEM /rl HIGHEST /f
+:: 3) 双击 start-agent.cmd 试跑。日志里应出现
+::    「采集端启动：版本 1.1.7 …，更新策略 off」以及「已上报 CPU …」，即已连上平台
+
+:: 4) 注册开机自启（管理员 cmd，注意末尾 log 参数让输出写进 agent.log）
+schtasks /create /tn opsmonitor-agent /tr "C:\OpsMonitor\start-agent.cmd log" /sc onstart /ru SYSTEM /rl HIGHEST /f
 schtasks /run /tn opsmonitor-agent
 
-:: 4) 查看状态与日志
+:: 5) 查看状态与日志
 schtasks /query /tn opsmonitor-agent
 type C:\OpsMonitor\agent.log
 ```
