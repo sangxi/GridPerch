@@ -921,7 +921,7 @@ sudo systemctl start opsmonitor</code></pre>
           <tr><td>授权导入后校验失败（提示签名校验失败）</td><td>公钥抄错，或旧格式密钥不一致</td><td>新格式（<code>OPSM2-</code>）看启动日志的「授权验签公钥指纹」是否与授权中心一致，不一致就是公钥抄错了；旧格式（<code>WGC-</code>/<code>OPSM1-</code>/<code>OPSM-</code>）才需要两端 <code>-license-secret</code> 一致</td></tr>
           <tr><td>日志反复刷「同步失败」</td><td>授权中心不可达</td><td>已自动退避（最长 30 分钟一次），无需处理</td></tr>
           <tr><td>发现新版本但不自动升级</td><td><code>-hub-auto-update</code> 为 check/off</td><td>改回 <code>download</code>，或手动点「拉取并升级」</td></tr>
-          <tr><td>提示「可升级到 X」但版本号永远不变，服务还反复重启</td><td>授权端把<strong>旧产物登记成了新版本号</strong>（典型：改了 <code>-v</code> 却没重新构建，<code>--skip-build</code> 复用了上一版 dist）——二进制自报版本没变，每轮同步都会「再升一次」</td><td>1.1.7 起平台会先执行新二进制的 <code>-version</code> 自检，自报版本不高于当前就直接拒绝替换并给出报错；按报错重新构建、重新上传真正的该版本号即可（<code>release.sh</code> 也会在上传前比对 <code>dist/VERSION</code> 拦下这种误传）</td></tr>
+            <tr><td>提示「可升级到 X」但版本号永远不变，服务还反复重启</td><td>授权端把<strong>旧产物登记成了新版本号</strong>（典型：改了 <code>-v</code> 却没重新构建，<code>--skip-build</code> 复用了上一版 dist）——二进制自报版本没变，每轮同步都会「再升一次」</td><td>1.1.7 起<strong>平台与采集端</strong>在替换前都会先执行新二进制的 <code>-version</code> 自检，自报版本不高于当前就直接拒绝替换并给出报错；按报错重新构建、重新上传真正的该版本号即可（<code>release.sh</code> 也会在上传前比对 <code>dist/VERSION</code> 拦下这种误传）</td></tr>
         </tbody>
       </table>
 

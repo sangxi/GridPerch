@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -189,6 +190,22 @@ func applyUpdate(cfg config.Agent, client *http.Client, info *updateInfo, exe, w
 		return fmt.Errorf("设置可执行权限失败: %w", err)
 	}
 
+	// 替换之前先让新二进制自报版本。发布物的「版本号标签」可能与二进制内嵌版本
+	// 不一致（典型事故：发布时用旧产物配了新版本号），那样换上去等于没换 ——
+	// 下一轮检查又会「发现新版本」，变成每轮都下载 + 重启、永远不收敛的循环。
+	// 与平台侧 hubPullSelf 的守卫同源：自报版本必须真比当前运行的版本新。
+	// （服务端只在 IsNewer(发布版本, 本机版本) 为真时才下发升级，所以拒绝这里的
+	// 情况必然意味着标签与二进制对不上，不会误伤正常升级。）
+	if selfVer, verr := runSelfVersion(tmpPath); verr != nil {
+		cleanup()
+		return fmt.Errorf("新版本自检失败（无法执行下载回来的二进制）：%w", verr)
+	} else if !version.IsNewer(selfVer, version.Version) {
+		cleanup()
+		return fmt.Errorf("平台发布的 %s 自报版本为 %s，并不高于当前运行的 %s，已拒绝替换。"+
+			"发布方很可能把旧产物登记成了新版本号，请联系平台管理员重新构建上传",
+			info.Version, selfVer, version.Version)
+	}
+
 	// 先把当前二进制改名，再落新文件：Windows 上正在运行的 exe 无法被覆盖，
 	// 但可以被改名，因此这套流程在两个平台上都成立。
 	oldPath := exe + oldSuffix
@@ -204,6 +221,26 @@ func applyUpdate(cfg config.Agent, client *http.Client, info *updateInfo, exe, w
 		return fmt.Errorf("替换新版本失败: %w", err)
 	}
 	return nil
+}
+
+// runSelfVersion 执行一个刚刚下载的 opsmonitor 二进制的 `-version`，
+// 返回它「自报」的版本号（输出形如 `opsmonitor-agent 1.1.7 (linux/amd64) 构建于 …`）。
+//
+// 临时文件名与运行中的可执行文件同目录、已 chmod 0755；Windows 下 CreateProcess
+// 只看文件头不看扩展名，因此带不带后缀都能跑。加超时是兜底：正常情况下它打印一行
+// 就退出，跑不起来才需要放弃（宁可拒绝替换，也不能把采集端换成跑不起来的二进制）。
+func runSelfVersion(path string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "-version").Output()
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return "", fmt.Errorf("输出无法解析：%s", strings.TrimSpace(string(out)))
+	}
+	return fields[1], nil
 }
 
 // restartSelf 让新版本接管。
