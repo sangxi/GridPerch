@@ -1,6 +1,11 @@
 # 监控端（server）· Windows 部署
 
-支持 Windows 10 / 11、Windows Server 2012 R2 及以上（64 位）。
+需要 64 位 Windows。**官方支持 Windows 10 / 11、Windows Server 2016 及以上。**
+
+> 工具链的硬性下限其实是 **Windows 8 / Server 2012**（Go 1.21.5 起 runtime 依赖
+> `bcryptprimitives.dll`，该 DLL 自 Windows 8 起才有），但这几个版本不在官方支持列表内，
+> 只作参考。**Windows 7 SP1 / Server 2008 R2 无法运行当前产物** —— 采集端的兼容方案
+> 见文末「采集端（agent）」一章。
 
 ## 快速开始
 
@@ -101,3 +106,105 @@ Stop-ScheduledTask -TaskName opsmonitor; Start-ScheduledTask -TaskName opsmonito
 | 日志乱码 | 用 `Get-Content -Encoding Default` 读取，或直接用记事本打开 |
 | 启动日志指纹不是 `278D-4852-7191-E7CE` | 二进制不是本版本产物 |
 | 采集端连不上 | 检查 `-token` 是否与监控端 `OPSM_TOKEN` 一致，以及 9999 是否可达 |
+
+---
+
+# 采集端（agent）· Windows 部署
+
+采集端**没有**独立的安装脚本文件。正常路径是在平台控制台「添加主机」页面生成一键命令
+（服务端动态吐出 `/install.ps1`），在 Windows 10 / Server 2016 及以上可直接使用。
+
+## 系统要求（与监控端同源，边界要记清）
+
+| 系统 | 能否运行当前产物 |
+|---|---|
+| Windows 10 / 11、Server 2016 / 2019 / 2022 | ✅ 官方支持 |
+| Windows 8 / 8.1、Server 2012 / 2012 R2 | ⚠️ 不在官方支持列表，但实际可运行（`bcryptprimitives.dll` 自 Windows 8 起存在） |
+| **Windows 7 SP1 / Server 2008 R2** | ❌ **跑不了**，见下一节 |
+
+原因：Go **1.21.5** 起，runtime 的随机数源从 `RtlGenRandom`（`advapi32!SystemFunction036`，
+XP 起就有）换成了 `ProcessPrng`（`bcryptprimitives.dll`）。Windows 7 / Server 2008 R2 上没有
+这个 DLL，Go 加载失败后拿到的函数指针是 `NULL`，runtime 初始化阶段一调用就触发
+`0xc0000005` 退出。崩在 runtime 里、早于任何业务日志，所以现象是
+**双击后黑窗口一闪就没了，既没有报错框也没有日志文件**。
+
+快速判断手上这个 exe 属于哪一类（在**开发机**上对二进制执行）：
+
+```bash
+grep -ac bcryptprimitives  opsmonitor-agent-windows-amd64.exe        # >0 → 跑不了旧系统
+grep -ac SystemFunction036 opsmonitor-agent-windows-amd64-win7.exe   # >0 → 可以跑旧系统
+```
+
+## Windows 7 SP1 / Server 2008 R2 专用部署
+
+用 Go 1.20.14（官方最后一个支持这两个系统的版本）单独构建的兼容产物：
+
+```
+opsmonitor-agent-windows-amd64-win7.exe
+```
+
+在源码根执行 `./build-win7.sh` 生成（依赖 `go120.mod` 这份裁剪版 modfile）。
+该产物**不参与 `release.sh` 上传**，平台的在线升级与一键安装都不会用到它，
+也不会覆盖 `dist/` 里的正式产物。
+
+### ⚠️ 必须关掉自动升级（最容易漏的一步）
+
+平台下发的「更新策略」是**全局设置**且默认 `auto`。不关掉的话，兼容版会在 30 分钟内向平台
+下载正常（Go 1.23）构建的采集端并替换自己 —— **换完又闪退**。所以启动参数必须带
+`-remote-config off -update off`。
+
+`-remote-config off` 只掐掉「拉取平台配置」这一条链路，指标上报、指令下发、监控项采集照常工作。
+
+### 部署步骤
+
+Windows Server 2008 R2 自带的 PowerShell 只有 **2.0**，**没有 `Register-ScheduledTask` /
+`Get-ScheduledTask`**，平台「添加主机」页给的一键命令在它上面必然失败。改用系统自带的
+`schtasks.exe`：
+
+```cmd
+:: 1) 先验证二进制能在本机跑起来（应打印 opsmonitor-agent 1.1.7 (windows/amd64) …）
+C:\OpsMonitor\opsmonitor-agent-windows-amd64-win7.exe -version
+
+:: 2) 新建 C:\OpsMonitor\start-agent.cmd，内容如下（参数按实际替换）
+@echo off
+cd /d C:\OpsMonitor
+"C:\OpsMonitor\opsmonitor-agent-windows-amd64-win7.exe" -server http://平台IP:9999 -token-hash 密钥MD5 -name 主机名 -update off -remote-config off >> "C:\OpsMonitor\agent.log" 2>&1
+
+:: 3) 注册开机自启并立即启动
+schtasks /create /tn opsmonitor-agent /tr "C:\OpsMonitor\start-agent.cmd" /sc onstart /ru SYSTEM /rl HIGHEST /f
+schtasks /run /tn opsmonitor-agent
+
+:: 4) 查看状态与日志
+schtasks /query /tn opsmonitor-agent
+type C:\OpsMonitor\agent.log
+```
+
+`密钥MD5` 就是平台「添加主机」页面生成命令里的 `wgToken` 值（= 监控端 `token` 的 MD5）。
+`-name` 建议用纯英文；不写则用系统主机名。
+
+日志出现 `采集端启动：版本 1.1.7，本机名称 …，服务端 …，更新策略 off` 即成功，
+随后控制台「主机监控」里会出现这台机器。
+
+### 升级这个兼容版
+
+版本号变更后，在**开发机**上重新构建，再把新 exe 手工拷到目标机替换：
+
+```bash
+./build-win7.sh          # 产物：dist/opsmonitor-agent-windows-amd64-win7.exe
+```
+
+```cmd
+:: 在 2008 R2 上
+schtasks /end /tn opsmonitor-agent
+:: 覆盖 exe 之后再启动
+schtasks /run /tn opsmonitor-agent
+```
+
+### 排障
+
+| 现象 | 处理 |
+|---|---|
+| 双击闪退、无任何输出 | 就是系统兼容问题，换 `-win7` 兼容版 |
+| `-version` 正常但注册任务后平台看不到主机 | 看 `C:\OpsMonitor\agent.log`；多半是 `-server` 写成了 `127.0.0.1`，或平台 IP/端口不可达 |
+| 稳定运行一段时间后突然又闪退 | 检查启动参数是否漏了 `-remote-config off -update off`，被平台下发的 `auto` 换成了正常版 |
+| 不确定手上的 exe 是哪个构建 | `-version` 看构建时间；或 `grep -ac bcryptprimitives`，结果为 0 才是兼容版 |
