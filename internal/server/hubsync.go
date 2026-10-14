@@ -18,7 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
 	"github.com/sangxi/OpsMonitor/internal/license"
 	"github.com/sangxi/OpsMonitor/internal/store"
 	"github.com/sangxi/OpsMonitor/internal/version"
@@ -1069,7 +1068,7 @@ func (s *Server) handleHubCheck(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{
 			"ok": false,
 			"msg": "当前为完全离线模式（-hub 留空）。如需启用授权与在线更新，" +
-				"请去掉 -hub 参数或指定为 " + config.DefaultHubURL,
+				"请去掉 -hub 参数以使用内置地址，或用 -hub <你的授权系统地址> 指定一个",
 		})
 		return
 	}

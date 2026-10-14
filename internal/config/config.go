@@ -60,9 +60,19 @@ type Server struct {
 
 // DefaultHubURL 内置的授权系统地址。
 //
-// 平台默认就指向官方授权中心：授权导入与版本更新是这套系统的固有环节，
+// 平台默认就指向授权中心：授权导入与版本更新是这套系统的固有环节，
 // 不该要求每个部署都手工加一个 -hub。内网离线环境用 -hub "" 显式关闭。
-const DefaultHubURL = "https://1999091.xyz"
+//
+// 声明为 var（而非 const）是为了能在构建时用 -ldflags -X 覆盖，便于换授权中心
+// 或产出「默认离线」的构建：
+//
+//	go build -ldflags "-X github.com/sangxi/OpsMonitor/internal/config.DefaultHubURL=https://你的授权中心"
+//	go build -ldflags "-X github.com/sangxi/OpsMonitor/internal/config.DefaultHubURL="   # 默认离线
+//
+// ⚠️ 这个地址是**功能必需**的：平台要「开箱即能拉更新与授权码」，它就必须存在于
+// 二进制里（只是不再出现在任何提示文案/前端/文档中）。真要连它都不留，只能按上面的
+// 方式传空值构建，代价是默认离线、需显式 -hub 才启用。
+var DefaultHubURL = "https://1999091.xyz"
 
 // Agent 采集端配置。
 type Agent struct {
@@ -178,7 +188,10 @@ func ParseServer() *Server {
 	flag.StringVar(&cfg.LicenseMachine, "license-machine", cfg.LicenseMachine, "机器码，默认按本机主机名与网卡自动生成")
 	flag.IntVar(&cfg.LicenseFreeHost, "free-hosts", cfg.LicenseFreeHost, "未授权（社区版）允许接入的主机数")
 	flag.IntVar(&cfg.LicenseFreeUser, "free-users", cfg.LicenseFreeUser, "未授权（社区版）允许创建的控制台账号数")
-	flag.StringVar(&cfg.HubURL, "hub", cfg.HubURL, "授权系统（更新与授权中心）地址，默认 "+DefaultHubURL+"，留空则完全离线运行")
+	// -hub 特意用**空默认值**注册：Go 的 flag 包会把非空默认值回显成 (default "...")，
+	// 那样内置的授权系统地址就会出现在 -h 帮助里。是否使用内置地址改为解析后判断。
+	hubFlag := ""
+	flag.StringVar(&hubFlag, "hub", hubFlag, "授权系统（更新与授权中心）地址。不传则使用内置地址；传空（-hub=）则完全离线运行")
 	flag.StringVar(&cfg.HubToken, "hub-token", hubTokenFromEnv,
 		"授权系统拉取令牌；留空则使用内置令牌（默认），仅当改用自建授权中心时才需覆盖")
 	flag.IntVar(&hubMin, "hub-interval", hubMin, "从授权系统拉取更新与授权的间隔（分钟）")
@@ -190,6 +203,17 @@ func ParseServer() *Server {
 		"访问授权系统时的 User-Agent，留空用默认 opsmonitor-server/<版本>；被网关按 UA 拦截时可改")
 	flag.BoolVar(&cfg.PrintVersion, "version", false, "打印版本号后退出")
 	flag.Parse()
+	// 未显式传 -hub 时保留配置里的值（来自 OPSM_HUB 环境变量，或内置默认地址）；
+	// 显式传入才覆盖——传空值（-hub=）即「完全离线」，与原语义一致。
+	hubPassed := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "hub" {
+			hubPassed = true
+		}
+	})
+	if hubPassed {
+		cfg.HubURL = hubFlag
+	}
 	cfg.AlertCoolDown = time.Duration(cooldownMin) * time.Minute
 	// 参数与环境变量都没给令牌时，回落到内置令牌，使平台开箱即可与授权中心通信。
 	// 在线离线部署（显式 -hub ""）不受影响：HubURL 为空时同步逻辑整体短路。
