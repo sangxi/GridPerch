@@ -81,6 +81,20 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
+# 防呆：dist/ 里的产物是按哪个版本构建的，必须与本次要登记的版本号一致。
+# 事故原型：改了 -v 却没重新构建（--skip-build 复用上一版 dist）——
+# 授权端登记成 1.1.7、二进制却自报 1.1.6，平台「在线升级」会每轮同步都
+# 下载→替换→重启，版本号永远不变（表现为「平台无法更新自己」）。
+# dist/VERSION 由 build.sh all 写入，没有该文件（旧产物）时跳过检查。
+if [ -f dist/VERSION ]; then
+  BUILT=$(tr -d ' \t\r\n' < dist/VERSION)
+  if [ -n "$BUILT" ] && [ "$BUILT" != "$VERSION" ]; then
+    echo "错误：dist/ 里的产物是 v$BUILT 构建的，与本次要登记的 v$VERSION 不一致，已中止。" >&2
+    echo "      去掉 --skip-build 重新构建，或把 -v 改成 $BUILT（并确保 version.go 也是 $BUILT）。" >&2
+    exit 1
+  fi
+fi
+
 PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
 if [ -n "$ONLY" ]; then
   PLATFORMS=$(printf '%s' "$ONLY" | tr ',' ' ')

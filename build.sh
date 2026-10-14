@@ -35,6 +35,9 @@ if [[ "${1:-}" == "all" ]]; then
   build_one darwin amd64 "" "$OUT"
   build_one darwin arm64 "" "$OUT"
   build_one windows amd64 ".exe" "$OUT"
+  # 记录本批产物对应的版本号：release.sh 上传前会比对，防止
+  # 「复用旧 dist 却登记新版本号」——那会让平台自升级永远换不到新版本。
+  printf '%s\n' "$VERSION" > "$OUT/VERSION"
   echo "全部完成，产物在 dist/ 目录"
   exit 0
 fi

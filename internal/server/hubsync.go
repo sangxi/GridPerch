@@ -2,14 +2,17 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -421,6 +424,11 @@ func (s *Server) autoUpdateSelf(r *hubRel) {
 	}
 	msg, _, err := s.hubPullSelf()
 	if err != nil {
+		// 手动升级正在进行时不动 ServerNote：那一轮完成后会自己写入结果，
+		// 这里把「正在下载」报成失败只会让页面来回跳。
+		if errors.Is(err, errSelfPullBusy) {
+			return
+		}
 		// ServerNote 会显示在控制台，回执也会出网，两处都先脱敏
 		em := s.redactHubToken(err.Error())
 		s.setHub(func(h *HubStatus) {
@@ -986,11 +994,48 @@ func (s *Server) confirmSelfUpgrade() {
 	log.Printf("自动升级到 %s 未生效，已回滚到备份版本，请重新启动服务", pending)
 }
 
+// selfPullMu 串行化「下载并替换自身」，自动路径与控制台手动点击共用一把锁。
+var selfPullMu sync.Mutex
+
+// errSelfPullBusy 表示已有一轮自升级正在下载/替换，本轮应当直接让路。
+// 用 sentinel 而不是普通错误串，是为了让自动路径能识别出「不是失败，是在忙」，
+// 从而不去覆盖控制台上那一条正在进行的升级提示。
+var errSelfPullBusy = errors.New("已有一轮升级正在下载并替换，请稍候再试")
+
+// runSelfVersion 执行一个刚下载的 opsmonitor 二进制的 `-version`，
+// 返回它「自报」的版本号（输出形如 `opsmonitor-server 1.1.7 (linux/amd64) 构建于 …`）。
+//
+// 传入的文件是本机平台的可执行文件：授权端按请求平台返回发布物，
+// 且下载完成后已 chmod 0755；Windows 上以 .new 结尾的 PE 文件同样可以直接执行
+// （CreateProcess 不看扩展名，只看文件头）。加超时是兜底：
+// 正常情况它打印一行就退出，跑不起来才需要放弃。
+func runSelfVersion(path string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "-version").Output()
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return "", fmt.Errorf("输出无法解析：%s", strings.TrimSpace(string(out)))
+	}
+	return fields[1], nil
+}
+
 // hubPullSelf 下载授权系统最新的平台版本并就地替换自身二进制。
 //
 // 返回值 replaced 表示「这次确实换了文件」；换了之后会按策略自动重启进程，
 // 让新版本真正生效 —— 只换文件不重启正是「平台自己没法更新自己」的根因。
 func (s *Server) hubPullSelf() (msg string, replaced bool, err error) {
+	// 自动路径（每轮同步）与控制台手动点击是同一份 .new/.new.tmp，
+	// 并发跑会互相覆盖，先完成的那次还会触发重启、把另一条在途请求直接掐断
+	// （浏览器侧只看到 Failed to fetch）。后来的这一方立刻返回，不排队。
+	if !selfPullMu.TryLock() {
+		return "", false, errSelfPullBusy
+	}
+	defer selfPullMu.Unlock()
+
 	hs := s.hubState()
 	if !hs.Configured {
 		return "", false, fmt.Errorf("尚未配置授权系统地址")
@@ -1017,6 +1062,24 @@ func (s *Server) hubPullSelf() (msg string, replaced bool, err error) {
 	newFile := exe + ".new"
 	if err := s.hubDownloadTo(r, newFile); err != nil {
 		return "", false, err
+	}
+	// 替换之前先让新二进制自报版本。授权端的版本号是「登记标签」，
+	// 与二进制内嵌的版本可能不一致（典型事故：用 --skip-build 复用上一版 dist、
+	// 却用 -v 指定了新版本号）。这种情况下替换毫无意义 —— 重启后自报版本不变，
+	// 下一轮同步又判定「有新版本」，于是每 5 分钟下载→替换→重启一轮，
+	// 表现为「版本号永远不变、服务反复重启」，手工点升级还会撞上重启窗口。
+	// 自检不过就地拒绝，把「静默死循环」变成一条看得懂的报错。
+	selfVer, verr := runSelfVersion(newFile)
+	if verr != nil {
+		_ = os.Remove(newFile)
+		return "", false, fmt.Errorf("新版本自检失败（无法执行 %s -version）：%w，已放弃替换",
+			filepath.Base(newFile), verr)
+	}
+	if !version.IsNewer(selfVer, version.Version) {
+		_ = os.Remove(newFile)
+		return "", false, fmt.Errorf("授权系统下发的 %s 自报版本为 %s，并不高于当前运行的 %s，已拒绝替换。"+
+			"授权端很可能把旧产物登记成了新版本号，请重新构建并上传真正的 %s",
+			r.Version, firstNonEmpty(selfVer, "未知"), version.Version, r.Version)
 	}
 	// Windows 上运行中的可执行文件不能被覆盖，但可以改名：
 	// 先把当前程序改名为 .bak，再把新文件改名为当前程序名。
