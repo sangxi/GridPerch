@@ -1,11 +1,15 @@
 # OpsMonitor 发版清单
 
 - 版本号：**1.1.7**（服务端与采集端共用，取自 `internal/version/version.go`）
-- 构建时间：**2026-10-14T14:35:25**（由 `build.sh` 注入 `version.BuildTime`，10 个产物一致）
+- 说明：本清单对应 **发布前的最后一次重打** —— 首个构建之后，往面板内嵌「使用教程」的
+  部署类排障表补了 Windows 7 / Server 2008 R2 采集端的条目。功能代码与 1.1.7 首个构建完全一致；
+  该版本从未上传过授权中心，不存在「同版本号、不同内容」的遗留问题。
+- 构建时间：**2026-10-14T16:07:02**（由 `build.sh` 注入 `version.BuildTime`，10 个正式产物一致）
 - 构建方式：`bash build.sh all`（`CGO_ENABLED=0` 静态交叉编译，纯 Go SQLite，无动态库依赖）
 - 产物目录：`D:\c\xin`（源 `D:\c\opsmonitor\dist`）
 - 自检：`gofmt -l internal cmd` 无输出 · `go vet ./...` 干净 · `go test ./...` 全过 ·
-  `sha256sum -c SHA256SUMS.txt` **10/10 OK** · 服务端产物可 `grep` 到真公钥 `uZhJVTm2`
+  `sha256sum -c SHA256SUMS.txt` **11/11 OK**（10 个正式产物 + 1 个 Windows 7 / 2008 R2 兼容采集端） ·
+  服务端产物可 `grep` 到真公钥 `uZhJVTm2`
 
 ## 本次更新内容
 

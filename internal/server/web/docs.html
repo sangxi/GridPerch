@@ -895,6 +895,7 @@ sudo systemctl start opsmonitor</code></pre>
           <tr><td>提示需要管理员权限</td><td>Windows 安装脚本要求管理员 PowerShell</td><td>右键「以管理员身份运行」</td></tr>
           <tr><td>重启后数据全丢</td><td><code>data</code> 目录没挂载</td><td>按文件挂载清单挂上 <code>/opt/opsmonitor/data</code></td></tr>
           <tr><td>告警时间差 8 小时</td><td>容器时区是 UTC</td><td>设置 <code>TZ=Asia/Shanghai</code> 并挂载 <code>/etc/localtime</code></td></tr>
+          <tr><td><strong>Windows 7 / Server 2008 R2</strong> 上采集端双击后闪退，没有窗口也没有日志</td><td>Go 1.21.5 起 runtime 的随机数源依赖 Windows 8 才有的 <code>bcryptprimitives.dll</code>，旧系统上加载失败，进程在 runtime 初始化阶段直接退出（早于任何业务日志，所以看不到报错）</td><td>改用专用兼容产物 <code>opsmonitor-agent-windows-amd64-win7.exe</code>，启动参数<strong>必须</strong>加 <code>-remote-config off -update off</code> —— 否则它会在 30 分钟内被平台下发的更新策略换成普通版，又闪退；旧系统没有 <code>Register-ScheduledTask</code>，用系统自带的 <code>schtasks.exe</code> 注册开机自启</td></tr>
         </tbody>
       </table>
 
