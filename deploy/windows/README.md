@@ -19,9 +19,9 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # 仅本次�
 
 脚本会自动：
 
-1. 把 `opsmonitor-server.exe` 装到 `C:\OpsMonitor\`（自动从脚本上级目录找二进制）
-2. 生成 `C:\OpsMonitor\start-server.cmd`，把端口、密钥、账号写进去
-3. 注册**开机自启计划任务** `opsmonitor`（SYSTEM 权限、失败自动重启 3 次）
+1. 把 `strix-server.exe` 装到 `C:\Strix\`（自动从脚本上级目录找二进制）
+2. 生成 `C:\Strix\start-server.cmd`，把端口、密钥、账号写进去
+3. 注册**开机自启计划任务** `strix`（SYSTEM 权限、失败自动重启 3 次）
 4. 放行防火墙端口
 5. 打印**只显示一次**的控制台账号与通信密钥
 
@@ -32,8 +32,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # 仅本次�
 ```powershell
 .\install.ps1 -Addr :8000                          # 换端口
 .\install.ps1 -Token '你的密钥' -AdminPass '你的密码'   # 指定密钥与密码
-.\install.ps1 -Prefix 'D:\OpsMonitor'              # 换安装目录
-.\install.ps1 -File D:\tmp\opsmonitor-server-windows-amd64.exe
+.\install.ps1 -Prefix 'D:\Strix'              # 换安装目录
+.\install.ps1 -File D:\tmp\strix-server-windows-amd64.exe
 .\install.ps1 -NoFirewall                          # 不动防火墙
 .\install.ps1 -Uninstall                           # 卸载（保留数据）
 .\uninstall.ps1 -Purge                             # 卸载并删除数据
@@ -43,69 +43,69 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # 仅本次�
 
 | 路径 | 用途 |
 |---|---|
-| `C:\OpsMonitor\opsmonitor-server.exe` | 主程序（自动更新会替换，旧版存为 `.bak`） |
-| `C:\OpsMonitor\start-server.cmd` | 启动脚本（配置在这里，权限受限） |
-| `C:\OpsMonitor\data\opsmonitor.db` | SQLite 数据库（备份拷这个目录） |
-| `C:\OpsMonitor\logs\server.log` | 程序输出日志 |
-| `C:\OpsMonitor\releases\` | 采集端发布物缓存 |
+| `C:\Strix\strix-server.exe` | 主程序（自动更新会替换，旧版存为 `.bak`） |
+| `C:\Strix\start-server.cmd` | 启动脚本（配置在这里，权限受限） |
+| `C:\Strix\data\strix.db` | SQLite 数据库（备份拷这个目录） |
+| `C:\Strix\logs\server.log` | 程序输出日志 |
+| `C:\Strix\releases\` | 采集端发布物缓存 |
 
 ## 日常运维
 
 ```powershell
 # 状态
-Get-ScheduledTask -TaskName opsmonitor | Select-Object State
-Get-Process opsmonitor-server -ErrorAction SilentlyContinue
+Get-ScheduledTask -TaskName strix | Select-Object State
+Get-Process strix-server -ErrorAction SilentlyContinue
 
 # 看日志（跟随输出）
-Get-Content C:\OpsMonitor\logs\server.log -Tail 40 -Wait
+Get-Content C:\Strix\logs\server.log -Tail 40 -Wait
 
 # 重启
-Stop-ScheduledTask -TaskName opsmonitor; Start-ScheduledTask -TaskName opsmonitor
+Stop-ScheduledTask -TaskName strix; Start-ScheduledTask -TaskName strix
 
 # 开机自启开关
-Disable-ScheduledTask -TaskName opsmonitor
-Enable-ScheduledTask  -TaskName opsmonitor
+Disable-ScheduledTask -TaskName strix
+Enable-ScheduledTask  -TaskName strix
 ```
 
 ## 手工部署（不用脚本）
 
 ```powershell
-New-Item -ItemType Directory -Force C:\OpsMonitor\data, C:\OpsMonitor\logs
-Copy-Item opsmonitor-server-windows-amd64.exe C:\OpsMonitor\opsmonitor-server.exe
+New-Item -ItemType Directory -Force C:\Strix\data, C:\Strix\logs
+Copy-Item strix-server-windows-amd64.exe C:\Strix\strix-server.exe
 
 # 前台试跑，确认能起来（Ctrl+C 退出）
-C:\OpsMonitor\opsmonitor-server.exe -addr :9999 -db C:\OpsMonitor\data\opsmonitor.db -token 你的密钥
+C:\Strix\strix-server.exe -addr :9999 -db C:\Strix\data\strix.db -token 你的密钥
 
 # 注册开机自启
-$action  = New-ScheduledTaskAction -Execute 'C:\OpsMonitor\opsmonitor-server.exe' `
-  -Argument '-addr :9999 -db C:\OpsMonitor\data\opsmonitor.db -token 你的密钥' `
-  -WorkingDirectory 'C:\OpsMonitor'
+$action  = New-ScheduledTaskAction -Execute 'C:\Strix\strix-server.exe' `
+  -Argument '-addr :9999 -db C:\Strix\data\strix.db -token 你的密钥' `
+  -WorkingDirectory 'C:\Strix'
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-Register-ScheduledTask -TaskName opsmonitor -Action $action -Trigger $trigger -Principal $principal -Force
+Register-ScheduledTask -TaskName strix -Action $action -Trigger $trigger -Principal $principal -Force
 
 # 放行防火墙
-New-NetFirewallRule -DisplayName 'OpsMonitor' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9999
+New-NetFirewallRule -DisplayName 'Strix' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9999
 ```
 
 ## 升级
 
-升级只需替换 `C:\OpsMonitor\opsmonitor-server.exe` 这一个二进制（前端已编译在内）。替换后重启计划任务使新版本生效：
+升级只需替换 `C:\Strix\strix-server.exe` 这一个二进制（前端已编译在内）。替换后重启计划任务使新版本生效：
 
 ```powershell
-Stop-ScheduledTask -TaskName opsmonitor; Start-ScheduledTask -TaskName opsmonitor
+Stop-ScheduledTask -TaskName strix; Start-ScheduledTask -TaskName strix
 ```
 
 ## 排障
 
 | 现象 | 处理 |
 |---|---|
-| 计划任务显示「已就绪」但没有进程 | 看 `C:\OpsMonitor\logs\server.log`；常见是端口被占或数据目录无权限 |
+| 计划任务显示「已就绪」但没有进程 | 看 `C:\Strix\logs\server.log`；常见是端口被占或数据目录无权限 |
 | 无法执行脚本，提示脚本被禁用 | 用上面那句 `Set-ExecutionPolicy -Scope Process Bypass`，或 `powershell -ExecutionPolicy Bypass -File .\install.ps1` |
 | 本机能开、别的机器打不开 | 防火墙规则没生效，或安全组/上层设备未放行 |
 | 日志乱码 | 用 `Get-Content -Encoding Default` 读取，或直接用记事本打开 |
 | 启动日志指纹不是 `278D-4852-7191-E7CE` | 二进制不是本版本产物 |
-| 采集端连不上 | 检查 `-token` 是否与监控端 `OPSM_TOKEN` 一致，以及 9999 是否可达 |
+| 采集端连不上 | 检查 `-token` 是否与监控端 `STRIX_TOKEN` 一致，以及 9999 是否可达 |
 
 ---
 
@@ -131,8 +131,8 @@ XP 起就有）换成了 `ProcessPrng`（`bcryptprimitives.dll`）。Windows 7 /
 快速判断手上这个 exe 属于哪一类（在**开发机**上对二进制执行）：
 
 ```bash
-grep -ac bcryptprimitives  opsmonitor-agent-windows-amd64.exe        # >0 → 跑不了旧系统
-grep -ac SystemFunction036 opsmonitor-agent-windows-amd64-win7.exe   # >0 → 可以跑旧系统
+grep -ac bcryptprimitives  strix-agent-windows-amd64.exe        # >0 → 跑不了旧系统
+grep -ac SystemFunction036 strix-agent-windows-amd64-win7.exe   # >0 → 可以跑旧系统
 ```
 
 ## Windows 7 SP1 / Server 2008 R2 专用部署
@@ -140,7 +140,7 @@ grep -ac SystemFunction036 opsmonitor-agent-windows-amd64-win7.exe   # >0 → �
 用 Go 1.20.14（官方最后一个支持这两个系统的版本）单独构建的兼容产物：
 
 ```
-opsmonitor-agent-windows-amd64-win7.exe
+strix-agent-windows-amd64-win7.exe
 ```
 
 在源码根执行 `./build-win7.sh` 生成（依赖 `go120.mod` 这份裁剪版 modfile）。
@@ -162,28 +162,28 @@ Windows Server 2008 R2 自带的 PowerShell 只有 **2.0**，**没有 `Register-
 `schtasks.exe`：
 
 ```cmd
-:: 1) 先验证二进制能在本机跑起来（应打印 opsmonitor-agent 1.1.7 (windows/amd64) …）
-C:\OpsMonitor\opsmonitor-agent-windows-amd64-win7.exe -version
+:: 1) 先验证二进制能在本机跑起来（应打印 strix-agent 1.2.0 (windows/amd64) …）
+C:\Strix\strix-agent-windows-amd64-win7.exe -version
 
 :: 2) 把本目录的 start-agent.cmd 与 exe 放在同一目录，用记事本改开头那 4 项
 ::    （平台地址 / 密钥MD5 / 主机名 / 上报间隔）—— 其余参数已在脚本里固化
 
 :: 3) 双击 start-agent.cmd 试跑。日志里应出现
-::    「采集端启动：版本 1.1.7 …，更新策略 off」以及「已上报 CPU …」，即已连上平台
+::    「采集端启动：版本 1.2.0 …，更新策略 off」以及「已上报 CPU …」，即已连上平台
 
 :: 4) 注册开机自启（管理员 cmd，注意末尾 log 参数让输出写进 agent.log）
-schtasks /create /tn opsmonitor-agent /tr "C:\OpsMonitor\start-agent.cmd log" /sc onstart /ru SYSTEM /rl HIGHEST /f
-schtasks /run /tn opsmonitor-agent
+schtasks /create /tn strix-agent /tr "C:\Strix\start-agent.cmd log" /sc onstart /ru SYSTEM /rl HIGHEST /f
+schtasks /run /tn strix-agent
 
 :: 5) 查看状态与日志
-schtasks /query /tn opsmonitor-agent
-type C:\OpsMonitor\agent.log
+schtasks /query /tn strix-agent
+type C:\Strix\agent.log
 ```
 
 `密钥MD5` 就是平台「添加主机」页面生成命令里的 `wgToken` 值（= 监控端 `token` 的 MD5）。
 `-name` 建议用纯英文；不写则用系统主机名。
 
-日志出现 `采集端启动：版本 1.1.7，本机名称 …，服务端 …，更新策略 off` 即成功，
+日志出现 `采集端启动：版本 1.2.0，本机名称 …，服务端 …，更新策略 off` 即成功，
 随后控制台「主机监控」里会出现这台机器。
 
 ### 升级这个兼容版
@@ -191,14 +191,14 @@ type C:\OpsMonitor\agent.log
 版本号变更后，在**开发机**上重新构建，再把新 exe 手工拷到目标机替换：
 
 ```bash
-./build-win7.sh          # 产物：dist/opsmonitor-agent-windows-amd64-win7.exe
+./build-win7.sh          # 产物：dist/strix-agent-windows-amd64-win7.exe
 ```
 
 ```cmd
 :: 在 2008 R2 上
-schtasks /end /tn opsmonitor-agent
+schtasks /end /tn strix-agent
 :: 覆盖 exe 之后再启动
-schtasks /run /tn opsmonitor-agent
+schtasks /run /tn strix-agent
 ```
 
 ### 排障
@@ -206,6 +206,6 @@ schtasks /run /tn opsmonitor-agent
 | 现象 | 处理 |
 |---|---|
 | 双击闪退、无任何输出 | 就是系统兼容问题，换 `-win7` 兼容版 |
-| `-version` 正常但注册任务后平台看不到主机 | 看 `C:\OpsMonitor\agent.log`；多半是 `-server` 写成了 `127.0.0.1`，或平台 IP/端口不可达 |
+| `-version` 正常但注册任务后平台看不到主机 | 看 `C:\Strix\agent.log`；多半是 `-server` 写成了 `127.0.0.1`，或平台 IP/端口不可达 |
 | 稳定运行一段时间后突然又闪退 | 检查启动参数是否漏了 `-remote-config off -update off`，被平台下发的 `auto` 换成了正常版 |
 | 不确定手上的 exe 是哪个构建 | `-version` 看构建时间；或 `grep -ac bcryptprimitives`，结果为 0 才是兼容版 |

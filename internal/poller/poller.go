@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/probe"
-	"github.com/sangxi/OpsMonitor/internal/store"
+	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/probe"
+	"github.com/sangxi/strix/internal/store"
 )
 
 // Poller 周期性执行服务端监控项。

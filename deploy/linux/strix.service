@@ -1,0 +1,26 @@
+[Unit]
+Description=Strix 运维监控服务端
+Documentation=https://github.com/sangxi/strix
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=strix
+Group=strix
+WorkingDirectory=/opt/strix
+EnvironmentFile=/etc/strix/strix.env
+ExecStart=/opt/strix/strix-server
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+# 安全加固：只允许写数据目录，其余文件系统只读
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/strix/data /opt/strix/releases
+
+[Install]
+WantedBy=multi-user.target

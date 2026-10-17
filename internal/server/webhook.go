@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/notify"
-	"github.com/sangxi/OpsMonitor/internal/store"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/notify"
+	"github.com/sangxi/strix/internal/store"
 )
 
 /* ---------------- Webhook 机器人配置管理 ---------------- */
@@ -193,7 +193,7 @@ func (s *Server) handleWebhookTest(w http.ResponseWriter, r *http.Request) {
 	}
 	alerts := []notify.Alert{{
 		Hostname: "测试主机", Type: "info", Level: "info",
-		Content:    "这是一条来自 OpsMonitor 的测试消息，说明该机器人通道配置正确。",
+		Content:    "这是一条来自 Strix 的测试消息，说明该机器人通道配置正确。",
 		CreateTime: time.Now().Format("2006-01-02 15:04:05"),
 	}}
 	cfg := s.webhookConfig(*hook)

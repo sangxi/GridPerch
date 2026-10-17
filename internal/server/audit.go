@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/store"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/store"
 )
 
 /* ---------------- 操作审计 ---------------- */

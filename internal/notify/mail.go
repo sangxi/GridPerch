@@ -43,7 +43,7 @@ type Alert struct {
 func (c MailConfig) Subject(a Alert) string {
 	prefix := strings.TrimSpace(c.Prefix)
 	if prefix == "" {
-		prefix = "[OpsMonitor]"
+		prefix = "[Strix]"
 	}
 	return fmt.Sprintf("%s %s 告警：%s", prefix, levelCN(a.Level), a.Hostname)
 }

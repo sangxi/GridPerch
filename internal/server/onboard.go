@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
-	"github.com/sangxi/OpsMonitor/internal/version"
+	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/strix/internal/version"
 )
 
 // agentPlatform 是「添加主机」页做前置校验用的平台摘要。

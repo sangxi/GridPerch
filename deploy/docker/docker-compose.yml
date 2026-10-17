@@ -1,8 +1,8 @@
 # ============================================================================
-#  OpsMonitor 监控端（server）· Docker Compose
+#  Strix 监控端（server）· Docker Compose
 # ----------------------------------------------------------------------------
 #  用法（在本目录下）：
-#    cp .env.example .env    # 至少要改 OPSM_TOKEN / OPSM_ADMIN_PASS / OPSM_LICENSE_MACHINE
+#    cp .env.example .env    # 至少要改 STRIX_TOKEN / STRIX_ADMIN_PASS / STRIX_LICENSE_MACHINE
 #    docker compose up -d
 #    docker compose logs -f
 #
@@ -10,24 +10,24 @@
 # ============================================================================
 
 services:
-  opsmonitor:
+  strix:
     build:
       # 构建上下文必须是仓库根目录（Dockerfile.binary 要读 release/<版本>/ 里的二进制）
       context: ../..
       dockerfile: deploy/docker/Dockerfile.binary
       args:
-        VERSION: "1.1.0"
+        VERSION: "1.2.0"
 
     # 想改成「从源码构建」就注释掉上面的 build 段，改用下面这段：
     # build:
     #   context: ../..
     #   dockerfile: deploy/docker/Dockerfile
     #   args:
-    #     VERSION: "1.1.0"
+    #     VERSION: "1.2.0"
     #     BUILD_TIME: "2026-10-12T10:49:43"
 
-    image: opsmonitor/opsmonitor-server:1.1.0
-    container_name: opsmonitor-server
+    image: strix/strix-server:1.2.0
+    container_name: strix-server
     restart: unless-stopped
 
     ports:
@@ -39,15 +39,17 @@ services:
 
     environment:
       TZ: Asia/Shanghai
-      OPSM_ADDR: ":9999"
-      OPSM_DB: "/data/opsmonitor.db"
-      OPSM_RELEASE_DIR: "/releases"
+      STRIX_ADDR: ":9999"
+      # 更名前的老部署，数据是 /data/opsmonitor.db。按新名字找不到文件时程序会自动
+      # 沿用旧库（启动日志会提示），也可以直接把这里写回 "/data/opsmonitor.db"。
+      STRIX_DB: "/data/strix.db"
+      STRIX_RELEASE_DIR: "/releases"
 
     env_file:
       - .env
 
     # 容器里的机器码会随容器重建而变，导致授权失效；
-    # 所以授权类的配置统一从 .env 里的 OPSM_LICENSE_MACHINE 固定下来。
+    # 所以授权类的配置统一从 .env 里的 STRIX_LICENSE_MACHINE 固定下来。
     # 日志量不大就不必限制；要限制可打开下面两行
     # logging:
     #   driver: json-file

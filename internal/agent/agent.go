@@ -12,15 +12,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/version"
+	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/version"
 )
 
 // Run 启动采集循环：配置下发、指标上报、监控项检查、指令下发、自动更新五条通道并行。
 func Run(cfg *config.Agent) {
 	if cfg.PrintVersion {
-		fmt.Printf("opsmonitor-agent %s (%s/%s)", version.Version, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("strix-agent %s (%s/%s)", version.Version, runtime.GOOS, runtime.GOARCH)
 		if version.BuildTime != "" {
 			fmt.Printf(" 构建于 %s", version.BuildTime)
 		}

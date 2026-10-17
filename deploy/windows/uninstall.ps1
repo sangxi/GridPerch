@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  卸载 OpsMonitor 监控端（Windows）。
+  卸载 Strix 监控端（Windows）。
 .DESCRIPTION
   等价于 install.ps1 -Uninstall：停止并删除计划任务与进程，保留数据与配置。
   加 -Purge 会连同数据目录一起删除（不可恢复，请谨慎）。
@@ -11,13 +11,13 @@
 #>
 [CmdletBinding()]
 param(
-  [string]$Prefix  = 'C:\OpsMonitor',
-  [string]$TaskName = 'opsmonitor',
+  [string]$Prefix  = 'C:\Strix',
+  [string]$TaskName = 'strix',
   [switch]$Purge
 )
 
 $ErrorActionPreference = 'Stop'
-$App = 'opsmonitor-server'
+$App = 'strix-server'
 
 $wp = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $wp.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -32,7 +32,7 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 Get-Process $App -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Write-Host '==> 移除防火墙规则' -ForegroundColor Green
-Get-NetFirewallRule -DisplayName 'OpsMonitor' -ErrorAction SilentlyContinue |
+Get-NetFirewallRule -DisplayName 'Strix' -ErrorAction SilentlyContinue |
   Remove-NetFirewallRule -ErrorAction SilentlyContinue
 
 if ($Purge) {

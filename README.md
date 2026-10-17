@@ -1,25 +1,22 @@
-# OpsMonitor
+# Strix
 
 **开箱即用的轻量级分布式运维监控系统** —— 极简部署、自动化运行、零模板零脚本。
 
-Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<https://github.com/sangxi/OpsMonitor>
+Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<https://github.com/sangxi/strix>
 
 ```
-┌──────────────┐  POST /agent/minTask   ┌───────────────┐     ┌──────────┐
-│ opsmonitor-  │───────────────────────►│ opsmonitor-   │────►│ SQLite   │
-│ agent        │  JSON + MD5(token) 鉴权 │ server        │     │ 单文件库 │
-│ 采集端        │◄───────────────────────│ 服务端 / 控制台 │◄────│ 读写分离 │
-│ 本地探针│  GET /agent/tasks       └───┬───────┬───┘     └──────────┘
-└──────────────┘                            │       │ 平台代拉（可选）
-                                    内嵌静态资源     │       │
-                            Web 控制台 + 大屏 + 教程   ▼       ▼
-                              （浏览器）      ┌──────────────────┐
-                                                 │ 授权系统（独立）   │
-                                                 └──────────────────┘
+┌──────────────┐   POST /agent/minTask   ┌───────────────┐     ┌──────────┐
+│ strix-agent  │────────────────────────►│ strix-server  │────►│ SQLite   │
+│ 采集端 / 探针 │   JSON + MD5(token) 鉴权 │ 服务端 + 控制台 │     │ 单文件库 │
+└──────────────┘◄────────────────────────└───────────────┘◄────└──────────┘
+                   GET /agent/tasks
 ```
+
+服务端同时把 Web 控制台、可视化大屏与使用教程内嵌在二进制里对外提供；版本与授权码可选择从独立的
+**授权系统**拉取（内网离线环境用 `-hub=` 关闭）。
 ### 重要信息
 
-> 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / opsmonitor`。
+> 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / strix`。
 
 ## 界面预览
 
@@ -46,17 +43,18 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 - **上报可调**：默认每分钟上报一次，间隔由平台统一下发，改配置不用登主机、不用重启
 - **部署即用**：支持 Docker Compose / 1Panel / 宝塔面板 / docker / 二进制直接运行，全中文 UI
 
-## 二开版本更新（1.1.1 → 1.1.5）
+## 二开版本更新（1.1.1 → 1.2.0）
 
 | 版本 | 重点 |
 | --- | --- |
 | 1.1.1 | 采集端发布物按 5 个平台（linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64）逐个补拉，修复「Linux 服务端装不上 Windows 采集端 / 授权系统尚未发布该平台」；补拉在后台执行，避免「立即检查更新」被网关超时（HTTP 524）拖死；`-public-url` 配成回环/内网/CGNAT 地址时启动告警 |
 | 1.1.2 | 控制台登录失败明确提示原因（用户名或密码错误 / 账号已停用）；内嵌前端资源统一 `Cache-Control: no-cache`，升级二进制后浏览器/反向代理不会再用旧前端 |
-| 1.1.3 | 平台自升级后自动重启生效（systemd `Restart=always` / Docker Compose `restart: unless-stopped` / 手工 `nohup` 自拉起，启动失败自动回滚 `.bak`）；新增 `-hub-restart` / `OPSM_HUB_RESTART` |
+| 1.1.3 | 平台自升级后自动重启生效（systemd `Restart=always` / Docker Compose `restart: unless-stopped` / 手工 `nohup` 自拉起，启动失败自动回滚 `.bak`）；新增 `-hub-restart` / `STRIX_HUB_RESTART` |
 | 1.1.4 | 控制台「在线升级」「授权购买」页不再展示授权中心域名，也去掉了跳转到授权站的按钮（授权站遭 DDoS 期间降低暴露面），保留机器码与同步状态；前端加 `SHOW_HUB_URL` 开关，排障时可改回显示 |
 | 1.1.5 | 修复一键安装脚本把中文主机名清成一串 `-`（现在中/日文等都能正常作主机名，元字符仍被替换，注入面不变）；新增**主机重命名**与**删除主机**（主机列表行内按钮，限管理员），改名级联迁移全部历史数据并登记旧名→新名映射，**旧名仍在上报的采集端自动归位、无需重装** |
+| 1.2.0 | **品牌更名为 Strix**（原 OpsMonitor 同名项目过多）。二进制、目录、部署路径、环境变量前缀、授权码前缀统一改为 `strix` / `STRIX_` / `STRIX2-`；同时保留旧标识兼容：`OPSM_*` 环境变量自动回落、`OPSM2-`／`OPSM1-`／`WGC-` 存量授权码继续有效、旧 `opsmonitor.db` 自动沿用、机器码与设备密钥的历史盐值不变。老部署换二进制即可，无需重新授权或迁移数据 |
 
-当前版本 **1.1.5**（构建时间 2026-10-13T14:01:00）。版本沿革：官方 1.0.3 → 二开 1.1.0 → 1.1.1 → 1.1.2 → 1.1.3 → 1.1.4 → 1.1.5。
+当前版本 **1.2.0**。版本沿革：官方 1.0.3 → 二开 1.1.0 → 1.1.1 → 1.1.2 → 1.1.3 → 1.1.4 → 1.1.5 → 1.1.6 → 1.1.7 → **1.2.0（更名 Strix）**。
 
 ## 监控能力
 
@@ -112,7 +110,7 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 ### Docker Compose（推荐）
 
 ```bash
-mkdir -p /opt/opsmonitor/data && cd /opt/opsmonitor
+mkdir -p /opt/strix/data && cd /opt/strix
 # 按 DEPLOY.md 编写 docker-compose.yml 后
 docker compose up -d
 docker compose logs -f --tail=100
@@ -126,7 +124,7 @@ docker compose logs -f --tail=100
 ```
 
 ```bash
-./bin/opsmonitor-server -addr :9999 -db ./data/opsmonitor.db -token opsmonitor -public-url http://<服务器IP>:9999
+./bin/strix-server -addr :9999 -db ./data/strix.db -token strix -public-url http://<服务器IP>:9999
 ```
 
 ### 接入采集端
@@ -153,63 +151,63 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://<服务器IP>:9999
 
 ## 配置项摘要
 
-### 服务端 `opsmonitor-server`
+### 服务端 `strix-server`
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `-addr` | `OPSM_ADDR` | `:9999` | HTTP 监听地址 |
-| `-db` | `OPSM_DB` | `./data/opsmonitor.db` | SQLite 文件路径 |
-| `-token` | `OPSM_TOKEN` | `opsmonitor` | 采集端通信密钥，两端必须一致 |
-| `-user` / `-pass` | `OPSM_ADMIN_USER` / `OPSM_ADMIN_PASS` | `admin` / `opsmonitor` | 控制台账号（仅首次启动生效） |
-| `-retention` | `OPSM_RETENTION` | `30` | 历史数据保留天数，0 表示永久 |
-| `-public-url` | `OPSM_PUBLIC_URL` | 自动反推 | 对外访问地址，反向代理下务必显式指定 |
-| `-offline` | `OPSM_OFFLINE_SEC` | `180` | 超过该秒数未上报判定离线 |
-| `-cpu-alert` / `-mem-alert` / `-disk-alert` | `OPSM_CPU_ALERT` 等 | `90` | 告警阈值（%） |
-| `-load-alert` | `OPSM_LOAD_ALERT` | `10` | 系统负载告警阈值 |
-| `-alert-cooldown` | `OPSM_ALERT_COOLDOWN_MIN` | `10` | 同类告警去重冷却（分钟） |
-| `-release-dir` | `OPSM_RELEASE_DIR` | 空 | 采集端发布物缓存目录（默认由程序内部决定） |
-| `-login-alert` | `OPSM_LOGIN_ALERT` | `true` | 控制台登录失败是否推送告警 |
-| `-read-conns` | `OPSM_READ_CONNS` | `8` | SQLite 读连接数 |
-| `-write-queue` | `OPSM_WRITE_QUEUE` | `8192` | SQLite 写队列长度 |
-| `-probe-workers` | `OPSM_PROBE_WORKERS` | `64` | 服务端探针并发数 |
-| `-purge` | `OPSM_PURGE_INTERVAL` | `3600` | 历史数据清理间隔（秒） |
-| `-license-secret` | `OPSM_LICENSE_SECRET` | 空 | 旧格式授权码（HMAC）校验密钥，存量旧码换完后即可去掉 |
-| `-license` | `OPSM_LICENSE_KEY` | 空 | 手工导入的授权码 |
-| `-license-machine` | `OPSM_LICENSE_MACHINE` | 空 | 机器码（Docker 等环境需固定，否则授权失效） |
-| `-free-hosts` | `OPSM_LICENSE_FREE_HOSTS` | `10` | 免费档主机数上限 |
-| `-free-users` | `OPSM_LICENSE_FREE_USERS` | `3` | 免费档控制台账号数上限 |
-| `-hub` | `OPSM_HUB` | 默认已内置授权中心地址；留空=完全离线 | 授权系统地址，不配则纯离线单机模式 |
-| `-hub-token` | `OPSM_HUB_TOKEN` | 留空用内置令牌 | 访问授权系统的令牌 |
-| `-hub-interval` | `OPSM_HUB_INTERVAL_MIN` | `5` 分钟 | 向授权系统轮询间隔（分钟） |
-| `-hub-auto-update` | `OPSM_HUB_AUTO_UPDATE` | `download` | 平台自升级策略：`download` 自动下载并就位 / `check` 只提示不下载 / `off` 关闭 |
-| `-hub-restart` | `OPSM_HUB_RESTART` | `auto` | 自升级后是否自动重启生效：`auto` 自动重启 / `off` 只替换文件不重启（需人工重启） |
-| `-hub-ua` | `OPSM_HUB_UA` | 空 | 访问授权系统时的自定义 User-Agent |
+| `-addr` | `STRIX_ADDR` | `:9999` | HTTP 监听地址 |
+| `-db` | `STRIX_DB` | `./data/strix.db` | SQLite 文件路径 |
+| `-token` | `STRIX_TOKEN` | `strix` | 采集端通信密钥，两端必须一致 |
+| `-user` / `-pass` | `STRIX_ADMIN_USER` / `STRIX_ADMIN_PASS` | `admin` / `strix` | 控制台账号（仅首次启动生效） |
+| `-retention` | `STRIX_RETENTION` | `30` | 历史数据保留天数，0 表示永久 |
+| `-public-url` | `STRIX_PUBLIC_URL` | 自动反推 | 对外访问地址，反向代理下务必显式指定 |
+| `-offline` | `STRIX_OFFLINE_SEC` | `180` | 超过该秒数未上报判定离线 |
+| `-cpu-alert` / `-mem-alert` / `-disk-alert` | `STRIX_CPU_ALERT` 等 | `90` | 告警阈值（%） |
+| `-load-alert` | `STRIX_LOAD_ALERT` | `10` | 系统负载告警阈值 |
+| `-alert-cooldown` | `STRIX_ALERT_COOLDOWN_MIN` | `10` | 同类告警去重冷却（分钟） |
+| `-release-dir` | `STRIX_RELEASE_DIR` | 空 | 采集端发布物缓存目录（默认由程序内部决定） |
+| `-login-alert` | `STRIX_LOGIN_ALERT` | `true` | 控制台登录失败是否推送告警 |
+| `-read-conns` | `STRIX_READ_CONNS` | `8` | SQLite 读连接数 |
+| `-write-queue` | `STRIX_WRITE_QUEUE` | `8192` | SQLite 写队列长度 |
+| `-probe-workers` | `STRIX_PROBE_WORKERS` | `64` | 服务端探针并发数 |
+| `-purge` | `STRIX_PURGE_INTERVAL` | `3600` | 历史数据清理间隔（秒） |
+| `-license-secret` | `STRIX_LICENSE_SECRET` | 空 | 旧格式授权码（HMAC）校验密钥，存量旧码换完后即可去掉 |
+| `-license` | `STRIX_LICENSE_KEY` | 空 | 手工导入的授权码 |
+| `-license-machine` | `STRIX_LICENSE_MACHINE` | 空 | 机器码（Docker 等环境需固定，否则授权失效） |
+| `-free-hosts` | `STRIX_LICENSE_FREE_HOSTS` | `10` | 免费档主机数上限 |
+| `-free-users` | `STRIX_LICENSE_FREE_USERS` | `3` | 免费档控制台账号数上限 |
+| `-hub` | `STRIX_HUB` | 默认已内置授权中心地址；留空=完全离线 | 授权系统地址，不配则纯离线单机模式 |
+| `-hub-token` | `STRIX_HUB_TOKEN` | 留空用内置令牌 | 访问授权系统的令牌 |
+| `-hub-interval` | `STRIX_HUB_INTERVAL_MIN` | `5` 分钟 | 向授权系统轮询间隔（分钟） |
+| `-hub-auto-update` | `STRIX_HUB_AUTO_UPDATE` | `download` | 平台自升级策略：`download` 自动下载并就位 / `check` 只提示不下载 / `off` 关闭 |
+| `-hub-restart` | `STRIX_HUB_RESTART` | `auto` | 自升级后是否自动重启生效：`auto` 自动重启 / `off` 只替换文件不重启（需人工重启） |
+| `-hub-ua` | `STRIX_HUB_UA` | 空 | 访问授权系统时的自定义 User-Agent |
 | `-version` | - | - | 打印版本后退出 |
 
 完整清单见 [DEPLOY.md](DEPLOY.md#六配置项完整清单)。
 
-### 采集端 `opsmonitor-agent`
+### 采集端 `strix-agent`
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `-server` | `OPSM_SERVER` | `http://127.0.0.1:9999` | 服务端地址 |
-| `-token` | `OPSM_TOKEN` | `opsmonitor` | 与服务端一致的通信密钥 |
+| `-server` | `STRIX_SERVER` | `http://127.0.0.1:9999` | 服务端地址 |
+| `-token` | `STRIX_TOKEN` | `strix` | 与服务端一致的通信密钥 |
 | `-token-hash` | - | 空 | 通信密钥的 MD5，与 `-token` 二选一 |
-| `-name` | `OPSM_HOSTNAME` | 本机主机名 | 平台显示名称 |
-| `-interval` | `OPSM_INTERVAL` | `60` | 上报间隔（秒），平台下发时被覆盖 |
-| `-update` | `OPSM_UPDATE` | `auto` | `auto` 自动升级 / `check` 只检查 / `off` 关闭 |
-| `-remote-config` | `OPSM_REMOTE_CONFIG` | `auto` | `auto` 接受平台下发 / `off` 只用本地参数 |
+| `-name` | `STRIX_HOSTNAME` | 本机主机名 | 平台显示名称 |
+| `-interval` | `STRIX_INTERVAL` | `60` | 上报间隔（秒），平台下发时被覆盖 |
+| `-update` | `STRIX_UPDATE` | `auto` | `auto` 自动升级 / `check` 只检查 / `off` 关闭 |
+| `-remote-config` | `STRIX_REMOTE_CONFIG` | `auto` | `auto` 接受平台下发 / `off` 只用本地参数 |
 
 > 带「平台下发时被覆盖」标记的参数只是本地兜底值。用 `-remote-config off` 可完全以本地参数为准。
 
 ## 目录结构
 
 ```
-OpsMonitor
+Strix
 ├── build.sh                     # 本平台 / 全平台交叉编译
 ├── release.sh                   # 交叉编译 + 上传到授权系统，一条命令完成版本发布
-├── cmd/opsmonitor-server        # 服务端（平台）入口
-├── cmd/opsmonitor-agent         # 采集端入口
+├── cmd/strix-server        # 服务端（平台）入口
+├── cmd/strix-agent         # 采集端入口
 ├── internal/config              # 命令行与环境变量配置
 ├── internal/version             # 版本号常量与版本比较
 ├── internal/license             # 授权码验签（Ed25519 + 旧格式 HMAC 兼容）、机器码、档位与配额
@@ -226,7 +224,7 @@ OpsMonitor
 
 ## 配套系统
 
-版本发布与授权签发是**另一套独立系统**（工程目录 `../opsmonitor-hub`），本工程不包含它的任何代码。
+版本发布与授权签发是**另一套独立系统**（工程目录 `../strix-hub`），本工程不包含它的任何代码。
 不配 `-hub` 就是**完全离线的单机模式**，功能不受影响；配了之后平台可从授权系统**代拉**最新版本与本机授权，
 内网平台与采集端都不需要访问公网。
 
@@ -238,7 +236,7 @@ OpsMonitor
 ## 安全建议
 
 1. **首次部署立即修改默认账号密码与通信密钥**（`-pass` / `-token`）
-2. 反向代理场景下启用 HTTPS，并显式配置 `-public-url` / `OPSM_PUBLIC_URL`
+2. 反向代理场景下启用 HTTPS，并显式配置 `-public-url` / `STRIX_PUBLIC_URL`
 3. 不要把 9999 端口暴露到公网；跨网段访问走内网或 VPN
 4. `/api/agent/install` 会返回通信密钥，仅管理员与运维可读，只读账号返回 403
 5. 定期通过控制台「审计日志」复核操作留痕

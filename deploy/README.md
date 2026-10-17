@@ -41,13 +41,13 @@ CPU 架构只需要选对文件：
 
 | 机器 | 文件 |
 |---|---|
-| x86_64 / amd64（绝大多数服务器） | `opsmonitor-server-linux-amd64` |
-| aarch64 / arm64（鲲鹏、飞腾、树莓派、Apple 芯片上的 Linux 虚拟机） | `opsmonitor-server-linux-arm64` |
+| x86_64 / amd64（绝大多数服务器） | `strix-server-linux-amd64` |
+| aarch64 / arm64（鲲鹏、飞腾、树莓派、Apple 芯片上的 Linux 虚拟机） | `strix-server-linux-arm64` |
 
 ## 部署前先确认二进制来源
 
 二进制在仓库的 `release/<版本>/` 下（例如 `release/1.1.5/`），文件名形如
-`opsmonitor-server-{linux,windows,darwin}-{amd64,arm64}[.exe]`。
+`strix-server-{linux,windows,darwin}-{amd64,arm64}[.exe]`。
 
 各平台的 `install.sh` / `install.ps1` 会自己往上找这些目录，通常不用手动指定路径；
 找不到时用 `-f <路径>`（Windows 用 `-File <路径>`）明确指定即可。

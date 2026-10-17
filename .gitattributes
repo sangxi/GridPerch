@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# 校验和清单必须保持 LF：Windows 工作区若被转成 CRLF，
+# Linux/CI 上 `sha256sum -c` 会把文件名末尾的 \r 当成文件名的一部分而校验失败。
+SHA256SUMS.txt text eol=lf
+
+# 部署脚本同理：CRLF 的 shell 脚本在 Linux 上会报 $'\r': command not found
+*.sh text eol=lf
+*.service text eol=lf
+*.env.example text eol=lf

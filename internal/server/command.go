@@ -6,8 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
-	"github.com/sangxi/OpsMonitor/internal/model"
+	"github.com/sangxi/strix/internal/model"
 )
 
 // handleCommands 查询指令历史或下发新指令。
@@ -72,7 +71,7 @@ func (s *Server) handleAgentCommands(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	hostname := r.URL.Query().Get("hostname")
 	token := r.URL.Query().Get("wgToken")
-	if hostname == "" || token != config.MD5Token(s.cfg.Token) {
+	if hostname == "" || !s.cfg.TokenOK(token) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"result": "error：token is invalidate"})
 		return
 	}
@@ -92,7 +91,7 @@ func (s *Server) handleAgentCommandResult(w http.ResponseWriter, r *http.Request
 		writeJSON(w, map[string]string{"result": "error：" + err.Error()})
 		return
 	}
-	if body.Hostname == "" || body.WgToken != config.MD5Token(s.cfg.Token) {
+	if body.Hostname == "" || !s.cfg.TokenOK(body.WgToken) {
 		writeJSON(w, map[string]string{"result": "error：token is invalidate"})
 		return
 	}

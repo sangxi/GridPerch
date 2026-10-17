@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/notify"
-	"github.com/sangxi/OpsMonitor/internal/store"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/notify"
+	"github.com/sangxi/strix/internal/store"
 )
 
 /* ---------------- 菜单与角色 ---------------- */
@@ -418,7 +418,7 @@ func (s *Server) handlePublicSettings(w http.ResponseWriter, r *http.Request) {
 		out[k] = all[k]
 	}
 	if out["systemName"] == "" {
-		out["systemName"] = "OpsMonitor"
+		out["systemName"] = "Strix"
 	}
 	writeJSON(w, out)
 }
@@ -467,7 +467,7 @@ func (s *Server) handleTestMail(w http.ResponseWriter, r *http.Request) {
 	}
 	subject := cfg.Subject(notify.Alert{Hostname: "测试主机", Level: "info"})
 	alerts := []notify.Alert{{Hostname: "测试主机", Type: "info", Level: "info",
-		Content: "这是一封来自 OpsMonitor 的测试邮件，说明邮件告警通道配置正确。", CreateTime: timeNowString()}}
+		Content: "这是一封来自 Strix 的测试邮件，说明邮件告警通道配置正确。", CreateTime: timeNowString()}}
 	if err := notify.Send(cfg, alerts); err != nil {
 		s.store.AppendMailLog(model.MailLog{Kind: "test", Subject: subject, Recipients: cfg.To,
 			ItemCount: 1, Status: "fail", Error: err.Error()})

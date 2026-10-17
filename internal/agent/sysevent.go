@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
+	"github.com/sangxi/strix/internal/model"
 )
 
 // CollectSysEvents 采集系统事件（当前仅 Windows 有内容，其余平台返回 nil）。

@@ -8,7 +8,7 @@
 // 不必先解析 JSON，也就不会因为编码或字段顺序的差异产生歧义。
 //
 // 本文件只实现「验」，没有「签」：
-//   - OPSM2- 用 Ed25519 公钥验签。公钥只能验、不能签，所以即使二进制被逆向，
+//   - STRIX2- 用 Ed25519 公钥验签。公钥只能验、不能签，所以即使二进制被逆向，
 //     也伪造不出授权码。
 //   - OPSM1- / OPSM- / WGC- 用 HMAC-SHA256 对称密钥验签，只为兼容存量授权码而保留。
 package license
@@ -28,12 +28,15 @@ import (
 // 授权码前缀。这里只做识别，不产生新码。
 const (
 	// PrefixV2 现行格式，Ed25519 签名，由授权中心签发。
-	PrefixV2 = "OPSM2-"
+	PrefixV2 = "STRIX2-"
+	// prefixLegacyV2 更名前的现行前缀，同样是 Ed25519 签名，只读兼容存量授权码。
+	// 授权中心改成签发 STRIX2- 之后，老用户手里的 OPSM2- 码仍然能验，不必换码。
+	prefixLegacyV2 = "OPSM2-"
 	// PrefixV1 旧格式，HMAC-SHA256 签名。
 	PrefixV1 = "OPSM1-"
 	// prefixLegacy 历史前缀，语义等价于 PrefixV1。
 	prefixLegacy = "WGC-"
-	// prefixLegacyV0 本工程更早的前缀（OpsMonitor 初版），同样按 HMAC 校验。
+	// prefixLegacyV0 本工程最早的前缀（更名前的初版），同样按 HMAC 校验。
 	prefixLegacyV0 = "OPSM-"
 )
 
@@ -83,13 +86,20 @@ func Fingerprint(pub ed25519.PublicKey) string {
 // Verifier 是校验方持有的校验材料：新版用公钥，旧版用对称密钥。
 type Verifier struct {
 	pub    ed25519.PublicKey
-	legacy string
+	legacy []string
 }
 
 // NewVerifier 构造校验器。pub 为 Ed25519 公钥（必填，否则拒绝新格式授权码）；
-// legacySecret 为旧版 HMAC 密钥，留空表示不再接受旧格式授权码。
-func NewVerifier(pub ed25519.PublicKey, legacySecret string) Verifier {
-	return Verifier{pub: pub, legacy: strings.TrimSpace(legacySecret)}
+// legacySecret 为旧版 HMAC 密钥，可传多个（更名前后各一个默认值），
+// 全部为空表示不再接受旧格式授权码。
+func NewVerifier(pub ed25519.PublicKey, legacySecret ...string) Verifier {
+	secrets := make([]string, 0, len(legacySecret))
+	for _, s := range legacySecret {
+		if s = strings.TrimSpace(s); s != "" {
+			secrets = append(secrets, s)
+		}
+	}
+	return Verifier{pub: pub, legacy: secrets}
 }
 
 // Ready 判断校验器是否可用于校验新版授权码。
@@ -104,7 +114,7 @@ func (v Verifier) Fingerprint() string { return Fingerprint(v.pub) }
 // Format 返回授权码的格式标识：ed25519 / hmac / unknown，供状态与日志展示。
 func (v Verifier) Format(raw string) string {
 	switch codePrefix(raw) {
-	case PrefixV2:
+	case PrefixV2, prefixLegacyV2:
 		return "ed25519"
 	case PrefixV1, prefixLegacy, prefixLegacyV0:
 		return "hmac"
@@ -120,10 +130,10 @@ func (v Verifier) Verify(raw string) (*License, error) {
 		return nil, errors.New("授权码为空")
 	}
 	switch codePrefix(code) {
-	case PrefixV2:
+	case PrefixV2, prefixLegacyV2:
 		return v.verifyEd25519(code)
 	case PrefixV1, prefixLegacy, prefixLegacyV0:
-		if v.legacy == "" {
+		if len(v.legacy) == 0 {
 			return nil, errors.New("这是旧格式授权码，本机未配置旧版密钥，请改用授权中心重新签发的授权码")
 		}
 		return v.verifyHMAC(code)
@@ -155,16 +165,19 @@ func (v Verifier) verifyHMAC(code string) (*License, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !hmac.Equal([]byte(hmacSign(body, v.legacy)), []byte(sig)) {
-		return nil, ErrNotSignedByUs
+	// 逐个密钥试：更名前后各有一个默认密钥，存量码用旧的签，新码用新的签。
+	for _, secret := range v.legacy {
+		if hmac.Equal([]byte(hmacSign(body, secret)), []byte(sig)) {
+			return decodePayload(body)
+		}
 	}
-	return decodePayload(body)
+	return nil, ErrNotSignedByUs
 }
 
 // codePrefix 返回授权码前缀；无法识别时返回空串。
 func codePrefix(code string) string {
 	code = compact(code)
-	for _, p := range []string{PrefixV2, PrefixV1, prefixLegacy, prefixLegacyV0} {
+	for _, p := range []string{PrefixV2, prefixLegacyV2, PrefixV1, prefixLegacy, prefixLegacyV0} {
 		if strings.HasPrefix(code, p) {
 			return p
 		}

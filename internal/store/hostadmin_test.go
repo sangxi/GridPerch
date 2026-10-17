@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
+	"github.com/sangxi/strix/internal/config"
 )
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	cfg := &config.Server{
-		DBPath:     filepath.Join(t.TempDir(), "opsmonitor-test.db"),
+		DBPath:     filepath.Join(t.TempDir(), "strix-test.db"),
 		Token:      "test-token",
 		AdminUser:  "admin",
 		AdminPass:  "admin",

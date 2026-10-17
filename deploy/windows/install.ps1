@@ -1,9 +1,9 @@
 ﻿<#
 .SYNOPSIS
-  OpsMonitor 监控端（server）Windows 一键部署。
+  Strix 监控端（server）Windows 一键部署。
 
 .DESCRIPTION
-  把 opsmonitor-server.exe 装成开机自启的 Windows 服务（用系统自带「计划任务」实现，
+  把 strix-server.exe 装成开机自启的 Windows 服务（用系统自带「计划任务」实现，
   不依赖 NSSM 等第三方工具），并放行防火墙端口。
 
 .EXAMPLE
@@ -11,7 +11,7 @@
 .EXAMPLE
   .\install.ps1 -Token '你的密钥' -AdminPass '你的控制台密码'
 .EXAMPLE
-  .\install.ps1 -File D:\tmp\opsmonitor-server-windows-amd64.exe -Addr :8000
+  .\install.ps1 -File D:\tmp\strix-server-windows-amd64.exe -Addr :8000
 .EXAMPLE
   .\install.ps1 -Uninstall
 #>
@@ -19,7 +19,7 @@
 param(
   # 版本号只是占位符：安装时会用二进制自报的 -version 覆盖它，所以不要写死某个具体版本。
   [string]$Version   = '',
-  [string]$Prefix    = 'C:\OpsMonitor',
+  [string]$Prefix    = 'C:\Strix',
   [string]$Addr      = ':9999',
   [string]$Token     = '',
   [string]$AdminUser = 'admin',
@@ -32,11 +32,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$App      = 'opsmonitor-server'
+$App      = 'strix-server'
 $Exe      = Join-Path $Prefix "$App.exe"
 $DataDir  = Join-Path $Prefix 'data'
 $StartCmd = Join-Path $Prefix 'start-server.cmd'
-$TaskName = 'opsmonitor'
+$TaskName = 'strix'
 
 function Say([string]$m)  { Write-Host "==> $m" -ForegroundColor Green }
 function Warn([string]$m) { Write-Host "[!] $m" -ForegroundColor Yellow }
@@ -75,28 +75,28 @@ if ($File -ne '') {
 } else {
   $here = Split-Path -Parent $MyInvocation.MyCommand.Path
   $cands = @(
-    (Join-Path $here 'opsmonitor-server-windows-amd64.exe'),
-    (Join-Path $here '..\opsmonitor-server-windows-amd64.exe'),
-    (Join-Path $here '..\..\opsmonitor-server-windows-amd64.exe'),
-    (Join-Path $here '..\..\dist\opsmonitor-server-windows-amd64.exe')
+    (Join-Path $here 'strix-server-windows-amd64.exe'),
+    (Join-Path $here '..\strix-server-windows-amd64.exe'),
+    (Join-Path $here '..\..\strix-server-windows-amd64.exe'),
+    (Join-Path $here '..\..\dist\strix-server-windows-amd64.exe')
   )
   $relDir = Join-Path $here '..\..\release'
   if (Test-Path $relDir) {
     Get-ChildItem -Path $relDir -Directory -ErrorAction SilentlyContinue |
       Sort-Object { try { [version]$_.Name } catch { [version]'0.0.0' } } -Descending |
-      ForEach-Object { $cands += (Join-Path $_.FullName 'opsmonitor-server-windows-amd64.exe') }
+      ForEach-Object { $cands += (Join-Path $_.FullName 'strix-server-windows-amd64.exe') }
   }
   $src = $cands | Where-Object { Test-Path $_ } | Select-Object -First 1
   if (-not $src) {
     Die @"
-没找到 opsmonitor-server-windows-amd64.exe。
+没找到 strix-server-windows-amd64.exe。
 
   原因：本仓库**不存放二进制**（bin\、dist\、release\ 均在 .gitignore 里），
         所以从 GitHub 克隆下来的目录里本来就没有这个文件 —— 不是下载失败。
 
   三种取法，任选其一：
-    1) 从打包机/发布包把 opsmonitor-server-windows-amd64.exe 拷到本脚本同一目录，重新执行；
-    2) 指定本地路径：  .\install.ps1 -File D:\tmp\opsmonitor-server-windows-amd64.exe
+    1) 从打包机/发布包把 strix-server-windows-amd64.exe 拷到本脚本同一目录，重新执行；
+    2) 指定本地路径：  .\install.ps1 -File D:\tmp\strix-server-windows-amd64.exe
     3) 指定下载地址：  先下载到本地，再用 -File 指向它。
 "@
   }
@@ -106,7 +106,7 @@ if ($File -ne '') {
 # 校验确实是 Windows PE 文件（别误拷了 Linux/macOS 产物）
 $bytes = [System.IO.File]::ReadAllBytes($src)[0..1]
 if (-not ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A)) {
-  Die '该文件不是 Windows 可执行文件（PE），请确认用的是 opsmonitor-server-windows-amd64.exe'
+  Die '该文件不是 Windows 可执行文件（PE），请确认用的是 strix-server-windows-amd64.exe'
 }
 
 # 版本号以二进制自报的为准，别信脚本里的默认值（那个只是占位符）。
@@ -140,22 +140,22 @@ if (-not (Test-Path $StartCmd)) {
     $PublicUrl = "http://${ip}$Addr"
   }
 
-  $dbPath = Join-Path $DataDir 'opsmonitor.db'
+  $dbPath = Join-Path $DataDir 'strix.db'
   $logDir = Join-Path $Prefix 'logs'
   New-Item -ItemType Directory -Force -Path $logDir | Out-Null
   $logFile = Join-Path $logDir 'server.log'
   $lines = @(
     '@echo off',
-    'rem OpsMonitor 监控端启动脚本（由 install.ps1 生成）',
+    'rem Strix 监控端启动脚本（由 install.ps1 生成）',
     'rem 计划任务没有控制台，程序输出统一追加到 logs\server.log',
     "cd /d `"$Prefix`"",
-    "set `"OPSM_ADDR=$Addr`"",
-    "set `"OPSM_DB=$dbPath`"",
-    "set `"OPSM_TOKEN=$Token`"",
-    "set `"OPSM_ADMIN_USER=$AdminUser`"",
-    "set `"OPSM_ADMIN_PASS=$AdminPass`"",
-    "set `"OPSM_PUBLIC_URL=$PublicUrl`"",
-    "set `"OPSM_RETENTION=$Retention`"",
+    "set `"STRIX_ADDR=$Addr`"",
+    "set `"STRIX_DB=$dbPath`"",
+    "set `"STRIX_TOKEN=$Token`"",
+    "set `"STRIX_ADMIN_USER=$AdminUser`"",
+    "set `"STRIX_ADMIN_PASS=$AdminPass`"",
+    "set `"STRIX_PUBLIC_URL=$PublicUrl`"",
+    "set `"STRIX_RETENTION=$Retention`"",
     "`"$Exe`" >> `"$logFile`" 2>&1"
   )
   # 用 OEM(系统本地代码页) 写 ANSI，cmd 才能正确读取中文注释
@@ -184,11 +184,11 @@ Start-ScheduledTask -TaskName $TaskName
 $port = $Addr.TrimStart(':')
 if (-not $NoFirewall -and $port) {
   Say "放行防火墙端口 $port/tcp"
-  if (-not (Get-NetFirewallRule -DisplayName 'OpsMonitor' -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName 'OpsMonitor' -Direction Inbound -Action Allow `
+  if (-not (Get-NetFirewallRule -DisplayName 'Strix' -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName 'Strix' -Direction Inbound -Action Allow `
       -Protocol TCP -LocalPort $port | Out-Null
   } else {
-    Set-NetFirewallRule -DisplayName 'OpsMonitor' -Enabled True | Out-Null
+    Set-NetFirewallRule -DisplayName 'Strix' -Enabled True | Out-Null
   }
 }
 
@@ -200,7 +200,7 @@ Write-Host ''
 Say '部署完成'
 Write-Host "  程序      : $Exe（版本 $Version）"
 Write-Host "  配置      : $StartCmd"
-Write-Host "  数据      : $DataDir\opsmonitor.db"
+Write-Host "  数据      : $DataDir\strix.db"
 Write-Host "  监听      : $Addr"
 Write-Host "  控制台    : $PublicUrl"
 Write-Host "  进程状态  : $procState"

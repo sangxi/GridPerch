@@ -1,4 +1,4 @@
-module github.com/sangxi/OpsMonitor
+module github.com/sangxi/strix
 
 go 1.23.9
 

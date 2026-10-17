@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpsMonitor 使用教程 · 部署指南与文件清单</title>
+<title>Strix 使用教程 · 部署指南与文件清单</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M8 20l4-6 4 4 4-8 4 6' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/assets/docs.css">
 </head>
@@ -11,7 +11,7 @@
 <div class="docs">
 
   <nav class="docs-nav">
-    <h2>OpsMonitor</h2>
+    <h2>Strix</h2>
     <span class="ver" id="verLine">使用教程 · 部署指南与文件清单</span>
     <div class="grp">快速开始</div>
     <a href="#overview">产品概述</a>
@@ -39,7 +39,7 @@
 
   <main class="docs-main">
     <div class="docs-head">
-      <h1>OpsMonitor 使用教程</h1>
+      <h1>Strix 使用教程</h1>
       <p>开箱即用的轻量级分布式运维监控系统 · 服务端 + 采集端协同工作，可监控数千台主机</p>
     </div>
 
@@ -56,7 +56,7 @@
     <section id="overview">
       <h2>产品概述</h2>
       <p>
-        OpsMonitor 是一款开箱即用的轻量级分布式运维监控系统，主打<strong>极简部署、自动化运行、零模板零脚本</strong>。
+        Strix 是一款开箱即用的轻量级分布式运维监控系统，主打<strong>极简部署、自动化运行、零模板零脚本</strong>。
         服务端与采集端协同工作，可监控数千台主机。
       </p>
 
@@ -149,7 +149,7 @@
     <section id="arch">
       <h2>架构与端口</h2>
       <pre><code>┌──────────────┐POST /agent/minTask┌───────────────┐     ┌──────────┐
-│ opsmonitor-  │───────────────────►│ opsmonitor-   │────►│ SQLite   │
+│ strix-  │───────────────────►│ strix-   │────►│ SQLite   │
 │ agent        │  JSON + MD5(token) │ server        │     │ 单文件库 │
 │ 采集端        │◄───────────────────│ 服务端 / 控制台 │◄────│ 读写分离 │
 │ 本地探针│  GET /agent/tasks     └───┬───────┬───┘     └──────────┘
@@ -180,39 +180,39 @@
       <p>最省事的方式。整个系统一个容器、一个数据目录，备份就是拷一个目录。</p>
 
       <h3>1. 准备目录</h3>
-      <pre><code>mkdir -p /opt/opsmonitor/data
-cd /opt/opsmonitor</code></pre>
+      <pre><code>mkdir -p /opt/strix/data
+cd /opt/strix</code></pre>
 
       <h3>2. 编写 docker-compose.yml</h3>
       <pre><code>services:
-  opsmonitor:
-    image: opsmonitor/opsmonitor:latest
-    container_name: opsmonitor
+  strix:
+    image: strix/strix:latest
+    container_name: strix
     restart: unless-stopped
     ports:
       - "9999:9999"
     volumes:
       # SQLite 数据库所在目录，必须挂载，否则容器重建后数据全丢
-      - ./data:/opt/opsmonitor/data
+      - ./data:/opt/strix/data
       # 采集端发布物缓存目录（用于一键安装采集端），可选
-      - ./releases:/opt/opsmonitor/releases
+      - ./releases:/opt/strix/releases
     environment:
       # 监听地址：保持默认，不要写成 127.0.0.1，否则其他主机接不进来
-      OPSM_ADDR: ":9999"
+      STRIX_ADDR: ":9999"
       # SQLite 文件路径
-      OPSM_DB: "/opt/opsmonitor/data/opsmonitor.db"
+      STRIX_DB: "/opt/strix/data/strix.db"
       # 采集端通信密钥，两端必须一致，建议部署后立即修改
-      OPSM_TOKEN: "请改成你自己的密钥"
+      STRIX_TOKEN: "请改成你自己的密钥"
       # 控制台初始账号密码，仅首次启动生效
-      OPSM_ADMIN_USER: "admin"
-      OPSM_ADMIN_PASS: "请改成强密码"
+      STRIX_ADMIN_USER: "admin"
+      STRIX_ADMIN_PASS: "请改成强密码"
       # 对外访问地址，反向代理 / 端口映射场景务必显式指定
       # 安装脚本与采集端升级下载都用它拼装绝对地址
-      OPSM_PUBLIC_URL: "http://192.168.1.10:9999"
+      STRIX_PUBLIC_URL: "http://192.168.1.10:9999"
       # 历史数据保留天数，0 表示永久保留
-      OPSM_RETENTION: "30"
+      STRIX_RETENTION: "30"
       # 超过该秒数未上报判定主机离线
-      OPSM_OFFLINE_SEC: "180"
+      STRIX_OFFLINE_SEC: "180"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9999/"]
       interval: 30s
@@ -221,7 +221,7 @@ cd /opt/opsmonitor</code></pre>
       start_period: 10s</code></pre>
 
       <div class="callout warn">
-        <b>OPSM_PUBLIC_URL 最容易填错</b>
+        <b>STRIX_PUBLIC_URL 最容易填错</b>
         填了 <code>127.0.0.1</code> 或 <code>localhost</code> 时，
         在服务端本机生成的安装命令拷到其他主机执行必然失败。
         必须是<strong>其他主机能访问到的地址</strong>。
@@ -233,8 +233,8 @@ docker compose logs -f --tail=100</code></pre>
       <p>看到 <code>控制台访问地址：http://…:9999</code> 即启动成功，浏览器打开该地址，用上面设置的账号登录。</p>
 
       <h3>4. 常用运维命令</h3>
-      <pre><code>docker compose restart opsmonitor   # 重启
-docker compose stop opsmonitor      # 停止
+      <pre><code>docker compose restart strix   # 重启
+docker compose stop strix      # 停止
 docker compose up -d                # 启动
 docker compose logs -f              # 跟踪日志
 docker compose pull && docker compose up -d   # 拉新版并重建</code></pre>
@@ -254,12 +254,12 @@ docker compose pull && docker compose up -d   # 拉新版并重建</code></pre>
           <table>
             <thead><tr><th>字段</th><th>值</th></tr></thead>
             <tbody>
-              <tr><td>名称</td><td><code>opsmonitor</code></td></tr>
-              <tr><td>镜像</td><td><code>opsmonitor/opsmonitor:latest</code></td></tr>
+              <tr><td>名称</td><td><code>strix</code></td></tr>
+              <tr><td>镜像</td><td><code>strix/strix:latest</code></td></tr>
               <tr><td>重启策略</td><td>始终重启</td></tr>
               <tr><td>端口映射</td><td>主机 <code>9999</code> → 容器 <code>9999</code></td></tr>
-              <tr><td>文件夹</td><td>新建 <code>/opt/opsmonitor/data</code></td></tr>
-              <tr><td>挂载</td><td><code>/opt/opsmonitor/data</code> → <code>/opt/opsmonitor/data</code>（读写）</td></tr>
+              <tr><td>文件夹</td><td>新建 <code>/opt/strix/data</code></td></tr>
+              <tr><td>挂载</td><td><code>/opt/strix/data</code> → <code>/opt/strix/data</code>（读写）</td></tr>
               <tr><td>环境变量</td><td>见下方表格</td></tr>
             </tbody>
           </table>
@@ -269,10 +269,10 @@ docker compose pull && docker compose up -d   # 拉新版并重建</code></pre>
           <table>
             <thead><tr><th>变量</th><th>建议值</th></tr></thead>
             <tbody>
-              <tr><td><code>OPSM_TOKEN</code></td><td>自定义强密钥</td></tr>
-              <tr><td><code>OPSM_ADMIN_USER</code></td><td><code>admin</code></td></tr>
-              <tr><td><code>OPSM_ADMIN_PASS</code></td><td>自定义强密码</td></tr>
-              <tr><td><code>OPSM_PUBLIC_URL</code></td><td><code>http://服务器IP:9999</code></td></tr>
+              <tr><td><code>STRIX_TOKEN</code></td><td>自定义强密钥</td></tr>
+              <tr><td><code>STRIX_ADMIN_USER</code></td><td><code>admin</code></td></tr>
+              <tr><td><code>STRIX_ADMIN_PASS</code></td><td>自定义强密码</td></tr>
+              <tr><td><code>STRIX_PUBLIC_URL</code></td><td><code>http://服务器IP:9999</code></td></tr>
             </tbody>
           </table>
         </li>
@@ -280,7 +280,7 @@ docker compose pull && docker compose up -d   # 拉新版并重建</code></pre>
           <strong>配置反向代理（可选）</strong>
           <p>「网站」→「创建网站 → 反向代理」，域名如 <code>monitor.example.com</code>，
              代理地址填 <code>http://127.0.0.1:9999</code>。
-             配了反向代理后务必把 <code>OPSM_PUBLIC_URL</code> 改成 <code>https://monitor.example.com</code>。</p>
+             配了反向代理后务必把 <code>STRIX_PUBLIC_URL</code> 改成 <code>https://monitor.example.com</code>。</p>
         </li>
         <li>
           <strong>防火墙放行</strong>
@@ -294,9 +294,9 @@ docker compose pull && docker compose up -d   # 拉新版并重建</code></pre>
       <h2>宝塔面板部署</h2>
       <ol class="steps">
         <li><strong>安装 Docker 管理器</strong><p>「软件商店」→ 搜索 <code>Docker 管理器</code> → 安装。</p></li>
-        <li><strong>添加容器</strong><p>「Docker」→「容器管理」→「添加容器」，镜像填 <code>opsmonitor/opsmonitor:latest</code>，
-           端口映射 <code>9999:9999</code>，目录挂载 <code>/opt/opsmonitor/data</code> 到 <code>/opt/opsmonitor/data</code>。</p></li>
-        <li><strong>设置环境变量</strong><p>同 1Panel，注意 <code>OPSM_PUBLIC_URL</code> 要填对外可达地址。</p></li>
+        <li><strong>添加容器</strong><p>「Docker」→「容器管理」→「添加容器」，镜像填 <code>strix/strix:latest</code>，
+           端口映射 <code>9999:9999</code>，目录挂载 <code>/opt/strix/data</code> 到 <code>/opt/strix/data</code>。</p></li>
+        <li><strong>设置环境变量</strong><p>同 1Panel，注意 <code>STRIX_PUBLIC_URL</code> 要填对外可达地址。</p></li>
         <li><strong>反向代理</strong><p>「网站」→ 添加站点 → 反向代理到 <code>http://127.0.0.1:9999</code>。</p></li>
         <li><strong>放行端口</strong><p>「安全」→ 添加放行端口 <code>9999</code>。</p></li>
       </ol>
@@ -308,31 +308,31 @@ docker compose pull && docker compose up -d   # 拉新版并重建</code></pre>
       <p>不想用容器时，直接跑二进制。服务端只需要 glibc 与一个可写目录。</p>
 
       <h3>1. 下载并安装</h3>
-      <pre><code>mkdir -p /opt/opsmonitor/data && cd /opt/opsmonitor
-curl -fLo opsmonitor-server https://github.com/sangxi/OpsMonitor/releases/latest/download/opsmonitor-server-linux-amd64
-curl -fLo opsmonitor-agent   https://github.com/sangxi/OpsMonitor/releases/latest/download/opsmonitor-agent-linux-amd64
-chmod +x opsmonitor-server opsmonitor-agent
-./opsmonitor-server -version</code></pre>
+      <pre><code>mkdir -p /opt/strix/data && cd /opt/strix
+curl -fLo strix-server https://github.com/sangxi/strix/releases/latest/download/strix-server-linux-amd64
+curl -fLo strix-agent   https://github.com/sangxi/strix/releases/latest/download/strix-agent-linux-amd64
+chmod +x strix-server strix-agent
+./strix-server -version</code></pre>
 
       <h3>2. 前台试跑</h3>
-      <pre><code>./opsmonitor-server \
+      <pre><code>./strix-server \
   -addr :9999 \
-  -db ./data/opsmonitor.db \
+  -db ./data/strix.db \
   -token '你的通信密钥' \
   -user admin -pass '你的控制台密码' \
   -public-url 'http://192.168.1.10:9999'</code></pre>
       <p>确认能访问 <code>http://服务器IP:9999</code> 后再做成systemd 服务。</p>
 
       <h3>3. 注册为 systemd 服务</h3>
-      <pre><code>sudo tee /etc/systemd/system/opsmonitor.service &gt;/dev/null &lt;&lt;'EOF'
+      <pre><code>sudo tee /etc/systemd/system/strix.service &gt;/dev/null &lt;&lt;'EOF'
 [Unit]
-Description=OpsMonitor 运维监控服务端
+Description=Strix 运维监控服务端
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/opsmonitor
-ExecStart=/opt/opsmonitor/opsmonitor-server -addr :9999 -db /opt/opsmonitor/data/opsmonitor.db -token 你的通信密钥 -user admin -pass 你的控制台密码 -public-url http://192.168.1.10:9999
+WorkingDirectory=/opt/strix
+ExecStart=/opt/strix/strix-server -addr :9999 -db /opt/strix/data/strix.db -token 你的通信密钥 -user admin -pass 你的控制台密码 -public-url http://192.168.1.10:9999
 Restart=always
 RestartSec=5
 
@@ -341,20 +341,20 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now opsmonitor
-sudo systemctl status opsmonitor --no-pager</code></pre>
+sudo systemctl enable --now strix
+sudo systemctl status strix --no-pager</code></pre>
 
       <div class="callout warn">
         <b>把密钥写进 unit 文件要注意</b>
-        <code>-token</code> 会以明文出现在 <code>/etc/systemd/system/opsmonitor.service</code> 中。
+        <code>-token</code> 会以明文出现在 <code>/etc/systemd/system/strix.service</code> 中。
         该文件默认只有 root 可读，一般可以接受；若安全要求更高，改用环境文件：
-        <code>EnvironmentFile=/etc/opsmonitor/opsmonitor.env</code>（权限设为 600）。
+        <code>EnvironmentFile=/etc/strix/strix.env</code>（权限设为 600）。
       </div>
 
       <h3>4. 常用命令</h3>
-      <pre><code>systemctl restart opsmonitor
-journalctl -u opsmonitor -f          # 实时日志
-journalctl -u opsmonitor --since today</code></pre>
+      <pre><code>systemctl restart strix
+journalctl -u strix -f          # 实时日志
+journalctl -u strix --since today</code></pre>
     </section>
 
     <!-- ==================== Windows ==================== -->
@@ -362,26 +362,26 @@ journalctl -u opsmonitor --since today</code></pre>
       <h2>Windows 部署</h2>
 
       <h3>服务端</h3>
-      <pre><code># 解压到 C:\OpsMonitor
-cd C:\OpsMonitor
-.\opsmonitor-server.exe -addr :9999 -db .\data\opsmonitor.db -token 你的通信密钥</code></pre>
+      <pre><code># 解压到 C:\Strix
+cd C:\Strix
+.\strix-server.exe -addr :9999 -db .\data\strix.db -token 你的通信密钥</code></pre>
       <p>注册为开机自启（需管理员 PowerShell）：</p>
-      <pre><code>$action = New-ScheduledTaskAction -Execute 'C:\OpsMonitor\opsmonitor-server.exe' `
-  -Argument '-addr :9999 -db C:\OpsMonitor\data\opsmonitor.db -token 你的通信密钥'
+      <pre><code>$action = New-ScheduledTaskAction -Execute 'C:\Strix\strix-server.exe' `
+  -Argument '-addr :9999 -db C:\Strix\data\strix.db -token 你的通信密钥'
 $trigger= New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-Register-ScheduledTask -TaskName 'opsmonitor' -Action $action -Trigger $trigger `
+Register-ScheduledTask -TaskName 'strix' -Action $action -Trigger $trigger `
   -Principal $principal -Force
-Start-ScheduledTask -TaskName 'opsmonitor'</code></pre>
+Start-ScheduledTask -TaskName 'strix'</code></pre>
 
       <h3>放行防火墙</h3>
-      <pre><code>netsh advfirewall firewall add rule name="OpsMonitor" dir=in action=allow protocol=TCP localport=9999</code></pre>
+      <pre><code>netsh advfirewall firewall add rule name="Strix" dir=in action=allow protocol=TCP localport=9999</code></pre>
 
       <h3>采集端日常运维</h3>
-      <pre><code>Start-ScheduledTask -TaskName opsmonitor-agent                          # 手动重启
-Get-ScheduledTask -TaskName opsmonitor-agent | Select-Object State              # 查看状态（应为 Running）
-Get-ScheduledTaskInfo -TaskName opsmonitor-agent | Select-Object LastRunTime,LastTaskResult
-Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false             # 卸载</code></pre>
+      <pre><code>Start-ScheduledTask -TaskName strix-agent                          # 手动重启
+Get-ScheduledTask -TaskName strix-agent | Select-Object State              # 查看状态（应为 Running）
+Get-ScheduledTaskInfo -TaskName strix-agent | Select-Object LastRunTime,LastTaskResult
+Unregister-ScheduledTask -TaskName strix-agent -Confirm:$false             # 卸载</code></pre>
     </section>
 
     <!-- ==================== 文件挂载清单 ==================== -->
@@ -390,31 +390,31 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false             
       <p>部署前按这张表核对，避免出现「重启后数据全丢」这类事故。</p>
 
       <h3>目录结构</h3>
-      <pre><code>/opt/opsmonitor/
-├── opsmonitor-server          # 服务端二进制（容器内为镜像自带，不用挂）
-├── opsmonitor-agent           # 采集端二进制（仅手工部署采集端时需要）
+      <pre><code>/opt/strix/
+├── strix-server          # 服务端二进制（容器内为镜像自带，不用挂）
+├── strix-agent           # 采集端二进制（仅手工部署采集端时需要）
 ├── data/
-│   ├── opsmonitor.db# SQLite 主库 <span class="tag req">必须挂载</span>
-│   ├── opsmonitor.db-wal      # WAL 日志，与主库同目录
-│   └── opsmonitor.db-shm      # 共享内存索引，与主库同目录
+│   ├── strix.db# SQLite 主库 <span class="tag req">必须挂载</span>
+│   ├── strix.db-wal      # WAL 日志，与主库同目录
+│   └── strix.db-shm      # 共享内存索引，与主库同目录
 ├── releases/                  # 采集端发布物缓存（可选，用于一键安装采集端）
-│   └── opsmonitor-agent-linux-amd64
-└── opsmonitor-file-baseline.json   # 文件防篡改基线（仅采集端，产生在采集端本机）</code></pre>
+│   └── strix-agent-linux-amd64
+└── strix-file-baseline.json   # 文件防篡改基线（仅采集端，产生在采集端本机）</code></pre>
 
       <h3>挂载对照表</h3>
       <table>
         <thead><tr><th>宿主机路径</th><th>容器内路径</th><th>读写</th><th>必需性</th><th>不挂的后果</th></tr></thead>
         <tbody>
           <tr>
-            <td><code>/opt/opsmonitor/data</code></td>
-            <td><code>/opt/opsmonitor/data</code></td>
+            <td><code>/opt/strix/data</code></td>
+            <td><code>/opt/strix/data</code></td>
             <td>读写</td>
             <td><span class="tag req">必需</span></td>
             <td>容器重建后所有历史指标、告警、资产、账号全部丢失</td>
           </tr>
           <tr>
-            <td><code>/opt/opsmonitor/releases</code></td>
-            <td><code>/opt/opsmonitor/releases</code></td>
+            <td><code>/opt/strix/releases</code></td>
+            <td><code>/opt/strix/releases</code></td>
             <td>读写</td>
             <td><span class="tag opt">可选</span></td>
             <td>一键安装采集端时提示「服务端尚未发布 xx/xx 的采集端版本」</td>
@@ -427,7 +427,7 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false             
             <td>容器内时区变成 UTC，告警时间与主机时间差8 小时</td>
           </tr>
           <tr>
-            <td><code>/opt/opsmonitor/opsmonitor-file-baseline.json</code></td>
+            <td><code>/opt/strix/strix-file-baseline.json</code></td>
             <td>—</td>
             <td>读写</td>
             <td><span class="tag opt">仅采集端</span></td>
@@ -444,7 +444,7 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false             
 
       <h3>时区配置</h3>
       <pre><code>services:
-  opsmonitor:
+  strix:
     environment:
       TZ: "Asia/Shanghai"
     volumes:
@@ -454,10 +454,10 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false             
       <table>
         <thead><tr><th>文件</th><th>属主</th><th>权限</th></tr></thead>
         <tbody>
-          <tr><td><code>opsmonitor-server</code></td><td><code>root</code></td><td><code>755</code></td></tr>
-          <tr><td><code>opsmonitor-agent</code></td><td><code>root</code></td><td><code>755</code></td></tr>
+          <tr><td><code>strix-server</code></td><td><code>root</code></td><td><code>755</code></td></tr>
+          <tr><td><code>strix-agent</code></td><td><code>root</code></td><td><code>755</code></td></tr>
           <tr><td><code>data/</code></td><td>运行用户</td><td><code>750</code></td></tr>
-          <tr><td><code>data/opsmonitor.db</code></td><td>运行用户</td><td><code>640</code></td></tr>
+          <tr><td><code>data/strix.db</code></td><td>运行用户</td><td><code>640</code></td></tr>
           <tr><td><code>releases/</code></td><td>运行用户</td><td><code>755</code></td></tr>
           <tr><td>systemd unit</td><td><code>root</code></td><td><code>644</code></td></tr>
         </tbody>
@@ -472,7 +472,7 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false             
         <tbody>
           <tr><td>CentOS / RHEL / Rocky</td><td><code>firewall-cmd --add-port=9999/tcp --permanent &amp;&amp; firewall-cmd --reload</code></td></tr>
           <tr><td>Ubuntu / Debian</td><td><code>ufw allow 9999/tcp</code></td></tr>
-          <tr><td>Windows</td><td><code>netsh advfirewall firewall add rule name="OpsMonitor" dir=in action=allow protocol=TCP localport=9999</code></td></tr>
+          <tr><td>Windows</td><td><code>netsh advfirewall firewall add rule name="Strix" dir=in action=allow protocol=TCP localport=9999</code></td></tr>
         </tbody>
       </table>
       <div class="callout ok">
@@ -529,15 +529,15 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false             
       <p>不便执行脚本的场景（安全管控、离线环境）可以手工安装。</p>
 
       <h3>Linux（systemd）</h3>
-      <pre><code>sudo install -m 0755 opsmonitor-agent /usr/local/bin/
-sudo tee /etc/systemd/system/opsmonitor-agent.service &gt;/dev/null &lt;&lt;'EOF'
+      <pre><code>sudo install -m 0755 strix-agent /usr/local/bin/
+sudo tee /etc/systemd/system/strix-agent.service &gt;/dev/null &lt;&lt;'EOF'
 [Unit]
-Description=OpsMonitor 采集端
+Description=Strix 采集端
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/opsmonitor-agent -server http://服务端IP:9999 -token 你的通信密钥 -name 本机名
+ExecStart=/usr/local/bin/strix-agent -server http://服务端IP:9999 -token 你的通信密钥 -name 本机名
 Restart=always
 RestartSec=5
 
@@ -546,45 +546,45 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now opsmonitor-agent
-sudo systemctl status opsmonitor-agent --no-pager
-journalctl -u opsmonitor-agent -f</code></pre>
+sudo systemctl enable --now strix-agent
+sudo systemctl status strix-agent --no-pager
+journalctl -u strix-agent -f</code></pre>
 
       <h3>macOS（launchd）</h3>
-      <pre><code>sudo install -m 0755 opsmonitor-agent /usr/local/bin/
-sudo tee /Library/LaunchDaemons/opsmonitor-agent.plist &gt;/dev/null &lt;&lt;'EOF'
+      <pre><code>sudo install -m 0755 strix-agent /usr/local/bin/
+sudo tee /Library/LaunchDaemons/strix-agent.plist &gt;/dev/null &lt;&lt;'EOF'
 &lt;?xml version="1.0" encoding="UTF-8"?&gt;
 &lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
 &lt;plist version="1.0"&gt;
 &lt;dict&gt;
-  &lt;key&gt;Label&lt;/key&gt;&lt;string&gt;opsmonitor-agent&lt;/string&gt;
+  &lt;key&gt;Label&lt;/key&gt;&lt;string&gt;strix-agent&lt;/string&gt;
   &lt;key&gt;ProgramArguments&lt;/key&gt;
   &lt;array&gt;
-    &lt;string&gt;/usr/local/bin/opsmonitor-agent&lt;/string&gt;
+    &lt;string&gt;/usr/local/bin/strix-agent&lt;/string&gt;
     &lt;string&gt;-server&lt;/string&gt;&lt;string&gt;http://服务端IP:9999&lt;/string&gt;
     &lt;string&gt;-token&lt;/string&gt;&lt;string&gt;你的通信密钥&lt;/string&gt;
   &lt;/array&gt;
   &lt;key&gt;RunAtLoad&lt;/key&gt;&lt;true/&gt;
   &lt;key&gt;KeepAlive&lt;/key&gt;&lt;true/&gt;
-  &lt;key&gt;StandardOutPath&lt;/key&gt;&lt;string&gt;/var/log/opsmonitor-agent.log&lt;/string&gt;
-  &lt;key&gt;StandardErrorPath&lt;/key&gt;&lt;string&gt;/var/log/opsmonitor-agent.log&lt;/string&gt;
+  &lt;key&gt;StandardOutPath&lt;/key&gt;&lt;string&gt;/var/log/strix-agent.log&lt;/string&gt;
+  &lt;key&gt;StandardErrorPath&lt;/key&gt;&lt;string&gt;/var/log/strix-agent.log&lt;/string&gt;
 &lt;/dict&gt;
 &lt;/plist&gt;
 EOF
 
-sudo launchctl load -w /Library/LaunchDaemons/opsmonitor-agent.plist</code></pre>
+sudo launchctl load -w /Library/LaunchDaemons/strix-agent.plist</code></pre>
 
       <h3>卸载</h3>
       <pre><code># Linux
-sudo systemctl disable --now opsmonitor-agent
-sudo rm -f /etc/systemd/system/opsmonitor-agent.service /usr/local/bin/opsmonitor-agent
+sudo systemctl disable --now strix-agent
+sudo rm -f /etc/systemd/system/strix-agent.service /usr/local/bin/strix-agent
 
 # macOS
-sudo launchctl unload /Library/LaunchDaemons/opsmonitor-agent.plist
-sudo rm -f /Library/LaunchDaemons/opsmonitor-agent.plist /usr/local/bin/opsmonitor-agent
+sudo launchctl unload /Library/LaunchDaemons/strix-agent.plist
+sudo rm -f /Library/LaunchDaemons/strix-agent.plist /usr/local/bin/strix-agent
 
 # Windows
-Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
+Unregister-ScheduledTask -TaskName strix-agent -Confirm:$false</code></pre>
       <p>主机记录会保留，历史数据按服务端保留天数自动清理。</p>
     </section>
 
@@ -592,9 +592,9 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
       <h2>容器内采集宿主主机</h2>
       <p>需要监控 Docker 所在宿主机的物理指标时，把宿主机根目录挂进容器。</p>
       <pre><code>services:
-  opsmonitor-agent:
-    image: opsmonitor/opsmonitor-agent:latest
-    container_name: opsmonitor-agent
+  strix-agent:
+    image: strix/strix-agent:latest
+    container_name: strix-agent
     restart: unless-stopped
     pid: host
     network_mode: host
@@ -621,36 +621,36 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
       <table>
         <thead><tr><th>参数</th><th>环境变量</th><th>默认值</th><th>说明</th></tr></thead>
         <tbody>
-          <tr><td><code>-addr</code></td><td><code>OPSM_ADDR</code></td><td><code>:9999</code></td><td>HTTP 监听地址</td></tr>
-          <tr><td><code>-db</code></td><td><code>OPSM_DB</code></td><td><code>./data/opsmonitor.db</code></td><td>SQLite 文件路径</td></tr>
-          <tr><td><code>-token</code></td><td><code>OPSM_TOKEN</code></td><td><code>opsmonitor</code></td><td>采集端通信密钥，两端必须一致</td></tr>
-          <tr><td><code>-user</code></td><td><code>OPSM_ADMIN_USER</code></td><td><code>admin</code></td><td>控制台账号（仅首次启动生效）</td></tr>
-          <tr><td><code>-pass</code></td><td><code>OPSM_ADMIN_PASS</code></td><td><code>opsmonitor</code></td><td>控制台密码（仅首次启动生效）</td></tr>
-          <tr><td><code>-retention</code></td><td><code>OPSM_RETENTION</code></td><td><code>30</code></td><td>历史数据保留天数，0 表示永久</td></tr>
-          <tr><td><code>-purge</code></td><td><code>OPSM_PURGE_INTERVAL</code></td><td><code>3600</code></td><td>历史清理间隔（秒）</td></tr>
-          <tr><td><code>-offline</code></td><td><code>OPSM_OFFLINE_SEC</code></td><td><code>180</code></td><td>超过该秒数未上报判定离线</td></tr>
-          <tr><td><code>-public-url</code></td><td><code>OPSM_PUBLIC_URL</code></td><td>自动反推</td><td>对外访问地址，反向代理下务必显式指定；若配成回环 / 内网 / CGNAT 地址，启动日志会警告（避免生成的安装命令写死内网地址导致目标主机连不上）</td></tr>
-          <tr><td><code>-cpu-alert</code></td><td><code>OPSM_CPU_ALERT</code></td><td><code>90</code></td><td>CPU 告警阈值（%）</td></tr>
-          <tr><td><code>-mem-alert</code></td><td><code>OPSM_MEM_ALERT</code></td><td><code>90</code></td><td>内存告警阈值（%）</td></tr>
-          <tr><td><code>-disk-alert</code></td><td><code>OPSM_DISK_ALERT</code></td><td><code>90</code></td><td>磁盘告警阈值（%）</td></tr>
-          <tr><td><code>-load-alert</code></td><td><code>OPSM_LOAD_ALERT</code></td><td><code>10</code></td><td>系统负载告警阈值</td></tr>
-          <tr><td><code>-alert-cooldown</code></td><td><code>OPSM_ALERT_COOLDOWN_MIN</code></td><td><code>10</code></td><td>同类告警去重冷却（分钟）</td></tr>
-          <tr><td><code>-login-alert</code></td><td><code>OPSM_LOGIN_ALERT</code></td><td><code>true</code></td><td>主机登录用户变化时生成提醒</td></tr>
-          <tr><td><code>-probe-workers</code></td><td><code>OPSM_PROBE_WORKERS</code></td><td><code>64</code></td><td>服务端主动探测并发度</td></tr>
-          <tr><td><code>-read-conns</code></td><td><code>OPSM_READ_CONNS</code></td><td><code>8</code></td><td>SQLite 读连接池大小</td></tr>
-          <tr><td><code>-write-queue</code></td><td><code>OPSM_WRITE_QUEUE</code></td><td><code>8192</code></td><td>上报写队列容量</td></tr>
-          <tr><td><code>-release-dir</code></td><td><code>OPSM_RELEASE_DIR</code></td><td>数据库同级 <code>releases/</code></td><td>采集端发布包目录</td></tr>
-          <tr><td><code>-hub</code></td><td><code>OPSM_HUB</code></td><td>默认内置（地址已内置，无需填写）</td><td>授权中心地址；<code>-hub ""</code> 表示完全离线</td></tr>
-          <tr><td><code>-hub-token</code></td><td><code>OPSM_HUB_TOKEN</code></td><td>内置</td><td>授权中心拉取令牌。<strong>默认使用程序内置令牌，无需配置</strong>；仅当改用自建授权中心时才需覆盖。令牌不以明文出现在源码、二进制、界面与日志中</td></tr>
-          <tr><td><code>-hub-interval</code></td><td><code>OPSM_HUB_INTERVAL_MIN</code></td><td><code>5</code></td><td>代拉间隔（分钟）</td></tr>
-          <tr><td><code>-hub-auto-update</code></td><td><code>OPSM_HUB_AUTO_UPDATE</code></td><td><code>download</code></td><td>服务端自更新：<code>download</code> 自动就位 / <code>check</code> 只提示 / <code>off</code> 关闭</td></tr>
-          <tr><td><code>-hub-ua</code></td><td><code>OPSM_HUB_UA</code></td><td>空</td><td>访问授权中心的 User-Agent，被网关按 UA 拦截时可覆盖</td></tr>
-          <tr><td><code>-hub-restart</code></td><td><code>OPSM_HUB_RESTART</code></td><td><code>auto</code></td><td>平台升级换完二进制后的生效方式：<code>auto</code>（默认）自动重启使新版本生效；<code>off</code> 只替换文件不重启，需人工重启</td></tr>
-          <tr><td><code>-license-secret</code></td><td><code>OPSM_LICENSE_SECRET</code></td><td>空</td><td>授权签名密钥；旧格式（<code>WGC-</code> / <code>OPSM1-</code> / <code>OPSM-</code>）需与服务端、授权中心一致，新格式（<code>OPSM2-</code>）改用内置公钥，无需此值</td></tr>
-          <tr><td><code>-license</code></td><td><code>OPSM_LICENSE_KEY</code></td><td>空</td><td>授权码（机器码对应的许可证），启动时导入并校验</td></tr>
-          <tr><td><code>-license-machine</code></td><td><code>OPSM_LICENSE_MACHINE</code></td><td>自动</td><td>本机机器码，离线或特殊场景可显式指定</td></tr>
-          <tr><td><code>-free-hosts</code></td><td><code>OPSM_LICENSE_FREE_HOSTS</code></td><td><code>10</code></td><td>免费额度内可监控的主机数</td></tr>
-          <tr><td><code>-free-users</code></td><td><code>OPSM_LICENSE_FREE_USERS</code></td><td><code>3</code></td><td>免费额度内可创建的控制台用户数</td></tr>
+          <tr><td><code>-addr</code></td><td><code>STRIX_ADDR</code></td><td><code>:9999</code></td><td>HTTP 监听地址</td></tr>
+          <tr><td><code>-db</code></td><td><code>STRIX_DB</code></td><td><code>./data/strix.db</code></td><td>SQLite 文件路径</td></tr>
+          <tr><td><code>-token</code></td><td><code>STRIX_TOKEN</code></td><td><code>strix</code></td><td>采集端通信密钥，两端必须一致</td></tr>
+          <tr><td><code>-user</code></td><td><code>STRIX_ADMIN_USER</code></td><td><code>admin</code></td><td>控制台账号（仅首次启动生效）</td></tr>
+          <tr><td><code>-pass</code></td><td><code>STRIX_ADMIN_PASS</code></td><td><code>strix</code></td><td>控制台密码（仅首次启动生效）</td></tr>
+          <tr><td><code>-retention</code></td><td><code>STRIX_RETENTION</code></td><td><code>30</code></td><td>历史数据保留天数，0 表示永久</td></tr>
+          <tr><td><code>-purge</code></td><td><code>STRIX_PURGE_INTERVAL</code></td><td><code>3600</code></td><td>历史清理间隔（秒）</td></tr>
+          <tr><td><code>-offline</code></td><td><code>STRIX_OFFLINE_SEC</code></td><td><code>180</code></td><td>超过该秒数未上报判定离线</td></tr>
+          <tr><td><code>-public-url</code></td><td><code>STRIX_PUBLIC_URL</code></td><td>自动反推</td><td>对外访问地址，反向代理下务必显式指定；若配成回环 / 内网 / CGNAT 地址，启动日志会警告（避免生成的安装命令写死内网地址导致目标主机连不上）</td></tr>
+          <tr><td><code>-cpu-alert</code></td><td><code>STRIX_CPU_ALERT</code></td><td><code>90</code></td><td>CPU 告警阈值（%）</td></tr>
+          <tr><td><code>-mem-alert</code></td><td><code>STRIX_MEM_ALERT</code></td><td><code>90</code></td><td>内存告警阈值（%）</td></tr>
+          <tr><td><code>-disk-alert</code></td><td><code>STRIX_DISK_ALERT</code></td><td><code>90</code></td><td>磁盘告警阈值（%）</td></tr>
+          <tr><td><code>-load-alert</code></td><td><code>STRIX_LOAD_ALERT</code></td><td><code>10</code></td><td>系统负载告警阈值</td></tr>
+          <tr><td><code>-alert-cooldown</code></td><td><code>STRIX_ALERT_COOLDOWN_MIN</code></td><td><code>10</code></td><td>同类告警去重冷却（分钟）</td></tr>
+          <tr><td><code>-login-alert</code></td><td><code>STRIX_LOGIN_ALERT</code></td><td><code>true</code></td><td>主机登录用户变化时生成提醒</td></tr>
+          <tr><td><code>-probe-workers</code></td><td><code>STRIX_PROBE_WORKERS</code></td><td><code>64</code></td><td>服务端主动探测并发度</td></tr>
+          <tr><td><code>-read-conns</code></td><td><code>STRIX_READ_CONNS</code></td><td><code>8</code></td><td>SQLite 读连接池大小</td></tr>
+          <tr><td><code>-write-queue</code></td><td><code>STRIX_WRITE_QUEUE</code></td><td><code>8192</code></td><td>上报写队列容量</td></tr>
+          <tr><td><code>-release-dir</code></td><td><code>STRIX_RELEASE_DIR</code></td><td>数据库同级 <code>releases/</code></td><td>采集端发布包目录</td></tr>
+          <tr><td><code>-hub</code></td><td><code>STRIX_HUB</code></td><td>默认内置（地址已内置，无需填写）</td><td>授权中心地址；<code>-hub ""</code> 表示完全离线</td></tr>
+          <tr><td><code>-hub-token</code></td><td><code>STRIX_HUB_TOKEN</code></td><td>内置</td><td>授权中心拉取令牌。<strong>默认使用程序内置令牌，无需配置</strong>；仅当改用自建授权中心时才需覆盖。令牌不以明文出现在源码、二进制、界面与日志中</td></tr>
+          <tr><td><code>-hub-interval</code></td><td><code>STRIX_HUB_INTERVAL_MIN</code></td><td><code>5</code></td><td>代拉间隔（分钟）</td></tr>
+          <tr><td><code>-hub-auto-update</code></td><td><code>STRIX_HUB_AUTO_UPDATE</code></td><td><code>download</code></td><td>服务端自更新：<code>download</code> 自动就位 / <code>check</code> 只提示 / <code>off</code> 关闭</td></tr>
+          <tr><td><code>-hub-ua</code></td><td><code>STRIX_HUB_UA</code></td><td>空</td><td>访问授权中心的 User-Agent，被网关按 UA 拦截时可覆盖</td></tr>
+          <tr><td><code>-hub-restart</code></td><td><code>STRIX_HUB_RESTART</code></td><td><code>auto</code></td><td>平台升级换完二进制后的生效方式：<code>auto</code>（默认）自动重启使新版本生效；<code>off</code> 只替换文件不重启，需人工重启</td></tr>
+          <tr><td><code>-license-secret</code></td><td><code>STRIX_LICENSE_SECRET</code></td><td>空</td><td>授权签名密钥；旧格式（<code>WGC-</code> / <code>OPSM1-</code> / <code>OPSM-</code>）需与服务端、授权中心一致，新格式（<code>STRIX2-</code>）改用内置公钥，无需此值</td></tr>
+          <tr><td><code>-license</code></td><td><code>STRIX_LICENSE_KEY</code></td><td>空</td><td>授权码（机器码对应的许可证），启动时导入并校验</td></tr>
+          <tr><td><code>-license-machine</code></td><td><code>STRIX_LICENSE_MACHINE</code></td><td>自动</td><td>本机机器码，离线或特殊场景可显式指定</td></tr>
+          <tr><td><code>-free-hosts</code></td><td><code>STRIX_LICENSE_FREE_HOSTS</code></td><td><code>10</code></td><td>免费额度内可监控的主机数</td></tr>
+          <tr><td><code>-free-users</code></td><td><code>STRIX_LICENSE_FREE_USERS</code></td><td><code>3</code></td><td>免费额度内可创建的控制台用户数</td></tr>
         </tbody>
       </table>
 
@@ -690,16 +690,16 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
       <table>
         <thead><tr><th>参数</th><th>环境变量</th><th>默认值</th><th>说明</th></tr></thead>
         <tbody>
-          <tr><td><code>-server</code></td><td><code>OPSM_SERVER</code></td><td><code>http://127.0.0.1:9999</code></td><td>服务端地址</td></tr>
-          <tr><td><code>-token</code></td><td><code>OPSM_TOKEN</code></td><td><code>opsmonitor</code></td><td>通信密钥，与服务端一致</td></tr>
+          <tr><td><code>-server</code></td><td><code>STRIX_SERVER</code></td><td><code>http://127.0.0.1:9999</code></td><td>服务端地址</td></tr>
+          <tr><td><code>-token</code></td><td><code>STRIX_TOKEN</code></td><td><code>strix</code></td><td>通信密钥，与服务端一致</td></tr>
           <tr><td><code>-token-hash</code></td><td>—</td><td>空</td><td>密钥的 MD5，与 <code>-token</code> 二选一</td></tr>
-          <tr><td><code>-name</code></td><td><code>OPSM_HOSTNAME</code></td><td>本机主机名</td><td>平台显示名称</td></tr>
-          <tr><td><code>-interval</code></td><td><code>OPSM_INTERVAL</code></td><td><code>60</code></td><td>上报间隔（秒），平台下发时被覆盖</td></tr>
-          <tr><td><code>-update</code></td><td><code>OPSM_UPDATE</code></td><td><code>auto</code></td><td><code>auto</code> 自动升级 / <code>check</code> 只检查 / <code>off</code> 关闭</td></tr>
-          <tr><td><code>-update-interval</code></td><td><code>OPSM_UPDATE_INTERVAL_MIN</code></td><td><code>30</code></td><td>版本检查间隔（分钟）</td></tr>
-          <tr><td><code>-allow-command</code></td><td><code>OPSM_ALLOW_COMMAND</code></td><td><code>true</code></td><td>是否执行服务端下发的指令</td></tr>
-          <tr><td><code>-remote-config</code></td><td><code>OPSM_REMOTE_CONFIG</code></td><td><code>auto</code></td><td><code>auto</code> 接受平台下发 / <code>off</code> 只用本地参数</td></tr>
-          <tr><td><code>-install-dir</code></td><td><code>OPSM_INSTALL_DIR</code></td><td>可执行文件目录</td><td>升级时替换二进制的目标目录</td></tr>
+          <tr><td><code>-name</code></td><td><code>STRIX_HOSTNAME</code></td><td>本机主机名</td><td>平台显示名称</td></tr>
+          <tr><td><code>-interval</code></td><td><code>STRIX_INTERVAL</code></td><td><code>60</code></td><td>上报间隔（秒），平台下发时被覆盖</td></tr>
+          <tr><td><code>-update</code></td><td><code>STRIX_UPDATE</code></td><td><code>auto</code></td><td><code>auto</code> 自动升级 / <code>check</code> 只检查 / <code>off</code> 关闭</td></tr>
+          <tr><td><code>-update-interval</code></td><td><code>STRIX_UPDATE_INTERVAL_MIN</code></td><td><code>30</code></td><td>版本检查间隔（分钟）</td></tr>
+          <tr><td><code>-allow-command</code></td><td><code>STRIX_ALLOW_COMMAND</code></td><td><code>true</code></td><td>是否执行服务端下发的指令</td></tr>
+          <tr><td><code>-remote-config</code></td><td><code>STRIX_REMOTE_CONFIG</code></td><td><code>auto</code></td><td><code>auto</code> 接受平台下发 / <code>off</code> 只用本地参数</td></tr>
+          <tr><td><code>-install-dir</code></td><td><code>STRIX_INSTALL_DIR</code></td><td>可执行文件目录</td><td>升级时替换二进制的目标目录</td></tr>
         </tbody>
       </table>
       <div class="callout">
@@ -735,7 +735,7 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
         删除会连同该主机的全部历史数据一起清理，不可撤销。
         注意：<b>若该主机的采集端仍在运行，它会在下次上报时被重新发现</b>——
         有活着的采集端就是在线主机。要让它彻底不再出现，请先在目标主机上停用或卸载采集端
-        （<code>sudo systemctl disable --now opsmonitor-agent</code>）。
+        （<code>sudo systemctl disable --now strix-agent</code>）。
       </p>
     </section>
 
@@ -791,26 +791,26 @@ Unregister-ScheduledTask -TaskName opsmonitor-agent -Confirm:$false</code></pre>
       <p>全部状态都在一个 SQLite 文件里，备份就是拷文件。</p>
 
       <h3>在线热备份（推荐）</h3>
-      <p>直接复制 <code>opsmonitor.db</code> 可能在写入过程中拿到不一致的快照。
+      <p>直接复制 <code>strix.db</code> 可能在写入过程中拿到不一致的快照。
         用 SQLite 自带的备份命令更稳妥：</p>
       <pre><code># 需要容器内有 sqlite3，或用官方镜像临时起一个
-sqlite3 /opt/opsmonitor/data/opsmonitor.db ".backup '/opt/opsmonitor/backup/opsmonitor-$(date +%F).db'"</code></pre>
+sqlite3 /opt/strix/data/strix.db ".backup '/opt/strix/backup/strix-$(date +%F).db'"</code></pre>
 
       <h3>停机冷备份（最简单可靠）</h3>
-      <pre><code>docker compose stop opsmonitor
-tar czf /backup/opsmonitor-$(date +%F).tar.gz -C /opt/opsmonitor data
-docker compose start opsmonitor</code></pre>
+      <pre><code>docker compose stop strix
+tar czf /backup/strix-$(date +%F).tar.gz -C /opt/strix data
+docker compose start strix</code></pre>
 
       <h3>恢复</h3>
-      <pre><code>docker compose stop opsmonitor
-tar xzf /backup/opsmonitor-2026-10-11.tar.gz -C /opt/opsmonitor
-docker compose start opsmonitor</code></pre>
+      <pre><code>docker compose stop strix
+tar xzf /backup/strix-2026-10-11.tar.gz -C /opt/strix
+docker compose start strix</code></pre>
 
       <h3>建议的定时备份</h3>
       <pre><code># 每天 03:17 冷备一次，保留 14 天
-17 3 * * * cd /opt/opsmonitor &amp;&amp; \
-  tar czf /backup/opsmonitor-$(date +\%F).tar.gz data &amp;&amp; \
-  find /backup -name 'opsmonitor-*.tar.gz' -mtime +14 -delete</code></pre>
+17 3 * * * cd /opt/strix &amp;&amp; \
+  tar czf /backup/strix-$(date +\%F).tar.gz data &amp;&amp; \
+  find /backup -name 'strix-*.tar.gz' -mtime +14 -delete</code></pre>
       <div class="callout ok">
         <b>备份一定要演练恢复</b>
         备份文件存在不等于能恢复。至少每季度在测试环境完整恢复一次。
@@ -826,22 +826,22 @@ docker compose start opsmonitor</code></pre>
 docker compose pull &amp;&amp; docker compose up -d
 
 # 二进制（手工替换，务必按下面 5 步）
-sudo systemctl stop opsmonitor
-sudo cp /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.bak
-sudo cp 新版/opsmonitor-server /opt/opsmonitor/opsmonitor-server
-sudo systemctl start opsmonitor</code></pre>
+sudo systemctl stop strix
+sudo cp /opt/strix/strix-server /opt/strix/strix-server.bak
+sudo cp 新版/strix-server /opt/strix/strix-server
+sudo systemctl start strix</code></pre>
 
       <h3>手工替换二进制升级步骤</h3>
       <ol class="steps">
-        <li><strong>备份旧二进制</strong><p><code>sudo cp /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.bak</code></p></li>
+        <li><strong>备份旧二进制</strong><p><code>sudo cp /opt/strix/strix-server /opt/strix/strix-server.bak</code></p></li>
         <li>
           <strong>清理待生效标记文件</strong>
-          <p><code>sudo rm -f /opt/opsmonitor/.opsmonitor-server.pending</code></p>
+          <p><code>sudo rm -f /opt/strix/.strix-server.pending</code></p>
           <p>不清掉的话，启动时程序会认为「上次升级尚未生效」而回滚到 <code>.bak</code>，表现为「换了二进制又变回旧版」。这一步最关键。</p>
         </li>
-        <li><strong>替换二进制并赋权</strong><p><code>sudo cp 新版/opsmonitor-server /opt/opsmonitor/opsmonitor-server &amp;&amp; sudo chmod +x /opt/opsmonitor/opsmonitor-server</code></p></li>
-        <li><strong>重启服务</strong><p><code>sudo systemctl restart opsmonitor</code></p></li>
-        <li><strong>校验版本</strong><p><code>/opt/opsmonitor/opsmonitor-server -version</code></p></li>
+        <li><strong>替换二进制并赋权</strong><p><code>sudo cp 新版/strix-server /opt/strix/strix-server &amp;&amp; sudo chmod +x /opt/strix/strix-server</code></p></li>
+        <li><strong>重启服务</strong><p><code>sudo systemctl restart strix</code></p></li>
+        <li><strong>校验版本</strong><p><code>/opt/strix/strix-server -version</code></p></li>
       </ol>
       <p>前端（HTML / JS / CSS）通过 <code>//go:embed all:web</code> 编译进同一个二进制，因此升级<strong>只需替换这一个二进制文件</strong>，无需另行部署静态资源。</p>
 
@@ -893,9 +893,9 @@ sudo systemctl start opsmonitor</code></pre>
           <tr><td>Windows 报「无法连接到远程服务器」</td><td>地址填了 <code>127.0.0.1</code> 或防火墙未放行</td><td>换成目标机可达地址，放行 9999/TCP</td></tr>
           <tr><td>Linux 提示未找到 curl</td><td>精简镜像缺工具</td><td><code>yum install -y curl</code> 或 <code>apt-get install -y curl</code></td></tr>
           <tr><td>提示需要管理员权限</td><td>Windows 安装脚本要求管理员 PowerShell</td><td>右键「以管理员身份运行」</td></tr>
-          <tr><td>重启后数据全丢</td><td><code>data</code> 目录没挂载</td><td>按文件挂载清单挂上 <code>/opt/opsmonitor/data</code></td></tr>
+          <tr><td>重启后数据全丢</td><td><code>data</code> 目录没挂载</td><td>按文件挂载清单挂上 <code>/opt/strix/data</code></td></tr>
           <tr><td>告警时间差 8 小时</td><td>容器时区是 UTC</td><td>设置 <code>TZ=Asia/Shanghai</code> 并挂载 <code>/etc/localtime</code></td></tr>
-          <tr><td><strong>Windows 7 / Server 2008 R2</strong> 上采集端双击后闪退，没有窗口也没有日志</td><td>Go 1.21.5 起 runtime 的随机数源依赖 Windows 8 才有的 <code>bcryptprimitives.dll</code>，旧系统上加载失败，进程在 runtime 初始化阶段直接退出（早于任何业务日志，所以看不到报错）</td><td>改用专用兼容产物 <code>opsmonitor-agent-windows-amd64-win7.exe</code>，启动参数<strong>必须</strong>加 <code>-remote-config off -update off</code> —— 否则它会在 30 分钟内被平台下发的更新策略换成普通版，又闪退；旧系统没有 <code>Register-ScheduledTask</code>，用系统自带的 <code>schtasks.exe</code> 注册开机自启</td></tr>
+          <tr><td><strong>Windows 7 / Server 2008 R2</strong> 上采集端双击后闪退，没有窗口也没有日志</td><td>Go 1.21.5 起 runtime 的随机数源依赖 Windows 8 才有的 <code>bcryptprimitives.dll</code>，旧系统上加载失败，进程在 runtime 初始化阶段直接退出（早于任何业务日志，所以看不到报错）</td><td>改用专用兼容产物 <code>strix-agent-windows-amd64-win7.exe</code>，启动参数<strong>必须</strong>加 <code>-remote-config off -update off</code> —— 否则它会在 30 分钟内被平台下发的更新策略换成普通版，又闪退；旧系统没有 <code>Register-ScheduledTask</code>，用系统自带的 <code>schtasks.exe</code> 注册开机自启</td></tr>
         </tbody>
       </table>
 
@@ -919,7 +919,7 @@ sudo systemctl start opsmonitor</code></pre>
           <tr><td>同步返回 403 + <code>Just a moment...</code></td><td>CDN 人机校验拦下程序客户端</td><td>在网关上为 <code>/api/*</code> 配置跳过规则；或改用不挂代理的接口子域；或 <code>-hub ""</code> 转离线</td></tr>
           <tr><td>同步返回 HTML 而非 JSON</td><td><code>-hub</code> 指向了网页</td><td>地址应为默认内置的授权中心地址（已内置程序，无需手动填写），不要带接口路径</td></tr>
           <tr><td>一直显示「尚未签发授权」</td><td>授权中心还没给本机机器码签发</td><td>拿控制台显示的机器码去授权中心后台签发</td></tr>
-          <tr><td>授权导入后校验失败（提示签名校验失败）</td><td>公钥抄错，或旧格式密钥不一致</td><td>新格式（<code>OPSM2-</code>）看启动日志的「授权验签公钥指纹」是否与授权中心一致，不一致就是公钥抄错了；旧格式（<code>WGC-</code>/<code>OPSM1-</code>/<code>OPSM-</code>）才需要两端 <code>-license-secret</code> 一致</td></tr>
+          <tr><td>授权导入后校验失败（提示签名校验失败）</td><td>公钥抄错，或旧格式密钥不一致</td><td>新格式（<code>STRIX2-</code>）看启动日志的「授权验签公钥指纹」是否与授权中心一致，不一致就是公钥抄错了；旧格式（<code>WGC-</code>/<code>OPSM1-</code>/<code>OPSM-</code>）才需要两端 <code>-license-secret</code> 一致</td></tr>
           <tr><td>日志反复刷「同步失败」</td><td>授权中心不可达</td><td>已自动退避（最长 30 分钟一次），无需处理</td></tr>
           <tr><td>发现新版本但不自动升级</td><td><code>-hub-auto-update</code> 为 check/off</td><td>改回 <code>download</code>，或手动点「拉取并升级」</td></tr>
             <tr><td>提示「可升级到 X」但版本号永远不变，服务还反复重启</td><td>授权端把<strong>旧产物登记成了新版本号</strong>（典型：改了 <code>-v</code> 却没重新构建，<code>--skip-build</code> 复用了上一版 dist）——二进制自报版本没变，每轮同步都会「再升一次」</td><td>1.1.7 起<strong>平台与采集端</strong>在替换前都会先执行新二进制的 <code>-version</code> 自检，自报版本不高于当前就直接拒绝替换并给出报错；按报错重新构建、重新上传真正的该版本号即可（<code>release.sh</code> 也会在上传前比对 <code>dist/VERSION</code> 拦下这种误传）</td></tr>
@@ -930,16 +930,16 @@ sudo systemctl start opsmonitor</code></pre>
       <table>
         <thead><tr><th>现象</th><th>原因</th><th>处理</th></tr></thead>
         <tbody>
-          <tr><td>登录后明确提示「用户名或密码错误」</td><td>账号或密码不正确（1.1.2 起给出明确原因，不再「点了没反应」）</td><td>核对账号密码；注意控制台账号为首次启动时的 <code>-user</code>/<code>-pass</code>（环境变量 <code>OPSM_ADMIN_USER</code>/<code>OPSM_ADMIN_PASS</code>），仅首次启动生效</td></tr>
+          <tr><td>登录后明确提示「用户名或密码错误」</td><td>账号或密码不正确（1.1.2 起给出明确原因，不再「点了没反应」）</td><td>核对账号密码；注意控制台账号为首次启动时的 <code>-user</code>/<code>-pass</code>（环境变量 <code>STRIX_ADMIN_USER</code>/<code>STRIX_ADMIN_PASS</code>），仅首次启动生效</td></tr>
           <tr><td>登录后明确提示「账号已停用」</td><td>该控制台用户被停用</td><td>用其他管理员在「系统设置 → 用户管理」重新启用</td></tr>
         </tbody>
       </table>
 
     <h3>排查顺序</h3>
       <ol class="steps">
-        <li>看服务端日志：<code>docker compose logs --tail=200</code> 或 <code>journalctl -u opsmonitor -n 200</code></li>
-        <li>看采集端日志：Linux <code>journalctl -u opsmonitor-agent -n 200</code>，
-            Windows <code>Get-ScheduledTaskInfo -TaskName opsmonitor-agent</code></li>
+        <li>看服务端日志：<code>docker compose logs --tail=200</code> 或 <code>journalctl -u strix -n 200</code></li>
+        <li>看采集端日志：Linux <code>journalctl -u strix-agent -n 200</code>，
+            Windows <code>Get-ScheduledTaskInfo -TaskName strix-agent</code></li>
         <li>在目标主机自测连通性：<code>curl http://服务端IP:9999/</code></li>
         <li>自测授权中心：<code>curl -o /dev/null -w '%{http_code}' "https://&lt;你的授权中心地址&gt;/api/v1/check?token=xxx"</code>，期望 200</li>
         <li>看控制台「操作审计」，确认配置改动是否生效</li>
@@ -948,7 +948,7 @@ sudo systemctl start opsmonitor</code></pre>
     </section>
 
     <footer class="docs-foot">
-      <span>OpsMonitor · 开箱即用的轻量级分布式运维监控系统</span>
+      <span>Strix · 开箱即用的轻量级分布式运维监控系统</span>
       <span id="footVer">—</span>
     </footer>
   </main>

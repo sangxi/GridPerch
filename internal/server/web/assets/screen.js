@@ -1,4 +1,4 @@
-/* OpsMonitor 监控大屏：8 套模板，数据来自 /api/screen，图表由内嵌 ECharts 渲染。
+/* Strix 监控大屏：8 套模板，数据来自 /api/screen，图表由内嵌 ECharts 渲染。
  *
  * 设计约束：
  *  1. 零 CDN 依赖 —— ECharts 已内嵌为 /assets/echarts.min.js，内网离线可用；
@@ -20,7 +20,7 @@ const LAYOUTS = {
 };
 
 const LAYOUT_IDS = Object.keys(LAYOUTS).map(Number);
-const STORE_KEY = 'opsm_screen_layout';
+const STORE_KEY = 'strix_screen_layout';
 
 let layout = Number(localStorage.getItem(STORE_KEY) || 1);
 let payload = null;

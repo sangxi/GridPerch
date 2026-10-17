@@ -107,7 +107,7 @@ const timeLayout = "2006-01-02 15:04:05"
 func alertMarkdown(prefix string, alerts []Alert) (title, text string) {
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
-		prefix = "[OpsMonitor]"
+		prefix = "[Strix]"
 	}
 	title = fmt.Sprintf("%s 检测到 %d 条新告警", prefix, len(alerts))
 
@@ -255,7 +255,7 @@ func buildWebhookRequest(cfg WebhookConfig, alerts []Alert) (string, map[string]
 			"text":    plainText(cfg.Prefix, alerts),
 			"count":   len(alerts),
 			"alerts":  items,
-			"source":  "OpsMonitor",
+			"source":  "Strix",
 			"time":    now.Format(timeLayout),
 		}, nil
 	}

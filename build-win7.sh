@@ -23,7 +23,7 @@
 # 上传 —— 平台下发的正式采集端仍是当前工具链构建的版本，两者互不影响。
 #
 # ── 用法 ────────────────────────────────────────────────────────────────
-#   ./build-win7.sh                     # 输出 dist/opsmonitor-agent-windows-amd64-win7.exe
+#   ./build-win7.sh                     # 输出 dist/strix-agent-windows-amd64-win7.exe
 #   OUT=/tmp/x ./build-win7.sh          # 指定输出目录
 #   GO120=/path/to/go ./build-win7.sh   # 指定 Go 1.20 工具链
 set -euo pipefail
@@ -49,7 +49,7 @@ esac
 
 VERSION=$(grep -m1 'var Version = ' internal/version/version.go | sed -E 's/.*"([^"]+)".*/\1/')
 BUILD_TIME=$(date '+%Y-%m-%dT%H:%M:%S')
-LDFLAGS="-s -w -X github.com/sangxi/OpsMonitor/internal/version.BuildTime=${BUILD_TIME}"
+LDFLAGS="-s -w -X github.com/sangxi/strix/internal/version.BuildTime=${BUILD_TIME}"
 OUT=${OUT:-dist}
 SUFFIX=${SUFFIX:-win7}
 
@@ -57,12 +57,12 @@ mkdir -p "$OUT"
 echo "工具链  $VER"
 echo "版本    ${VERSION}（构建时间 ${BUILD_TIME}）"
 echo "modfile go120.mod（go 1.20）"
-echo "产物    ${OUT}/opsmonitor-agent-windows-amd64-${SUFFIX}.exe"
+echo "产物    ${OUT}/strix-agent-windows-amd64-${SUFFIX}.exe"
 
 GOOS=windows GOARCH=amd64 "$GO120" build -modfile=go120.mod -mod=mod -trimpath \
   -ldflags "$LDFLAGS" \
-  -o "${OUT}/opsmonitor-agent-windows-amd64-${SUFFIX}.exe" ./cmd/opsmonitor-agent
+  -o "${OUT}/strix-agent-windows-amd64-${SUFFIX}.exe" ./cmd/strix-agent
 
 echo
 echo "完成。自检："
-echo "  ./${OUT}/opsmonitor-agent-windows-amd64-${SUFFIX}.exe -version"
+echo "  ./${OUT}/strix-agent-windows-amd64-${SUFFIX}.exe -version"

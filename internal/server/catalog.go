@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/store"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/store"
 )
 
 // catalogForm 主机目录的请求体。ID 为空表示新建。

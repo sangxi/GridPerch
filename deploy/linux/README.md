@@ -31,22 +31,22 @@ PT_INTERP 存在? False                                  <- 静态链接
 |---|---|---|---|
 | Debian / Ubuntu / UOS / Kylin | systemd | ufw | 装 systemd 单元 + `ufw allow` |
 | CentOS / RHEL / Rocky / Alma / openEuler | systemd | firewalld | 装 systemd 单元 + `firewall-cmd`；检测到 SELinux Enforcing 会 `restorecon` |
-| Alpine | OpenRC | 无 | 生成 `/etc/init.d/opsmonitor` + `rc-update` |
+| Alpine | OpenRC | 无 | 生成 `/etc/init.d/strix` + `rc-update` |
 | 极小化容器镜像 | 都没有 | 无 | 回退 `nohup` 常驻（并提示重启不自启） |
 
 ## 快速开始
 
 ```bash
 # 1) 把二进制和本目录一起传到服务器
-scp -r deploy/linux opsmonitor-server-linux-amd64 root@10.0.0.5:/root/
+scp -r deploy/linux strix-server-linux-amd64 root@10.0.0.5:/root/
 
 # 2) 在服务器上执行
 cd /root && chmod +x linux/install.sh
 sudo ./linux/install.sh
 ```
 
-脚本会自动：探测发行版/架构 → 取出对应二进制 → 建低权限用户 `opsmonitor` →
-装到 `/opt/opsmonitor/opsmonitor-server` → 生成 `/etc/opsmonitor/opsmonitor.env` →
+脚本会自动：探测发行版/架构 → 取出对应二进制 → 建低权限用户 `strix` →
+装到 `/opt/strix/strix-server` → 生成 `/etc/strix/strix.env` →
 注册开机自启 → 放行端口 → 打印**只显示一次**的控制台账号与通信密钥。
 
 ## 常用参数
@@ -57,64 +57,64 @@ sudo ./install.sh --token '你的通信密钥'            # 指定采集端要�
 sudo ./install.sh --admin-pass '你的控制台密码'      # 指定控制台密码（否则随机生成）
 sudo ./install.sh --public-url http://10.0.0.5:9999
 sudo ./install.sh --no-firewall                   # 不动防火墙（自己管理）
-sudo ./install.sh -f /tmp/opsmonitor-server-linux-arm64   # 指定二进制
-sudo ./install.sh -u https://example.com/opsmonitor-server-linux-amd64  # 在线拉取
+sudo ./install.sh -f /tmp/strix-server-linux-arm64   # 指定二进制
+sudo ./install.sh -u https://example.com/strix-server-linux-amd64  # 在线拉取
 sudo ./install.sh --uninstall                     # 卸载（保留数据与配置）
 ```
 
-参数也可以通过环境变量给：`OPSM_VERSION` / `OPSM_PREFIX`。
+参数也可以通过环境变量给：`STRIX_VERSION` / `STRIX_PREFIX`。
 
 ## 目录规划
 
 | 路径 | 用途 |
 |---|---|
-| `/opt/opsmonitor/opsmonitor-server` | 主程序（自动更新会替换它，旧版存为 `.bak`） |
-| `/opt/opsmonitor/data/opsmonitor.db` | SQLite 数据库（WAL 模式，备份拷这个目录即可） |
-| `/opt/opsmonitor/releases/` | 采集端发布物缓存（内网主机从这里升级） |
-| `/etc/opsmonitor/opsmonitor.env` | 配置（权限 600，密码/密钥都在这里） |
-| `/etc/systemd/system/opsmonitor.service` | systemd 单元 |
+| `/opt/strix/strix-server` | 主程序（自动更新会替换它，旧版存为 `.bak`） |
+| `/opt/strix/data/strix.db` | SQLite 数据库（WAL 模式，备份拷这个目录即可） |
+| `/opt/strix/releases/` | 采集端发布物缓存（内网主机从这里升级） |
+| `/etc/strix/strix.env` | 配置（权限 600，密码/密钥都在这里） |
+| `/etc/systemd/system/strix.service` | systemd 单元 |
 
 ## 手工部署（不想用脚本时）
 
 ```bash
-sudo useradd -r -s /sbin/nologin opsmonitor
-sudo mkdir -p /opt/opsmonitor/{data,releases} /etc/opsmonitor
-sudo install -m0755 opsmonitor-server-linux-amd64 /opt/opsmonitor/opsmonitor-server
+sudo useradd -r -s /sbin/nologin strix
+sudo mkdir -p /opt/strix/{data,releases} /etc/strix
+sudo install -m0755 strix-server-linux-amd64 /opt/strix/strix-server
 
-sudo cp opsmonitor.env.example /etc/opsmonitor/opsmonitor.env
-sudo vi /etc/opsmonitor/opsmonitor.env      # 至少改 OPSM_TOKEN 与 OPSM_ADMIN_PASS
-sudo chmod 600 /etc/opsmonitor/opsmonitor.env
+sudo cp strix.env.example /etc/strix/strix.env
+sudo vi /etc/strix/strix.env      # 至少改 STRIX_TOKEN 与 STRIX_ADMIN_PASS
+sudo chmod 600 /etc/strix/strix.env
 
-sudo cp opsmonitor.service /etc/systemd/system/
-sudo chown -R opsmonitor:opsmonitor /opt/opsmonitor
-sudo systemctl daemon-reload && sudo systemctl enable --now opsmonitor
-sudo systemctl status opsmonitor --no-pager
+sudo cp strix.service /etc/systemd/system/
+sudo chown -R strix:strix /opt/strix
+sudo systemctl daemon-reload && sudo systemctl enable --now strix
+sudo systemctl status strix --no-pager
 ```
 
 ## 升级（替换二进制）
 
-前端已编译进单个二进制（无需单独更新 .js/.go），升级只需替换那一个文件。1.1.3+ 会自动重启生效；旧版本请手动 `systemctl restart opsmonitor`。
+前端已编译进单个二进制（无需单独更新 .js/.go），升级只需替换那一个文件。1.1.3+ 会自动重启生效；旧版本请手动 `systemctl restart strix`。
 
 手工替换步骤：
 
-1. 备份旧二进制：`cp /opt/opsmonitor/opsmonitor-server /opt/opsmonitor/opsmonitor-server.old`
-2. **`rm -f /opt/opsmonitor/.opsmonitor-server.pending`**（不清掉的话，启动时的自动确认逻辑会认为升级未生效而回滚到 `.bak`）
+1. 备份旧二进制：`cp /opt/strix/strix-server /opt/strix/strix-server.old`
+2. **`rm -f /opt/strix/.strix-server.pending`**（不清掉的话，启动时的自动确认逻辑会认为升级未生效而回滚到 `.bak`）
 3. 替换二进制并 `chmod +x`
-4. `systemctl restart opsmonitor`
-5. `/opt/opsmonitor/opsmonitor-server -version` 校验版本
+4. `systemctl restart strix`
+5. `/opt/strix/strix-server -version` 校验版本
 
 ## 排障
 
 | 现象 | 原因与处理 |
 |---|---|
-| `journalctl -u opsmonitor` 里 `avc: denied` | CentOS/RHEL 的 SELinux。执行 `sudo semanage fcontext -a -t bin_t '/opt/opsmonitor(/.*)?' && sudo restorecon -R /opt/opsmonitor`，再 `systemctl restart opsmonitor` |
-| `permission denied` 启动失败 | 数据目录属主不对：`sudo chown -R opsmonitor:opsmonitor /opt/opsmonitor` |
+| `journalctl -u strix` 里 `avc: denied` | CentOS/RHEL 的 SELinux。执行 `sudo semanage fcontext -a -t bin_t '/opt/strix(/.*)?' && sudo restorecon -R /opt/strix`，再 `systemctl restart strix` |
+| `permission denied` 启动失败 | 数据目录属主不对：`sudo chown -R strix:strix /opt/strix` |
 | 本机能开页面、外面打不开 | firewalld/ufw 没放行，或云服务器**安全组**没放行 9999 |
 | `address already in use` | `ss -tlnp \| grep 9999` 找占用进程；或换 `--addr :8000` |
-| 服务起来但页面报错、日志有 `打开数据库失败` | `OPSM_DB` 指向的目录不存在或无写权限 |
+| 服务起来但页面报错、日志有 `打开数据库失败` | `STRIX_DB` 指向的目录不存在或无写权限 |
 | 启动日志指纹不是 `278D-4852-7191-E7CE` | 二进制不是本版本产物（旧版内置错误公钥，授权码会全部验不过） |
 | CentOS 7 上 systemd 报 `Unknown lvalue LimitNOFILE` | 老 systemd 语法差异，删掉该行即可（非必需） |
-| 想完全离线（不连授权中心） | 单元里 `ExecStart` 改成 `/opt/opsmonitor/opsmonitor-server -hub=`。注意**不能**用 `OPSM_HUB=` 环境变量——空串会回落到默认地址 |
+| 想完全离线（不连授权中心） | 单元里 `ExecStart` 改成 `/opt/strix/strix-server -hub=`。注意**不能**用 `STRIX_HUB=` 环境变量——空串会回落到默认地址 |
 
 ## 采集端
 

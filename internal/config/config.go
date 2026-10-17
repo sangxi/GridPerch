@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,9 +14,12 @@ import (
 
 // Server 服务端配置。
 type Server struct {
-	Addr          string
-	DBPath        string
-	Token         string
+	Addr   string
+	DBPath string
+	Token  string
+	// TokenLegacy 更名前的默认通信密钥。仅在本次仍使用默认密钥时填充，
+	// 用于让「没改过密钥的老采集端」在服务端升级后不至于立刻断连。
+	TokenLegacy   string
 	AdminUser     string
 	AdminPass     string
 	Retention     int // 历史数据保留天数
@@ -31,13 +35,16 @@ type Server struct {
 	LoginAlert    string // 是否开启主机登录提醒：true/false
 	AlertCoolDown time.Duration
 
-	ReleaseDir      string // 采集端发布包的存放目录
-	PublicURL       string // 对外访问地址，安装脚本与更新下载用它拼接绝对地址
-	LicenseSecret   string // 旧格式（HMAC）授权码的校验密钥；现仅供兼容存量授权码
-	LicenseKey      string // 启动时直接导入的授权码（可选）
-	LicenseMachine  string // 强制指定的机器码，默认自动取本机
-	LicenseFreeHost int    // 未授权时允许接入的主机数
-	LicenseFreeUser int    // 未授权时允许创建的控制台账号数
+	ReleaseDir    string // 采集端发布包的存放目录
+	PublicURL     string // 对外访问地址，安装脚本与更新下载用它拼接绝对地址
+	LicenseSecret string // 旧格式（HMAC）授权码的校验密钥；现仅供兼容存量授权码
+	// LicenseSecretLegacy 更名前使用的旧密钥默认值。存量 HMAC 授权码是用它签的，
+	// 换了新默认值后若不再接受旧值，已激活的授权会当场失效，所以一并带上。
+	LicenseSecretLegacy string
+	LicenseKey          string // 启动时直接导入的授权码（可选）
+	LicenseMachine      string // 强制指定的机器码，默认自动取本机
+	LicenseFreeHost     int    // 未授权时允许接入的主机数
+	LicenseFreeUser     int    // 未授权时允许创建的控制台账号数
 
 	// 授权系统（更新与授权中心）：配置后平台定期从授权系统拉取最新版本与本机授权码
 	HubURL      string        // 授权系统地址，默认 DefaultHubURL，留空表示完全离线
@@ -66,8 +73,8 @@ type Server struct {
 // 声明为 var（而非 const）是为了能在构建时用 -ldflags -X 覆盖，便于换授权中心
 // 或产出「默认离线」的构建：
 //
-//	go build -ldflags "-X github.com/sangxi/OpsMonitor/internal/config.DefaultHubURL=https://你的授权中心"
-//	go build -ldflags "-X github.com/sangxi/OpsMonitor/internal/config.DefaultHubURL="   # 默认离线
+//	go build -ldflags "-X github.com/sangxi/strix/internal/config.DefaultHubURL=https://你的授权中心"
+//	go build -ldflags "-X github.com/sangxi/strix/internal/config.DefaultHubURL="   # 默认离线
 //
 // ⚠️ 这个地址是**功能必需**的：平台要「开箱即能拉更新与授权码」，它就必须存在于
 // 二进制里（只是不再出现在任何提示文案/前端/文档中）。真要连它都不留，只能按上面的
@@ -100,15 +107,35 @@ func MD5Token(token string) string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(token)))
 }
 
+// env 读取环境变量：先找新前缀 STRIX_ 的同名变量，再回落到上一代前缀 OPSM_，
+// 最后才用默认值。
+//
+// 品牌从 OpsMonitor 更名为 Strix 后，变量前缀统一改成 STRIX_；而已经部署的机器
+// （systemd 的 EnvironmentFile、docker-compose 的 .env）里写的仍是 OPSM_*。
+// 这里做一次回落，让老部署只换二进制就能继续跑，不必同步改配置。
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
+	if old := legacyEnvKey(key); old != "" {
+		if v := os.Getenv(old); v != "" {
+			return v
+		}
+	}
 	return def
 }
 
+// legacyEnvKey 把 STRIX_XXX 映射回上一代前缀的 OPSM_XXX；非 STRIX_ 前缀返回空。
+func legacyEnvKey(key string) string {
+	const newPrefix, oldPrefix = "STRIX_", "OPSM_"
+	if strings.HasPrefix(key, newPrefix) {
+		return oldPrefix + key[len(newPrefix):]
+	}
+	return ""
+}
+
 func envInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
+	if v := env(key, ""); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
@@ -117,7 +144,7 @@ func envInt(key string, def int) int {
 }
 
 func envFloat(key string, def float64) float64 {
-	if v := os.Getenv(key); v != "" {
+	if v := env(key, ""); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			return f
 		}
@@ -125,42 +152,66 @@ func envFloat(key string, def float64) float64 {
 	return def
 }
 
+// ResolveLegacyDBPath 兼容更名前后的数据库文件名。
+//
+// 默认库文件从 data/opsmonitor.db 改成了 data/strix.db。按新默认值找不到文件、
+// 而同级目录下存在上一代的 opsmonitor.db 时，沿用旧文件——否则升级后会在旁边
+// 新建一个空库，现象就是「数据全丢了」。返回 true 表示用了旧路径。
+func ResolveLegacyDBPath(path string) (string, bool) {
+	if strings.TrimSpace(path) == "" {
+		return path, false
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path, false
+	}
+	if !strings.EqualFold(filepath.Base(path), "strix.db") {
+		return path, false
+	}
+	old := filepath.Join(filepath.Dir(path), "opsmonitor.db")
+	if _, err := os.Stat(old); err == nil {
+		return old, true
+	}
+	return path, false
+}
+
 // ParseServer 解析服务端启动参数，环境变量优先级低于命令行。
 func ParseServer() *Server {
 	cfg := &Server{
-		Addr:         env("OPSM_ADDR", ":9999"),
-		DBPath:       env("OPSM_DB", "./data/opsmonitor.db"),
-		Token:        env("OPSM_TOKEN", "opsmonitor"),
-		AdminUser:    env("OPSM_ADMIN_USER", "admin"),
-		AdminPass:    env("OPSM_ADMIN_PASS", "opsmonitor"),
-		Retention:    envInt("OPSM_RETENTION", 30),
-		OfflineSec:   envInt("OPSM_OFFLINE_SEC", 180),
-		PurgeSec:     envInt("OPSM_PURGE_INTERVAL", 3600),
-		ReadConns:    envInt("OPSM_READ_CONNS", 8),
-		WriteQueue:   envInt("OPSM_WRITE_QUEUE", 8192),
-		ProbeWorkers: envInt("OPSM_PROBE_WORKERS", 64),
-		LoginAlert:   env("OPSM_LOGIN_ALERT", "true"),
-		CPUAlert:     envFloat("OPSM_CPU_ALERT", 90),
-		MemAlert:     envFloat("OPSM_MEM_ALERT", 90),
-		DiskAlert:    envFloat("OPSM_DISK_ALERT", 90),
-		LoadAlert:    envFloat("OPSM_LOAD_ALERT", 10),
+		Addr:         env("STRIX_ADDR", ":9999"),
+		DBPath:       env("STRIX_DB", "./data/strix.db"),
+		Token:        env("STRIX_TOKEN", "strix"),
+		AdminUser:    env("STRIX_ADMIN_USER", "admin"),
+		AdminPass:    env("STRIX_ADMIN_PASS", "strix"),
+		Retention:    envInt("STRIX_RETENTION", 30),
+		OfflineSec:   envInt("STRIX_OFFLINE_SEC", 180),
+		PurgeSec:     envInt("STRIX_PURGE_INTERVAL", 3600),
+		ReadConns:    envInt("STRIX_READ_CONNS", 8),
+		WriteQueue:   envInt("STRIX_WRITE_QUEUE", 8192),
+		ProbeWorkers: envInt("STRIX_PROBE_WORKERS", 64),
+		LoginAlert:   env("STRIX_LOGIN_ALERT", "true"),
+		CPUAlert:     envFloat("STRIX_CPU_ALERT", 90),
+		MemAlert:     envFloat("STRIX_MEM_ALERT", 90),
+		DiskAlert:    envFloat("STRIX_DISK_ALERT", 90),
+		LoadAlert:    envFloat("STRIX_LOAD_ALERT", 10),
 	}
-	cfg.AlertCoolDown = time.Duration(envInt("OPSM_ALERT_COOLDOWN_MIN", 10)) * time.Minute
-	cfg.ReleaseDir = env("OPSM_RELEASE_DIR", "")
-	cfg.PublicURL = env("OPSM_PUBLIC_URL", "")
-	cfg.LicenseSecret = env("OPSM_LICENSE_SECRET", "OpsMonitor-license")
-	cfg.LicenseKey = env("OPSM_LICENSE_KEY", "")
-	cfg.LicenseMachine = env("OPSM_LICENSE_MACHINE", "")
-	cfg.LicenseFreeHost = envInt("OPSM_LICENSE_FREE_HOSTS", 10)
-	cfg.LicenseFreeUser = envInt("OPSM_LICENSE_FREE_USERS", 3)
-	cfg.HubURL = env("OPSM_HUB", DefaultHubURL)
-	cfg.HubAutoUpdate = env("OPSM_HUB_AUTO_UPDATE", "download")
-	cfg.HubRestart = env("OPSM_HUB_RESTART", "auto")
-	cfg.HubUserAgent = env("OPSM_HUB_UA", "")
-	// 令牌优先级：-hub-token 参数 > OPSM_HUB_TOKEN 环境变量 > 内置令牌。
+	cfg.AlertCoolDown = time.Duration(envInt("STRIX_ALERT_COOLDOWN_MIN", 10)) * time.Minute
+	cfg.ReleaseDir = env("STRIX_RELEASE_DIR", "")
+	cfg.PublicURL = env("STRIX_PUBLIC_URL", "")
+	cfg.LicenseSecret = env("STRIX_LICENSE_SECRET", "Strix-license")
+	// 旧密钥默认值与新默认值一起交给验签器：存量授权码是用旧的签的，两个都得认。
+	cfg.LicenseSecretLegacy = env("STRIX_LICENSE_SECRET_LEGACY", "OpsMonitor-license")
+	cfg.LicenseKey = env("STRIX_LICENSE_KEY", "")
+	cfg.LicenseMachine = env("STRIX_LICENSE_MACHINE", "")
+	cfg.LicenseFreeHost = envInt("STRIX_LICENSE_FREE_HOSTS", 10)
+	cfg.LicenseFreeUser = envInt("STRIX_LICENSE_FREE_USERS", 3)
+	cfg.HubURL = env("STRIX_HUB", DefaultHubURL)
+	cfg.HubAutoUpdate = env("STRIX_HUB_AUTO_UPDATE", "download")
+	cfg.HubRestart = env("STRIX_HUB_RESTART", "auto")
+	cfg.HubUserAgent = env("STRIX_HUB_UA", "")
+	// 令牌优先级：-hub-token 参数 > STRIX_HUB_TOKEN 环境变量 > 内置令牌。
 	// 内置令牌不以明文写在代码里，见 hubtoken.go 的 defaultHubToken。
-	hubTokenFromEnv := env("OPSM_HUB_TOKEN", "")
-	hubMin := envInt("OPSM_HUB_INTERVAL_MIN", 5)
+	hubTokenFromEnv := env("STRIX_HUB_TOKEN", "")
+	hubMin := envInt("STRIX_HUB_INTERVAL_MIN", 5)
 
 	flag.StringVar(&cfg.Addr, "addr", cfg.Addr, "HTTP 监听地址，例如 :9999")
 	flag.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite 数据库文件路径")
@@ -200,10 +251,10 @@ func ParseServer() *Server {
 	flag.StringVar(&cfg.HubRestart, "hub-restart", cfg.HubRestart,
 		"平台自升级就位后是否自动重启：auto 自动重启生效（默认）/ off 只替换不重启，需人工重启")
 	flag.StringVar(&cfg.HubUserAgent, "hub-ua", cfg.HubUserAgent,
-		"访问授权系统时的 User-Agent，留空用默认 opsmonitor-server/<版本>；被网关按 UA 拦截时可改")
+		"访问授权系统时的 User-Agent，留空用默认 strix-server/<版本>；被网关按 UA 拦截时可改")
 	flag.BoolVar(&cfg.PrintVersion, "version", false, "打印版本号后退出")
 	flag.Parse()
-	// 未显式传 -hub 时保留配置里的值（来自 OPSM_HUB 环境变量，或内置默认地址）；
+	// 未显式传 -hub 时保留配置里的值（来自 STRIX_HUB 环境变量，或内置默认地址）；
 	// 显式传入才覆盖——传空值（-hub=）即「完全离线」，与原语义一致。
 	hubPassed := false
 	flag.Visit(func(f *flag.Flag) {
@@ -244,23 +295,43 @@ func ParseServer() *Server {
 	} else {
 		cfg.LoginAlert = "false"
 	}
+	// 更名前默认密钥是 opsmonitor，最新默认是 strix。只有在没改过密钥、仍用默认值时
+	// 才把旧值留作兼容：已改成强密钥的部署不该平白多出一个可用口令。
+	if cfg.Token == "strix" {
+		cfg.TokenLegacy = "opsmonitor"
+	}
 	return cfg
+}
+
+// TokenOK 判断采集端送来的令牌是否匹配本服务端。
+// 明文与 MD5 都接受（一键安装脚本下发的是 MD5），并兼容更名前的默认令牌。
+func (c *Server) TokenOK(got string) bool {
+	if got == "" {
+		return false
+	}
+	if got == c.Token || got == MD5Token(c.Token) {
+		return true
+	}
+	if c.TokenLegacy != "" {
+		return got == c.TokenLegacy || got == MD5Token(c.TokenLegacy)
+	}
+	return false
 }
 
 // ParseAgent 解析采集端启动参数。
 func ParseAgent() *Agent {
 	hostname, _ := os.Hostname()
 	cfg := &Agent{
-		ServerURL:    env("OPSM_SERVER", "http://127.0.0.1:9999"),
-		Token:        env("OPSM_TOKEN", "opsmonitor"),
-		Hostname:     env("OPSM_HOSTNAME", hostname),
-		AllowCommand: env("OPSM_ALLOW_COMMAND", "true") != "false",
-		UpdateMode:   env("OPSM_UPDATE", "auto"),
-		InstallDir:   env("OPSM_INSTALL_DIR", ""),
-		RemoteConfig: env("OPSM_REMOTE_CONFIG", "auto"),
+		ServerURL:    env("STRIX_SERVER", "http://127.0.0.1:9999"),
+		Token:        env("STRIX_TOKEN", "strix"),
+		Hostname:     env("STRIX_HOSTNAME", hostname),
+		AllowCommand: env("STRIX_ALLOW_COMMAND", "true") != "false",
+		UpdateMode:   env("STRIX_UPDATE", "auto"),
+		InstallDir:   env("STRIX_INSTALL_DIR", ""),
+		RemoteConfig: env("STRIX_REMOTE_CONFIG", "auto"),
 	}
-	intervalSec := envInt("OPSM_INTERVAL", 60)
-	updateMin := envInt("OPSM_UPDATE_INTERVAL_MIN", 30)
+	intervalSec := envInt("STRIX_INTERVAL", 60)
+	updateMin := envInt("STRIX_UPDATE_INTERVAL_MIN", 30)
 
 	flag.StringVar(&cfg.ServerURL, "server", cfg.ServerURL, "服务端地址，例如 http://127.0.0.1:9999")
 	flag.StringVar(&cfg.Token, "token", cfg.Token, "与服务端一致的通信密钥")

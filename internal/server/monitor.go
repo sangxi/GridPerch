@@ -8,15 +8,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/store"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/store"
 )
 
 // checkAgentToken 校验 agent 侧请求的 token（GET 用查询参数，POST 用报文体）。
 func (s *Server) checkAgentToken(queryToken string, bodyToken string) bool {
-	want := config.MD5Token(s.cfg.Token)
-	return (queryToken != "" && queryToken == want) || (bodyToken != "" && bodyToken == want)
+	return s.cfg.TokenOK(queryToken) || s.cfg.TokenOK(bodyToken)
 }
 
 // handleAgentTasks 下发分配给该主机的监控项。
@@ -271,7 +269,7 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		},
 		TypeCount:  typeCount,
 		Units:      map[string]string{},
-		SystemName: "OpsMonitor",
+		SystemName: "Strix",
 	}
 
 	// 逐主机运行时指标：磁盘 / 网络 / IO / 温度 / 连接数的汇总都从这里算

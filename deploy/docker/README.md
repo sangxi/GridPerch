@@ -5,7 +5,7 @@
 ```bash
 cd deploy/docker
 cp .env.example .env
-vi .env                     # 改 OPSM_ADMIN_PASS、OPSM_TOKEN、OPSM_PUBLIC_URL
+vi .env                     # 改 STRIX_ADMIN_PASS、STRIX_TOKEN、STRIX_PUBLIC_URL
 docker compose up -d
 docker compose logs -f
 ```
@@ -16,7 +16,7 @@ docker compose logs -f
 
 | 方式 | Dockerfile | 特点 |
 |---|---|---|
-| 用现成二进制 | `Dockerfile.binary` | 不用 Go 环境、不用联网拉模块，几十秒出镜像。依赖仓库里已有 `release/1.1.5/opsmonitor-server-linux-amd64` |
+| 用现成二进制 | `Dockerfile.binary` | 不用 Go 环境、不用联网拉模块，几十秒出镜像。依赖仓库里已有 `release/1.1.5/strix-server-linux-amd64` |
 | 从源码构建 | `Dockerfile` | 适合 GitHub 用户 / CI，需要能拉取 Go 模块 |
 
 > 构建上下文必须是**仓库根目录**（compose 里已配好 `context: ../..`），因为 `Dockerfile.binary`
@@ -30,7 +30,7 @@ docker compose logs -f
 
 1. 先起一次容器；
 2. 打开控制台「系统 → 授权购买」，复制页面显示的**本机机器码**（形如 `C317-6E8B-BAE5-A8A6`）；
-3. 把它填到 `.env` 的 `OPSM_LICENSE_MACHINE=`；
+3. 把它填到 `.env` 的 `STRIX_LICENSE_MACHINE=`；
 4. `docker compose up -d` 重建。
 
 之后无论容器怎么重建，机器码都是固定的，授权不会掉。
@@ -41,7 +41,7 @@ docker compose logs -f
 |---|---|
 | `./data/` | SQLite 数据库（挂到容器 `/data`） |
 | `./releases/` | 从授权系统代拉的采集端发布物（挂到 `/releases`） |
-| 容器 `/opt/opsmonitor` | 工作目录 |
+| 容器 `/opt/strix` | 工作目录 |
 
 数据都在宿主机 `./data/`，`docker compose down` 不会丢。备份直接打包这个目录即可。
 
@@ -51,7 +51,7 @@ docker compose logs -f
 
 ```bash
 # 方式一：采集端装在宿主机 / 其它机器上，直接指宿主机地址
-opsmonitor-agent -server http://10.0.0.5:9999 -token 与OPSM_TOKEN一致 -name web-01
+strix-agent -server http://10.0.0.5:9999 -token 与STRIX_TOKEN一致 -name web-01
 
 # 方式二：控制台「监控 → 添加主机」复制一键安装命令，命令里自动带上平台地址
 ```
@@ -78,7 +78,7 @@ server {
 }
 ```
 
-挂了域名 https 之后，记得把 `.env` 的 `OPSM_PUBLIC_URL` 改成对外地址，
+挂了域名 https 之后，记得把 `.env` 的 `STRIX_PUBLIC_URL` 改成对外地址，
 否则「一键安装采集端」生成的命令会指到内网 IP。
 
 ## 常用命令
@@ -89,7 +89,7 @@ docker compose logs -f --tail=100      # 日志
 docker compose restart                 # 重启
 docker compose down                    # 停止（保留数据）
 docker compose up -d --build           # 改完 .env 后重建
-docker compose exec opsmonitor wget -qO- http://127.0.0.1:9999/api/health   # 容器内健康检查
+docker compose exec strix wget -qO- http://127.0.0.1:9999/api/health   # 容器内健康检查
 ```
 
 ## 升级
@@ -110,6 +110,6 @@ docker compose up -d --build
 | `docker compose up` 报找不到 `release/1.1.5/...` | 构建上下文不对。必须在仓库根目录执行，或 `docker compose -f deploy/docker/docker-compose.yml --project-directory . build` |
 | 容器起来就退出 | `docker compose logs` 看日志；常见是 `/data` 挂载点权限或端口占用 |
 | 页面能开、别的机器打不开 | 宿主机防火墙 / 云安全组没放行 9999 |
-| 授权显示社区版且「等待签发」 | 先确认 `.env` 里 `OPSM_LICENSE_MACHINE` 与授权中心签发时绑定的机器码一致；再点「立即从授权系统拉取授权」 |
+| 授权显示社区版且「等待签发」 | 先确认 `.env` 里 `STRIX_LICENSE_MACHINE` 与授权中心签发时绑定的机器码一致；再点「立即从授权系统拉取授权」 |
 | 容器内访问授权中心超时 | 容器需要出网访问默认授权中心（地址已内置在程序里，无需手动填写）；内网离线环境请用启动参数 `-hub=` 完全离线并手工导入授权码 |
 | 时间不对（日志/告警时间差 8 小时） | 确认 `TZ=Asia/Shanghai` 已传入，且宿主机时间正确 |

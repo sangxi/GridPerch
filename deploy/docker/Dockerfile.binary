@@ -1,20 +1,20 @@
 # ============================================================================
-#  OpsMonitor 监控端（server）镜像 · 直接用已编译好的 Linux 二进制
+#  Strix 监控端（server）镜像 · 直接用已编译好的 Linux 二进制
 # ----------------------------------------------------------------------------
 #  适合本地/内网快速部署：不需要 Go 环境、不需要联网拉模块，几十秒出镜像。
-#  依赖：仓库里已有 release/<版本>/opsmonitor-server-linux-amd64
+#  依赖：仓库里已有 release/<版本>/strix-server-linux-amd64
 #
 #  构建上下文必须是**仓库根目录**：
 #    docker build -f deploy/docker/Dockerfile.binary \
 #      --build-arg VERSION=1.1.0 \
-#      -t opsmonitor/opsmonitor-server:1.1.0 .
+#      -t strix/strix-server:1.1.0 .
 # ============================================================================
 
 ARG VERSION=1.1.0
 FROM alpine:3.20
 
 ARG VERSION
-LABEL org.opencontainers.image.title="OpsMonitor Server" \
+LABEL org.opencontainers.image.title="Strix Server" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.description="轻量级分布式运维监控系统 · 监控端"
 
@@ -22,19 +22,19 @@ RUN apk add --no-cache ca-certificates tzdata \
  && mkdir -p /data /releases
 
 # 二进制是 CGO_ENABLED=0 的纯静态文件，放进任何基础镜像都能跑
-COPY release/${VERSION}/opsmonitor-server-linux-amd64 /usr/local/bin/opsmonitor-server
-RUN chmod 0755 /usr/local/bin/opsmonitor-server
+COPY release/${VERSION}/strix-server-linux-amd64 /usr/local/bin/strix-server
+RUN chmod 0755 /usr/local/bin/strix-server
 
 ENV TZ=Asia/Shanghai \
-    OPSM_ADDR=:9999 \
-    OPSM_DB=/data/opsmonitor.db \
-    OPSM_RELEASE_DIR=/releases
+    STRIX_ADDR=:9999 \
+    STRIX_DB=/data/strix.db \
+    STRIX_RELEASE_DIR=/releases
 
 VOLUME ["/data", "/releases"]
 EXPOSE 9999
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1${OPSM_ADDR}/api/health" >/dev/null 2>&1 || exit 1
+  CMD wget -qO- "http://127.0.0.1${STRIX_ADDR}/api/health" >/dev/null 2>&1 || exit 1
 
-WORKDIR /opt/opsmonitor
-ENTRYPOINT ["/usr/local/bin/opsmonitor-server"]
+WORKDIR /opt/strix
+ENTRYPOINT ["/usr/local/bin/strix-server"]

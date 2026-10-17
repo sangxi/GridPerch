@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
+	"github.com/sangxi/strix/internal/model"
 	psnet "github.com/shirou/gopsutil/v3/net"
 )
 

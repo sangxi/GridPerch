@@ -1,52 +1,52 @@
 #!/usr/bin/env bash
-# 一键构建并向「授权系统」（opsmonitor-hub）上传采集端发布物。
+# 一键构建并向「授权系统」（strix-hub）上传采集端发布物。
 #
 # 版本发布与授权都集中在授权系统上：授权系统按「类型 + 系统 + CPU 架构」为每个组合登记一个
-# 发布物，平台（opsmonitor-server）配置 -hub 后会定期把最新版**代拉**回本地缓存，再分发给
+# 发布物，平台（strix-server）配置 -hub 后会定期把最新版**代拉**回本地缓存，再分发给
 # 内网采集端。手工交叉构建 5 个平台再逐个上传很容易漏掉某一个，结果就是目标主机上跑
 # 安装命令时才发现「服务端尚未发布该平台的采集端版本」。本脚本把这几步合成一条命令。
 #
 # 用法：
 #   ./release.sh                                  # 构建全部平台并上传到授权系统 http://127.0.0.1:8090
 #   ./release.sh -s https://你的授权中心地址         # 指定授权系统地址（默认已内置，不对外展示）
-#   ./release.sh -u admin -p 你的后台密码          # 指定授权系统后台账号（默认 admin/opsmonitor）
+#   ./release.sh -u admin -p 你的后台密码          # 指定授权系统后台账号（默认 admin/strix）
 #   ./release.sh -v 1.0.1 -n "修复磁盘统计偏差"    # 指定版本号与更新说明
 #   ./release.sh --only linux/amd64,windows/amd64 # 只处理部分平台
 #   ./release.sh --skip-build                     # 复用 dist/ 里已构建好的产物
-#   ./release.sh --with-server                   # 同时把服务端（opsmonitor-server）也发到授权系统
+#   ./release.sh --with-server                   # 同时把服务端（strix-server）也发到授权系统
 #   ./release.sh --min-version 1.0.0              # 低于该版本的采集端强制升级
 #   ./release.sh -t hub-secret                    # 指定授权系统拉取令牌，用于上传后的自检
 #
-# 全部参数也支持环境变量：OPSM_HUB / OPSM_USER / OPSM_PASSWORD / OPSM_HUB_TOKEN /
-# OPSM_NOTES / OPSM_MIN_VERSION。
+# 全部参数也支持环境变量：STRIX_HUB / STRIX_USER / STRIX_PASSWORD / STRIX_HUB_TOKEN /
+# STRIX_NOTES / STRIX_MIN_VERSION。
 set -euo pipefail
 
-HUB=${OPSM_HUB:-http://127.0.0.1:8090}
-USER_NAME=${OPSM_USER:-admin}
-PASSWORD=${OPSM_PASSWORD:-opsmonitor}
-HUB_TOKEN=${OPSM_HUB_TOKEN:-opsmonitor-hub}
-NOTES=${OPSM_NOTES:-}
-MIN_VERSION=${OPSM_MIN_VERSION:-}
-ONLY=${OPSM_ONLY:-}
+HUB=${STRIX_HUB:-http://127.0.0.1:8090}
+USER_NAME=${STRIX_USER:-admin}
+PASSWORD=${STRIX_PASSWORD:-strix}
+HUB_TOKEN=${STRIX_HUB_TOKEN:-strix-hub}
+NOTES=${STRIX_NOTES:-}
+MIN_VERSION=${STRIX_MIN_VERSION:-}
+ONLY=${STRIX_ONLY:-}
 SKIP_BUILD=0
 WITH_SERVER=0
 VERSION=""
 
 usage() {
   cat <<'EOF'
-一键构建并向授权系统（opsmonitor-hub）上传发布物
+一键构建并向授权系统（strix-hub）上传发布物
 
   ./release.sh [选项]
 
   -s, --hub URL         授权系统地址（默认 http://127.0.0.1:8090）
   -u, --user NAME       授权系统后台账号（默认 admin）
-  -p, --password PASS   授权系统后台密码（默认 opsmonitor）
-  -t, --hub-token TOKEN 授权系统拉取令牌，仅用于上传后的自检（默认 opsmonitor-hub）
+  -p, --password PASS   授权系统后台密码（默认 strix）
+  -t, --hub-token TOKEN 授权系统拉取令牌，仅用于上传后的自检（默认 strix-hub）
   -v, --version VER     版本号，默认取 internal/version/version.go
   -n, --notes TEXT      更新说明，会显示在授权系统版本列表与平台升级页
       --min-version VER 强升门槛，低于它的采集端会被强制升级
       --only LIST       只处理指定平台，逗号分隔，如 linux/amd64,darwin/arm64
-      --with-server     同时把服务端 opsmonitor-server 也发布到授权系统（用于平台在线自升级）
+      --with-server     同时把服务端 strix-server 也发布到授权系统（用于平台在线自升级）
       --skip-build      不重新构建，直接复用 dist/ 下的产物
   -h, --help            显示本帮助
 EOF
@@ -162,7 +162,7 @@ for pf in $PLATFORMS; do
   goarch=${pf##*/}
   ext=""
   if [ "$goos" = "windows" ]; then ext=".exe"; fi
-  if upload_one agent "$goos" "$goarch" "dist/opsmonitor-agent-${goos}-${goarch}${ext}"; then
+  if upload_one agent "$goos" "$goarch" "dist/strix-agent-${goos}-${goarch}${ext}"; then
     ok_count=$((ok_count + 1))
   else
     fail_count=$((fail_count + 1))
@@ -170,13 +170,13 @@ for pf in $PLATFORMS; do
 done
 
 if [ "$WITH_SERVER" = "1" ]; then
-  echo "==> 同时发布服务端（opsmonitor-server）"
+  echo "==> 同时发布服务端（strix-server）"
   for pf in $PLATFORMS; do
     goos=${pf%%/*}
     goarch=${pf##*/}
     ext=""
     if [ "$goos" = "windows" ]; then ext=".exe"; fi
-    if upload_one server "$goos" "$goarch" "dist/opsmonitor-server-${goos}-${goarch}${ext}"; then
+    if upload_one server "$goos" "$goarch" "dist/strix-server-${goos}-${goarch}${ext}"; then
       ok_count=$((ok_count + 1))
     else
       fail_count=$((fail_count + 1))

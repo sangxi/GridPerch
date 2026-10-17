@@ -16,7 +16,7 @@ import (
 //   - 登记号 >  本号    → 升级后本机仍自报旧号，下一轮同步又会重新下载一遍（每 5 分钟循环）。
 //
 // 二开发版时只改这里，然后让 release.sh 自动取用（它默认就读本文件）。
-var Version = "1.1.7"
+var Version = "1.2.0"
 
 // BuildTime 构建时间，由 build.sh 通过 -ldflags -X 注入，未注入时为空。
 var BuildTime = ""

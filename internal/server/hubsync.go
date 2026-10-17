@@ -21,9 +21,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/license"
-	"github.com/sangxi/OpsMonitor/internal/store"
-	"github.com/sangxi/OpsMonitor/internal/version"
+	"github.com/sangxi/strix/internal/license"
+	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/strix/internal/version"
 )
 
 /* ============================================================
@@ -578,7 +578,7 @@ func (s *Server) describeHubStatus(resp *http.Response, body []byte) error {
 			"授权系统返回 HTTP %d，但响应是 Cloudflare 人机校验页（%s），不是接口本身拒绝。"+
 				"平台作为程序客户端过不了浏览器挑战，请在 Cloudflare 控制台对 %s 放行："+
 				"在 WAF/速率限制里为 /api/* 配置跳过规则（Skip rules），或加一条允许规则 "+
-				"User-Agent 匹配 opsmonitor-server/* 且来源IP固定",
+				"User-Agent 匹配 strix-server/* 且来源IP固定",
 			status, snippet, s.cfg.HubURL)
 	}
 
@@ -586,7 +586,7 @@ func (s *Server) describeHubStatus(resp *http.Response, body []byte) error {
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return fmt.Errorf("授权系统返回 HTTP %d（拉取令牌被拒）：%s。"+
 			"本机当前使用%s，请核对授权中心启动参数 -token 是否与之相同；"+
-			"若中心侧配的就是别的值，可用 -hub-token 或 OPSM_HUB_TOKEN 显式覆盖内置令牌",
+			"若中心侧配的就是别的值，可用 -hub-token 或 STRIX_HUB_TOKEN 显式覆盖内置令牌",
 			status, snippet, hubTokenSourceText(s.hubTokenSource()))
 	}
 
@@ -610,7 +610,7 @@ func (s *Server) describeHubStatus(resp *http.Response, body []byte) error {
 func (s *Server) applyHubHeaders(req *http.Request) {
 	ua := strings.TrimSpace(s.cfg.HubUserAgent)
 	if ua == "" {
-		ua = "opsmonitor-server/" + version.Version
+		ua = "strix-server/" + version.Version
 	}
 	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Accept", "application/json")
@@ -666,7 +666,7 @@ func hubTokenSourceText(src string) string {
 	case "builtin":
 		return "内置令牌"
 	case "custom":
-		return "自定义令牌（-hub-token / OPSM_HUB_TOKEN）"
+		return "自定义令牌（-hub-token / STRIX_HUB_TOKEN）"
 	default:
 		return "未设置的令牌"
 	}
@@ -732,7 +732,7 @@ func (s *Server) cacheAgentRelease(r *hubRel) error {
 	if r.OS == "windows" {
 		ext = ".exe"
 	}
-	name := fmt.Sprintf("opsmonitor-agent-%s-%s%s", r.OS, r.Arch, ext)
+	name := fmt.Sprintf("strix-agent-%s-%s%s", r.OS, r.Arch, ext)
 	dir := filepath.Join(s.releasesDir(), r.Version)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -920,7 +920,7 @@ func (s *Server) hubDownloadTo(r *hubRel, dst string) error {
 }
 
 // pendingFile 是记录「已就位待重启版本」的标记文件名，与可执行文件同目录。
-const pendingFile = ".opsmonitor-server.pending"
+const pendingFile = ".strix-server.pending"
 
 // pendingSelfVersion 返回已下载就位、但还没通过重启生效的版本号。
 //
@@ -1002,8 +1002,8 @@ var selfPullMu sync.Mutex
 // 从而不去覆盖控制台上那一条正在进行的升级提示。
 var errSelfPullBusy = errors.New("已有一轮升级正在下载并替换，请稍候再试")
 
-// runSelfVersion 执行一个刚下载的 opsmonitor 二进制的 `-version`，
-// 返回它「自报」的版本号（输出形如 `opsmonitor-server 1.1.7 (linux/amd64) 构建于 …`）。
+// runSelfVersion 执行一个刚下载的 strix 二进制的 `-version`，
+// 返回它「自报」的版本号（输出形如 `strix-server 1.2.0 (linux/amd64) 构建于 …`）。
 //
 // 传入的文件是本机平台的可执行文件：授权端按请求平台返回发布物，
 // 且下载完成后已 chmod 0755；Windows 上以 .new 结尾的 PE 文件同样可以直接执行

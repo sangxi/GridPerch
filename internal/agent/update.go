@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
-	"github.com/sangxi/OpsMonitor/internal/version"
+	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/strix/internal/version"
 )
 
 // oldSuffix 被替换下来的旧二进制后缀，启动时清理。
@@ -150,7 +150,7 @@ func applyUpdate(cfg config.Agent, client *http.Client, info *updateInfo, exe, w
 	}
 
 	// 临时文件必须与目标同目录，保证后续 rename 是原子操作
-	tmp, err := os.CreateTemp(dir, ".opsmonitor-agent-*")
+	tmp, err := os.CreateTemp(dir, ".strix-agent-*")
 	if err != nil {
 		return fmt.Errorf("创建临时文件失败: %w", err)
 	}
@@ -223,8 +223,8 @@ func applyUpdate(cfg config.Agent, client *http.Client, info *updateInfo, exe, w
 	return nil
 }
 
-// runSelfVersion 执行一个刚刚下载的 opsmonitor 二进制的 `-version`，
-// 返回它「自报」的版本号（输出形如 `opsmonitor-agent 1.1.7 (linux/amd64) 构建于 …`）。
+// runSelfVersion 执行一个刚刚下载的 strix 二进制的 `-version`，
+// 返回它「自报」的版本号（输出形如 `strix-agent 1.2.0 (linux/amd64) 构建于 …`）。
 //
 // 临时文件名与运行中的可执行文件同目录、已 chmod 0755；Windows 下 CreateProcess
 // 只看文件头不看扩展名，因此带不带后缀都能跑。加超时是兜底：正常情况下它打印一行

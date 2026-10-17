@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
+	"github.com/sangxi/strix/internal/model"
 )
 
 // serverRunner 表示该监控项由服务端主动探测，而非下发到 agent 执行。
@@ -538,6 +538,8 @@ func (s *Store) AlertsSince(since string) ([]model.Alert, error) {
 
 // secretKey 由服务端 token 派生，用于加密保存设备口令。
 func (s *Store) secretKey() []byte {
+	// ⚠️ "opsmonitor-device-secret" 是与机器码盐同性质的历史值，**不随品牌更名而改**：
+	// 改了之后已入库的设备口令就再也解不开。
 	sum := sha256.Sum256([]byte(s.cfg.Token + "|opsmonitor-device-secret"))
 	return sum[:]
 }
@@ -885,7 +887,7 @@ func (s *Store) BuildInspectionReport() (*InspectionReport, error) {
 	}
 	if rep.HostTotal == 0 {
 		addItem("主机接入", "warn", "当前尚未有任何主机上报数据", "无法掌握主机运行状态", 10)
-		rep.Suggestions = append(rep.Suggestions, "请在被监控主机上部署 opsmonitor-agent 并确认服务端地址与密钥配置正确。")
+		rep.Suggestions = append(rep.Suggestions, "请在被监控主机上部署 strix-agent 并确认服务端地址与密钥配置正确。")
 	} else {
 		offline := rep.HostTotal - rep.HostOnline
 		addItem("主机在线状态", boolStatus(offline == 0), fmt.Sprintf("共 %d 台，在线 %d 台，离线 %d 台", rep.HostTotal, rep.HostOnline, offline),

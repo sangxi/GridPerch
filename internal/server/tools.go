@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/probe"
+	"github.com/sangxi/strix/internal/probe"
 )
 
 // toolProbeTypes 工具箱允许按需执行的探测类型。

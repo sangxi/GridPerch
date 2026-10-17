@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/version"
+	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/version"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"

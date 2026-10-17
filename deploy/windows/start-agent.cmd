@@ -1,9 +1,9 @@
 @echo off
 setlocal
 rem ============================================================
-rem  OpsMonitor 采集端启动脚本（Windows 7 / Server 2008 R2 兼容版）
+rem  Strix 采集端启动脚本（Windows 7 / Server 2008 R2 兼容版）
 rem
-rem  用法：本文件与 opsmonitor-agent-windows-amd64-win7.exe 放在同一目录，
+rem  用法：本文件与 strix-agent-windows-amd64-win7.exe 放在同一目录，
 rem        改下面 4 行，双击本文件即可启动。
 rem        要开机自启、无窗口后台常驻，见文件末尾的 schtasks 命令。
 rem ============================================================
@@ -23,7 +23,7 @@ rem 4) 采集上报间隔（秒）
 set INTERVAL=60
 
 rem ── 以下不用改 ─────────────────────────────────────────────
-set "EXE=%~dp0opsmonitor-agent-windows-amd64-win7.exe"
+set "EXE=%~dp0strix-agent-windows-amd64-win7.exe"
 set "ARGS=-server %SRV% -token-hash %TOKEN_HASH% -name %HOSTNAME% -interval %INTERVAL% -update off -remote-config off"
 cd /d "%~dp0"
 
@@ -32,7 +32,7 @@ if not exist "%EXE%" (
   echo [错误] 找不到采集端程序：
   echo        %EXE%
   echo.
-  echo        请把本脚本与 opsmonitor-agent-windows-amd64-win7.exe 放在同一目录。
+  echo        请把本脚本与 strix-agent-windows-amd64-win7.exe 放在同一目录。
   echo.
   pause
   exit /b 1
@@ -45,7 +45,7 @@ if /i "%~1"=="log" (
 )
 
 echo ============================================================
-echo    OpsMonitor 采集端（Win7 / 2008 R2 兼容版）
+echo    Strix 采集端（Win7 / 2008 R2 兼容版）
 echo    平台地址 : %SRV%
 echo    主机名称 : %HOSTNAME%
 echo    自动升级 : 已关闭  -update off -remote-config off
@@ -63,14 +63,14 @@ rem ============================================================
 rem  开机自启（在管理员 cmd 里执行一次即可）
 rem
 rem  注册。末尾的 log 参数让输出写进 agent.log
-rem    schtasks /create /tn opsmonitor-agent /tr "C:\OpsMonitor\start-agent.cmd log" /sc onstart /ru SYSTEM /rl HIGHEST /f
+rem    schtasks /create /tn strix-agent /tr "C:\Strix\start-agent.cmd log" /sc onstart /ru SYSTEM /rl HIGHEST /f
 rem  立即启动
-rem    schtasks /run /tn opsmonitor-agent
+rem    schtasks /run /tn strix-agent
 rem  查看状态
-rem    schtasks /query /tn opsmonitor-agent
+rem    schtasks /query /tn strix-agent
 rem  停止 / 删除
-rem    schtasks /end /tn opsmonitor-agent
-rem    schtasks /delete /tn opsmonitor-agent /f
+rem    schtasks /end /tn strix-agent
+rem    schtasks /delete /tn strix-agent /f
 rem
-rem  日志文件：C:\OpsMonitor\agent.log
+rem  日志文件：C:\Strix\agent.log
 rem ============================================================

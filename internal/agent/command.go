@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
+	"github.com/sangxi/strix/internal/model"
 )
 
 // commandLoop 周期性拉取待执行指令，执行后回传结果。

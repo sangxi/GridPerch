@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
+	"github.com/sangxi/strix/internal/model"
 )
 
 // DeviceProbeType 把「设备账号」的协议映射到已有的探测实现。

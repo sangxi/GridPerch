@@ -187,7 +187,7 @@ func probeKafka(ctx context.Context, t Target, timeout time.Duration) Result {
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
 	}
-	clientID := "OpsMonitor"
+	clientID := "Strix"
 	body := make([]byte, 0, 32)
 	body = appendInt16(body, 18) // ApiKey: ApiVersions
 	body = appendInt16(body, 0)  // ApiVersion

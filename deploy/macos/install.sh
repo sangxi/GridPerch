@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  OpsMonitor 监控端（server）一键部署 / macOS
+#  Strix 监控端（server）一键部署 / macOS
 # ----------------------------------------------------------------------------
 #  自动识别芯片并选用对应二进制：
-#    Intel 芯片    -> opsmonitor-server-darwin-amd64
-#    Apple 芯片(M系列) -> opsmonitor-server-darwin-arm64
+#    Intel 芯片    -> strix-server-darwin-amd64
+#    Apple 芯片(M系列) -> strix-server-darwin-arm64
 #
 #  用 launchd 注册开机自启（macOS 原生守护方式，无需第三方工具）。
 #
 #  用法：
 #    sudo ./install.sh
-#    sudo ./install.sh -f ./opsmonitor-server-darwin-arm64
+#    sudo ./install.sh -f ./strix-server-darwin-arm64
 #    sudo ./install.sh --token '你的密钥' --admin-pass '你的密码'
 #    sudo ./install.sh --addr :8000
 #    sudo ./install.sh --uninstall
 # ============================================================================
 set -euo pipefail
 
-VERSION="${OPSM_VERSION:-1.1.0}"
-APP="opsmonitor-server"
-PREFIX="${OPSM_PREFIX:-/usr/local/opsmonitor}"
+VERSION="${STRIX_VERSION:-1.2.0}"
+APP="strix-server"
+PREFIX="${STRIX_PREFIX:-/usr/local/strix}"
 BIN="$PREFIX/$APP"
-CONF_DIR="/usr/local/etc/opsmonitor"
-CONF_FILE="$CONF_DIR/opsmonitor.env"
+CONF_DIR="/usr/local/etc/strix"
+CONF_FILE="$CONF_DIR/strix.env"
 RUNNER="$PREFIX/start-server.sh"
-PLIST="/Library/LaunchDaemons/com.opsmonitor.server.plist"
-LABEL="com.opsmonitor.server"
+PLIST="/Library/LaunchDaemons/com.strix.server.plist"
+LABEL="com.strix.server"
 
 ADDR=":9999"
 TOKEN=""
@@ -85,7 +85,7 @@ log "系统：macOS $MACOS_VER"
 log "芯片：$CHIP  ->  $GOARCH"
 
 # ---------------------------------------------------------------- 取二进制
-TMP_BIN="$(mktemp /tmp/opsmonitor.XXXXXX)"
+TMP_BIN="$(mktemp /tmp/strix.XXXXXX)"
 trap 'rm -f "$TMP_BIN"' EXIT
 
 # 候选路径。产物（bin/、dist/、release/）都在 .gitignore 里，仓库不放二进制，
@@ -94,14 +94,14 @@ trap 'rm -f "$TMP_BIN"' EXIT
 REPO_ROOT="$SCRIPT_DIR/../.."
 candidates=(
   "$SRC_FILE"
-  "$SCRIPT_DIR/opsmonitor-server-darwin-$GOARCH"
-  "$SCRIPT_DIR/../opsmonitor-server-darwin-$GOARCH"
-  "$REPO_ROOT/opsmonitor-server-darwin-$GOARCH"
-  "$REPO_ROOT/dist/opsmonitor-server-darwin-$GOARCH"
+  "$SCRIPT_DIR/strix-server-darwin-$GOARCH"
+  "$SCRIPT_DIR/../strix-server-darwin-$GOARCH"
+  "$REPO_ROOT/strix-server-darwin-$GOARCH"
+  "$REPO_ROOT/dist/strix-server-darwin-$GOARCH"
 )
 if [ -d "$REPO_ROOT/release" ]; then
   for d in $(ls -1 "$REPO_ROOT/release" 2>/dev/null | sort -Vr); do
-    candidates+=("$REPO_ROOT/release/$d/opsmonitor-server-darwin-$GOARCH")
+    candidates+=("$REPO_ROOT/release/$d/strix-server-darwin-$GOARCH")
   done
 fi
 found=""
@@ -113,13 +113,13 @@ else
     [ -n "$c" ] && [ -f "$c" ] && { found="$c"; break; }
   done
 fi
-[ -n "$found" ] || die "没找到 opsmonitor-server-darwin-$GOARCH。
+[ -n "$found" ] || die "没找到 strix-server-darwin-$GOARCH。
 
   原因：本仓库**不存放二进制**（bin/、dist/、release/ 均在 .gitignore 里），
         所以从 GitHub 克隆下来的目录里本来就没有这个文件 —— 不是下载失败。
 
-  取法：从打包机/发布包把 opsmonitor-server-darwin-$GOARCH 拷到本脚本同一目录，
-        或用 -f 指定路径：  sudo ./install.sh -f /tmp/opsmonitor-server-darwin-$GOARCH"
+  取法：从打包机/发布包把 strix-server-darwin-$GOARCH 拷到本脚本同一目录，
+        或用 -f 指定路径：  sudo ./install.sh -f /tmp/strix-server-darwin-$GOARCH"
 log "使用二进制：$found"
 cp -f "$found" "$TMP_BIN"
 
@@ -127,7 +127,7 @@ cp -f "$found" "$TMP_BIN"
 MAGIC="$(head -c 4 "$TMP_BIN" | od -An -tx1 | tr -d ' \n')"
 case "$MAGIC" in
   cffaedfe|cefaedfe|cafebabe) : ;;
-  *) die "这个文件不是 macOS Mach-O 可执行文件，请确认用的是 opsmonitor-server-darwin-$GOARCH" ;;
+  *) die "这个文件不是 macOS Mach-O 可执行文件，请确认用的是 strix-server-darwin-$GOARCH" ;;
 esac
 
 # 版本号以二进制自报的为准（老版本没有 -version 时会直接报错退出，不会把服务跑起来）
@@ -148,14 +148,14 @@ if [ ! -f "$CONF_FILE" ]; then
   [ -n "$ADMIN_PASS" ] || ADMIN_PASS="$(head -c 9 /dev/urandom | base64 | tr -d '/+=' | cut -c1-12)"
   [ -n "$PUBLIC_URL" ] || PUBLIC_URL="http://$(ipconfig getifaddr en0 2>/dev/null || echo 127.0.0.1)${ADDR}"
   cat > "$CONF_FILE" <<EOF
-# OpsMonitor 监控端配置（由 install.sh 生成，$VERSION）
-OPSM_ADDR=$ADDR
-OPSM_DB=$PREFIX/data/opsmonitor.db
-OPSM_TOKEN=$TOKEN
-OPSM_ADMIN_USER=$ADMIN_USER
-OPSM_ADMIN_PASS=$ADMIN_PASS
-OPSM_PUBLIC_URL=$PUBLIC_URL
-OPSM_RETENTION=$RETENTION
+# Strix 监控端配置（由 install.sh 生成，$VERSION）
+STRIX_ADDR=$ADDR
+STRIX_DB=$PREFIX/data/strix.db
+STRIX_TOKEN=$TOKEN
+STRIX_ADMIN_USER=$ADMIN_USER
+STRIX_ADMIN_PASS=$ADMIN_PASS
+STRIX_PUBLIC_URL=$PUBLIC_URL
+STRIX_RETENTION=$RETENTION
 EOF
   chmod 600 "$CONF_FILE"
   NEW_CRED=1
@@ -168,7 +168,7 @@ fi
 log "生成启动包装脚本 $RUNNER"
 cat > "$RUNNER" <<EOF
 #!/bin/sh
-# 由 OpsMonitor install.sh 生成：加载配置后启动监控端
+# 由 Strix install.sh 生成：加载配置后启动监控端
 set -a
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 set +a
@@ -221,7 +221,7 @@ echo
 log "部署完成"
 echo "  程序      : $BIN（版本 $VERSION）"
 echo "  配置      : $CONF_FILE"
-echo "  数据      : $PREFIX/data/opsmonitor.db"
+echo "  数据      : $PREFIX/data/strix.db"
 echo "  监听      : $ADDR"
 echo "  控制台    : $PUBLIC_URL"
 if [ "$NEW_CRED" = "1" ]; then

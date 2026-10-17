@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
+	"github.com/sangxi/strix/internal/model"
 )
 
 // schemaSysEvent 系统事件表：采集端读到的系统事件（当前仅 Windows 事件查看器）。

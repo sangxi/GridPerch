@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/model"
+	"github.com/sangxi/strix/internal/model"
 )
 
 // sysEventSeen 记录已上报过的系统事件，避免同一事件被反复推送到服务端。

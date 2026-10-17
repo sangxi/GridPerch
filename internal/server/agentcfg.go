@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sangxi/OpsMonitor/internal/store"
+	"github.com/sangxi/strix/internal/store"
 )
 
 /* ---------------- 采集端配置下发 ---------------- */

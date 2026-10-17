@@ -87,7 +87,7 @@ func supervisedSelf() bool {
 		return true
 	}
 	if strings.TrimSpace(os.Getenv("container")) != "" ||
-		strings.TrimSpace(os.Getenv("OPSM_IN_CONTAINER")) != "" {
+		strings.TrimSpace(os.Getenv("STRIX_IN_CONTAINER")) != "" {
 		return true
 	}
 	return false

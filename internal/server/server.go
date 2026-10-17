@@ -20,20 +20,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/config"
-	"github.com/sangxi/OpsMonitor/internal/license"
-	"github.com/sangxi/OpsMonitor/internal/model"
-	"github.com/sangxi/OpsMonitor/internal/notify"
-	"github.com/sangxi/OpsMonitor/internal/poller"
-	"github.com/sangxi/OpsMonitor/internal/store"
-	"github.com/sangxi/OpsMonitor/internal/version"
+	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/strix/internal/license"
+	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/strix/internal/notify"
+	"github.com/sangxi/strix/internal/poller"
+	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/strix/internal/version"
 )
 
 //go:embed all:web
 var webFS embed.FS
 
 const (
-	sessionCookie = "opsm_session"
+	sessionCookie = "strix_session"
 	sessionTTL    = 12 * time.Hour
 )
 
@@ -77,7 +77,8 @@ func New(cfg *config.Server, st *store.Store) *Server {
 		log.Printf("警告：内置公钥指纹为 %s，与 LicenseKeyFingerprint 声明的 %s 不一致，请检查 licensekey.go",
 			license.Fingerprint(pub), over)
 	}
-	s.licVer = license.NewVerifier(pub, cfg.LicenseSecret)
+	// 新旧两个 HMAC 密钥都交给验签器：更名前签发的存量授权码用的是旧密钥。
+	s.licVer = license.NewVerifier(pub, cfg.LicenseSecret, cfg.LicenseSecretLegacy)
 	s.importStartupLicense()
 	return s
 }
@@ -697,7 +698,7 @@ func (s *Server) handleMinTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"result": "error：" + err.Error()})
 		return
 	}
-	if report.WgToken != config.MD5Token(s.cfg.Token) {
+	if !s.cfg.TokenOK(report.WgToken) {
 		log.Printf("拒绝上报：token 校验失败，来源 %s", r.RemoteAddr)
 		writeJSON(w, map[string]string{"result": "error：token is invalidate"})
 		return

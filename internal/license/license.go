@@ -3,7 +3,7 @@
 // 授权码是一段自包含的文本：<前缀><载荷>.<签名>，载荷为授权信息 JSON 的
 // base64url 编码。校验不需要联网，也不需要额外的证书文件。
 //
-// 现行格式 OPSM2- 用 Ed25519：授权中心持私钥签发，本程序只内置公钥验签，
+// 现行格式 STRIX2- 用 Ed25519：授权中心持私钥签发，本程序只内置公钥验签，
 // 因此不具备伪造授权码的能力。
 // 历史格式 WGC- / OPSM1- / OPSM- 用 HMAC-SHA256（对称密钥），只读兼容存量授权码。
 //
@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/OpsMonitor/internal/version"
+	"github.com/sangxi/strix/internal/version"
 )
 
 // Edition 版本档位。
@@ -126,6 +126,9 @@ func MachineCode() string {
 			break
 		}
 	}
+	// ⚠️ 这里的 "opsmonitor-server" 是机器码的历史盐值，**不随品牌更名一起改**。
+	// 机器码 = hash(主机名 + MAC + 本串)，改一个字符，所有已激活授权的机器码都会变，
+	// 客户端的授权会集体失效。品牌叫 Strix 之后这串也必须原样留着。
 	sum := sha256.Sum256([]byte(strings.Join([]string{host, mac, "opsmonitor-server"}, "|")))
 	hexs := fmt.Sprintf("%x", sum[:8])
 	parts := make([]string, 0, 4)
