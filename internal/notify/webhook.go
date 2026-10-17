@@ -63,7 +63,7 @@ func WebhookKinds() []WebhookKindInfo {
 		{
 			Key: KindCustom, Name: "通用 Webhook（自定义 JSON）",
 			URLHint:    "https://your-gateway.example.com/alert",
-			SecretHint: "按需填写，会作为 X-Opsm-Secret 请求头发送",
+			SecretHint: "按需填写，会作为 X-Strix-Secret 请求头发送（同时兼容旧头 X-Opsm-Secret）",
 		},
 	}
 }
@@ -162,6 +162,9 @@ func SendWebhook(cfg WebhookConfig, alerts []Alert) error {
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	if cfg.Secret != "" {
+		// 新旧两个头都发：X-Opsm-Secret 是更名前就有的名字，现网接收端可能已经按它
+		// 校验了，单独改名会让这些接收端全部失败；X-Strix-Secret 供新接入方使用。
+		req.Header.Set("X-Strix-Secret", cfg.Secret)
 		req.Header.Set("X-Opsm-Secret", cfg.Secret)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}

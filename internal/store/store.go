@@ -751,7 +751,8 @@ func (s *Store) AlertsOf(host string, limit int) ([]model.Alert, error) {
 		limit = 50
 	}
 	q := `SELECT id, hostname, IFNULL(type,''), IFNULL(level,'warning'), IFNULL(value,''),
-		IFNULL(content,''), IFNULL(state,'1'), IFNULL(create_time,'') FROM alert`
+		IFNULL(content,''), IFNULL(state,'1'), IFNULL(create_time,''),
+		IFNULL(ack_by,''), IFNULL(ack_time,''), IFNULL(note,'') FROM alert`
 	var args []any
 	if host != "" {
 		q += ` WHERE hostname=?`
@@ -767,12 +768,27 @@ func (s *Store) AlertsOf(host string, limit int) ([]model.Alert, error) {
 	var list []model.Alert
 	for rows.Next() {
 		var a model.Alert
-		if err := rows.Scan(&a.ID, &a.Hostname, &a.Type, &a.Level, &a.Value, &a.Content, &a.State, &a.CreateTime); err != nil {
+		if err := rows.Scan(&a.ID, &a.Hostname, &a.Type, &a.Level, &a.Value, &a.Content, &a.State,
+			&a.CreateTime, &a.AckBy, &a.AckTime, &a.Note); err != nil {
 			return nil, err
 		}
 		list = append(list, a)
 	}
-	return list, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 标出命中静默规则的告警，前端据此显示「已静默」角标。
+	// 判定时刻取告警产生时间 —— 静默只对生效期内产生的告警生效，不能事后追认。
+	if rules, err := s.activeSilences(); err == nil && len(rules) > 0 {
+		for i := range list {
+			at := list[i].CreateTime
+			if at == "" {
+				at = nowStr()
+			}
+			list[i].Silenced = silenceHit(rules, list[i].Hostname, list[i].Type, list[i].Level, at)
+		}
+	}
+	return list, nil
 }
 
 // ResolveAlert 将告警置为已恢复。

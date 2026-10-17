@@ -153,6 +153,8 @@ td.num, th.num { text-align: right; }
 .tag.off { background: #f1f2f6; color: var(--muted); }
 .tag.warn { background: #fef4e6; color: var(--warn); }
 .tag.danger { background: #fdecec; color: var(--danger); }
+/* 表格单元格内的次要说明（告警处理备注等），不抢主内容的注意力 */
+.sub-note { color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 4px; max-width: 420px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
 .bar { height: 6px; border-radius: 4px; background: #eef1f7; overflow: hidden; min-width: 90px; }
@@ -245,6 +247,9 @@ td.num, th.num { text-align: right; }
   border-radius: 12px;
   box-shadow: 0 20px 50px rgba(16, 24, 40, .22);
 }
+/* 宽版弹窗：列数多的列表（静默规则、审计明细）在 680px 下会被截断，
+   靠 .table-scroll 横向滚动体验太差，直接放宽 */
+.modal-box.wide { width: 980px; }
 .modal-head {
   display: flex;
   align-items: center;
@@ -261,6 +266,7 @@ td.num, th.num { text-align: right; }
 .form-grid .hint { font-size: 12px; color: #9aa3b2; margin-top: -6px; }
 .form-grid .checkbox { display: flex; align-items: center; gap: 8px; color: var(--text); }
 .form-grid input[type="text"], .form-grid input[type="number"], .form-grid input:not([type]),
+.form-grid input[type="datetime-local"], .form-grid input[type="date"], .form-grid input[type="time"],
 .form-grid select, .form-grid textarea {
   width: 100%;
   margin-top: 5px;

@@ -51,6 +51,10 @@ func seedHost(t *testing.T, s *Store, name string) {
 	execSeed(t, s, `INSERT INTO sys_load_state(id,hostname,date_str,create_time) VALUES(?,?,?,?)`, newID(), name, "2026-10-13", now)
 	execSeed(t, s, `INSERT INTO alert(id,hostname,type,level,content,state,create_time,update_time) VALUES(?,?,?,?,?,?,?,?)`,
 		newID(), name, "cpu", "warn", "CPU 偏高", "1", now, now)
+	// 静默规则也以主机名为键（空值表示全部主机），改名/删除必须一并处理
+	execSeed(t, s, `INSERT INTO alert_silence(id,hostname,type,level,reason,start_time,end_time,create_by,create_time)
+		VALUES(?,?,?,?,?,?,?,?,?)`,
+		newID(), name, "cpu", "", "割接", now, now, "admin", now)
 	execSeed(t, s, `INSERT INTO process_state(id,hostname,pid,name,create_time) VALUES(?,?,?,?,?)`, newID(), name, 1, "init", now)
 	execSeed(t, s, `INSERT INTO monitor_state(id,task_id,hostname,type,status,update_time) VALUES(?,?,?,?,?,?)`,
 		newID(), "task-1", name, "tcp", "ok", now)

@@ -28,7 +28,7 @@
     <a href="#agent">一键安装采集端</a>
     <a href="#agent-manual">手工部署采集端</a>
     <a href="#docker-agent">容器内采集主机</a>
-    <a class="grp">运维手册</a>
+    <div class="grp">运维手册</div>
     <a href="#config">服务端配置项</a>
     <a href="#host-admin">主机重命名与删除</a>
     <a href="#screen">可视化大屏</a>
@@ -128,9 +128,23 @@
           <tr><td>统计分析图表</td><td>CPU / 内存 / 磁盘 IO / 网络流量 / 系统负载趋势，支持 1 小时到 7 天窗口</td></tr>
           <tr><td>指令下发批量执行</td><td>向指定主机批量下发 shell 命令，agent 拉取执行并回传退出码与输出</td></tr>
           <tr><td>告警信息推送</td><td>邮件、钉钉、企业微信、飞书、Slack、通用 Webhook</td></tr>
+          <tr><td>告警闭环</td><td>认领 / 释放、处理备注、按「主机 + 监控项 + 级别 + 时间段」静默、未认领超时催办</td></tr>
           <tr><td>内置使用教程</td><td>本页面：各系统部署指南 + 文件挂载清单</td></tr>
         </tbody>
       </table>
+
+      <h4>告警闭环怎么用</h4>
+      <p>告警的价值不在于「发出来」，而在于「有人管、有记录、有结论」。控制台「告警」页提供四件事：</p>
+      <table>
+        <thead><tr><th>动作</th><th>效果</th></tr></thead>
+        <tbody>
+          <tr><td>认领</td><td>点一下即记下「谁在处理、什么时候接手的」，避免两个人同时查同一件事。重复认领会提示当前处理人</td></tr>
+          <tr><td>处理备注</td><td>写下排查过程与结论，备注直接显示在告警内容下方，导出 CSV/Excel 一并带出</td></tr>
+          <tr><td>静默</td><td>值班期间做割接、已知问题复发时用。规则按<strong>主机 + 监控项 + 级别 + 时间段</strong>匹配，静默期内告警<strong>照常入库留痕</strong>，只是不发邮件、不推机器人；到期自动恢复，也可随时删除立即恢复</td></tr>
+          <tr><td>催办</td><td>告警超过设定分钟数仍无人认领，会再推一轮带「未认领催办」前缀的通知，防止半夜的告警沉在聊天记录里没人跟。<code>系统设置 → 告警与提醒</code> 里配置，填 <code>0</code> 关闭</td></tr>
+        </tbody>
+      </table>
+      <div class="callout">静默是按「主机 + 监控项」而不是按单条告警生效的 —— 同一故障每个冷却窗口都会入库一条新记录，按单条静默只能挡住一条，挡不住后面每一次复发。</div>
 
       <h3>关键特性</h3>
       <table>
@@ -960,7 +974,10 @@ sudo systemctl start strix</code></pre>
   var links = [].slice.call(document.querySelectorAll('.docs-nav a'));
   var map = {};
   links.forEach(function (a) {
-    var id = a.getAttribute('href').slice(1);
+    // 导航里混进了没有 href 的组标题时不能整个脚本崩掉，直接跳过即可
+    var href = a.getAttribute('href') || '';
+    if (href.charAt(0) !== '#') return;
+    var id = href.slice(1);
     var sec = document.getElementById(id);
     if (sec) map[id] = a;
   });

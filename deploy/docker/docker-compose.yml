@@ -16,17 +16,17 @@ services:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.binary
       args:
-        VERSION: "1.2.0"
+        VERSION: "1.2.1"
 
     # 想改成「从源码构建」就注释掉上面的 build 段，改用下面这段：
     # build:
     #   context: ../..
     #   dockerfile: deploy/docker/Dockerfile
     #   args:
-    #     VERSION: "1.2.0"
+    #     VERSION: "1.2.1"
     #     BUILD_TIME: "2026-10-12T10:49:43"
 
-    image: strix/strix-server:1.2.0
+    image: strix/strix-server:1.2.1
     container_name: strix-server
     restart: unless-stopped
 

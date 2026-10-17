@@ -282,10 +282,15 @@ func (s *Server) pushAlertWebhook() {
 		return
 	}
 	maxTime := settings["webhookLastSent"]
+	silenced := s.store.SilenceChecker()
 	list := make([]notify.Alert, 0, len(items))
 	for _, a := range items {
 		if a.CreateTime > maxTime {
 			maxTime = a.CreateTime
+		}
+		// 命中静默规则：照常留痕，不推送
+		if silenced(a.Hostname, a.Type, a.Level, a.CreateTime) {
+			continue
 		}
 		list = append(list, notify.Alert{Hostname: a.Hostname, Type: a.Type, Level: a.Level,
 			Content: a.Content, CreateTime: a.CreateTime})

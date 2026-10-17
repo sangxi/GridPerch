@@ -66,6 +66,13 @@ func (s *Store) schemaExtra() error {
 			id TEXT PRIMARY KEY, kind TEXT, subject TEXT, recipients TEXT,
 			item_count INTEGER DEFAULT 0, status TEXT, error TEXT, create_time TEXT)`,
 		`CREATE INDEX IF NOT EXISTS idx_mail_log_time ON mail_log(create_time)`,
+		// 告警静默规则：在 [start_time, end_time) 内命中 host+type 的告警不再通知。
+		// hostname / type 为空串表示「全部」；level 非空时只在告警等级相同时生效。
+		`CREATE TABLE IF NOT EXISTS alert_silence (
+			id TEXT PRIMARY KEY, hostname TEXT, type TEXT, level TEXT,
+			reason TEXT, start_time TEXT, end_time TEXT,
+			create_by TEXT, create_time TEXT)`,
+		`CREATE INDEX IF NOT EXISTS idx_silence_window ON alert_silence(start_time, end_time)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.wdb.Exec(stmt); err != nil {
@@ -94,6 +101,12 @@ func (s *Store) migrateExtra() error {
 		{"user", "last_login", "ALTER TABLE user ADD COLUMN last_login TEXT"},
 		{"user", "last_login_ip", "ALTER TABLE user ADD COLUMN last_login_ip TEXT"},
 		{"user", "login_count", "ALTER TABLE user ADD COLUMN login_count INTEGER DEFAULT 0"},
+		// 告警认领与处理备注（1.2.1 告警闭环）。老库补列，新库由建表语句带出后再走 hasColumn 跳过。
+		{"alert", "ack_by", "ALTER TABLE alert ADD COLUMN ack_by TEXT"},
+		{"alert", "ack_time", "ALTER TABLE alert ADD COLUMN ack_time TEXT"},
+		{"alert", "note", "ALTER TABLE alert ADD COLUMN note TEXT"},
+		// 未认领超时后是否已发过升级提醒，防止每轮维护任务重复推送
+		{"alert", "escalated", "ALTER TABLE alert ADD COLUMN escalated INTEGER DEFAULT 0"},
 	}
 	for _, a := range adds {
 		exist, err := s.hasColumn(a.table, a.col)

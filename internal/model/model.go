@@ -155,6 +155,9 @@ type Host struct {
 }
 
 // Alert 告警记录。
+//
+// 告警是「按次数入库」的（同一故障每个冷却窗口插一行），所以认领状态记在行上：
+// 只认领不代表故障已消失，只表示「已经有人看过、正在处理」。
 type Alert struct {
 	ID         string `json:"id"`
 	Hostname   string `json:"hostname"`
@@ -164,6 +167,31 @@ type Alert struct {
 	Value      string `json:"value"`
 	CreateTime string `json:"createTime"`
 	State      string `json:"state"`
+	// AckBy / AckTime 认领人与认领时间，空表示未认领。
+	AckBy   string `json:"ackBy"`
+	AckTime string `json:"ackTime"`
+	// Note 处理备注，最多 500 字。
+	Note string `json:"note"`
+	// Silenced 生成这条告警时是否命中静默规则（仅展示用，不落库）。
+	Silenced bool `json:"silenced"`
+}
+
+// AlertSilence 告警静默规则。
+//
+// 匹配口径是「主机 + 监控项」，不是单条告警 ID —— 因为同一故障会反复入库，
+// 按 ID 静默只能挡住一条，挡不住后续每一次。Host / Type 留空表示全部匹配。
+type AlertSilence struct {
+	ID         string `json:"id"`
+	Hostname   string `json:"hostname"`
+	Type       string `json:"type"`
+	Level      string `json:"level"`
+	Reason     string `json:"reason"`
+	StartTime  string `json:"startTime"`
+	EndTime    string `json:"endTime"`
+	CreateBy   string `json:"createBy"`
+	CreateTime string `json:"createTime"`
+	// Active 当前是否处于静默生效期内（仅展示用，不落库）。
+	Active bool `json:"active"`
 }
 
 // Dashboard 仪表盘聚合数据。

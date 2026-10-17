@@ -1,59 +1,61 @@
 # Strix 发版清单
 
-- 版本号：**1.2.0**（服务端与采集端共用，取自 `internal/version/version.go`）
-- 主题：**品牌更名 —— OpsMonitor → Strix**
-- 构建时间：**2026-10-17T22:18:24**（由 `build.sh` 注入 `version.BuildTime`，10 个正式产物一致）
+- 版本号：**1.2.1**（服务端与采集端共用，取自 `internal/version/version.go`）
+- 主题：**告警闭环 —— 认领 / 备注 / 静默 / 催办**
+- 构建时间：**2026-10-18T02:24:23**（由 `build.sh` 注入 `version.BuildTime`，10 个正式产物一致）
 - 构建方式：`bash build.sh all`（`CGO_ENABLED=0` 静态交叉编译，纯 Go SQLite，无动态库依赖）
 - 自检：`gofmt -l internal cmd` 无输出 · `go vet ./...` 干净 · `go test ./...` 全过 ·
   `sha256sum -c SHA256SUMS.txt` 通过 · 服务端产物可 `grep` 到真公钥 `uZhJVTm2`（指纹 `278D-4852-7191-E7CE`）
 
 ## 本次更新内容
 
-### 1. 品牌更名：OpsMonitor → Strix（夜枭）
+### 1. 告警认领与处理备注
+- `alert` 表新增 `ack_by` / `ack_time` / `note` 列，`migrateExtra()` 自动补列，**老库打开即升级，无需手工迁移**
+- 告警中心每行提供「认领 / 释放 / 备注」操作。认领人取当前会话账号（昵称优先），不接受前端传值
+- 重复认领返回「该告警已被 XXX 认领」，避免两个人同时查同一件事
+- 备注上限 500 字（按 rune 截断，不会劈坏中文），显示在告警内容下方，导出 CSV/Excel 一并带出
 
-原名与开源圈同名项目过多，检索与品牌识别都受影响。本次把**全部对外标识**统一为 Strix：
+### 2. 告警静默规则（新增表 `alert_silence`）
+- 匹配口径为 **主机 + 监控项 + 级别 + 时间段**，任一字段留空表示不限
+- **静默期内告警照常入库留痕**，只是不推通知 —— 事后仍能在告警记录里查到这段时间发生过什么
+- 过滤点接在邮件与机器人两条推送链路上（`pushAlertMail` / `pushAlertWebhook`），不是只做面板装饰
+- 到期自动失效；也可在「静默规则」弹窗里随时删除，删除即刻恢复通知
+- 静默规则的主机名已纳入 `hostnameRefTables`，**主机改名时规则跟着迁移**（回归用例 `TestRenameHostMovesSilenceRules`）
 
-| 项目 | 旧 | 新 |
+### 3. 未认领催办
+- 告警产生后超过 `alertEscalateMin`（默认 30 分钟，`0` 表示关闭）仍无人认领，再推一轮通知，标题带 `【未认领催办·N分钟】` 前缀
+- 去重靠 `alert.escalated` 列而不是时间游标 —— 游标已被常规推送推过去了，催办查不到数据
+- 静默期内不发催办，但**照常打标记**：否则静默一结束，攒下的历史告警会集中爆一轮催办
+- 设置入口：`系统设置 → 告警与提醒 → 未认领催办（分钟）`
+
+### 4. 告警中心界面
+- 顶部新增四张指标卡：未恢复告警 / 待认领 / 处理中 / 静默生效中
+- 新增「处理状态」筛选（未认领 / 处理中 / 已静默）与「处理状态」列
+- 认领、释放、备注、标记恢复均为**局部重绘**，不再整页 `render()`，筛选条件与滚动位置不会被冲掉
+- 弹窗支持宽版（`.modal-box.wide`），静默规则列表 8 列不再被截断
+- `datetime-local` / `date` / `time` 类输入补进 `.form-grid` 样式，日期控件不再挤成一小截
+
+### 5. 顺带修掉的老问题
+- 使用教程页 `/docs` 的目录导航里有个 `<a class="grp">运维手册</a>` 漏写 `href`，会让整段滚动高亮脚本抛
+  `Cannot read properties of null (reading 'slice')`。已改为 `<div class="grp">`，并给脚本加了跳过无 `href` 项的防御
+- 教程页新增「告警闭环怎么用」小节（4 个动作 + 静默匹配口径说明）
+- 自定义 Webhook 的密钥请求头补发 `X-Strix-Secret`，**同时保留旧的 `X-Opsm-Secret`**（更名遗留：
+  现网接收端可能已按旧头校验，单独改名会让它们全部失败；接收方改好后再择机去掉旧头）
+
+## 兼容性
+
+- **数据库**：无需迁移脚本。新列由 `migrateExtra()` 在启动时补齐，新表由 `schemaExtra()` 建好
+- **接口**：`/api/alerts` 只增字段（`ackBy` / `ackTime` / `note` / `silenced`），不删不改，旧前端不受影响
+- **通知**：静默与催办都是「多发 / 少发」的增量逻辑，未配置静默规则时行为与 1.2.0 完全一致
+- **升级方式**：替换 `strix-server` 单个二进制并重启即可；采集端无需升级（本版未改采集端逻辑）
+
+## 产物（11 个）
+
+| 角色 | 平台 | 文件 |
 | --- | --- | --- |
-| 产品名 | OpsMonitor | **Strix** |
-| Go module | `github.com/sangxi/OpsMonitor` | `github.com/sangxi/strix` |
-| 二进制 | `opsmonitor-server` / `opsmonitor-agent` | `strix-server` / `strix-agent` |
-| 环境变量前缀 | `OPSM_*` | `STRIX_*` |
-| 授权码前缀（新签发） | `OPSM2-` | `STRIX2-` |
-| Linux 安装路径 | `/opt/opsmonitor` | `/opt/strix` |
-| 配置文件 | `/etc/opsmonitor/opsmonitor.env` | `/etc/strix/strix.env` |
-| systemd 单元 | `opsmonitor.service` | `strix.service` |
-| 运行用户/组 | `opsmonitor` | `strix` |
-| 默认数据库 | `opsmonitor.db` | `strix.db` |
-| 会话 Cookie | `opsm_session` | `strix_session` |
-| 默认账号密码 | `admin / opsmonitor` | `admin / strix` |
+| server | linux/amd64 · linux/arm64 · darwin/amd64 · darwin/arm64 · windows/amd64 | `strix-server-*` |
+| agent | linux/amd64 · linux/arm64 · darwin/amd64 · darwin/arm64 · windows/amd64 | `strix-agent-*` |
+| agent | windows/amd64（Win7 / Server 2008 R2 兼容版，Go 1.20.14 构建） | `strix-agent-windows-amd64-win7.exe` |
 
-### 2. 旧标识全部保留兼容（升级不需要换授权、不需要迁数据）
-
-| 旧标识 | 兼容方式 |
-| --- | --- |
-| `OPSM_*` 环境变量 | 新变量未设置时自动回落，老 `EnvironmentFile` / `.env` 原样可用（`config.env`） |
-| `OPSM2-` 授权码 | 仍按 Ed25519 验签（`prefixLegacyV2`），**客户手里的授权码继续有效** |
-| `OPSM1-` / `OPSM-` / `WGC-` 授权码 | 仍按 HMAC 验签；新旧两个默认密钥都会试（`Verifier.legacy` 为列表） |
-| 旧库 `opsmonitor.db` | 新默认路径找不到文件时自动沿用旧库，启动日志会明确提示（`config.ResolveLegacyDBPath`） |
-| 旧通信密钥默认值 `opsmonitor` | 仅在本次仍使用默认密钥时接受；已改强密钥的部署不多留口令（`config.TokenOK`） |
-| **机器码** | 盐值 `opsmonitor-server` **刻意保持不变** —— 改了会让所有绑机授权集体失效 |
-| **设备口令加密** | 盐值 `opsmonitor-device-secret` 同样保持不变，否则已入库口令解不开 |
-
-### 3. 部署脚本增强
-
-- `deploy/linux/install.sh`：新增旧版本（`/opt/opsmonitor` + `opsmonitor.service`）并存检测，避免两套抢同一端口；
-  支持 `--force` 跳过。前缀支持 `OPSM_PREFIX` 回落。
-- `deploy/docker/docker-compose.yml`：服务名 / 容器名 / 镜像名改为 `strix`，`STRIX_DB` 指向 `strix.db` 并注明旧库自动沿用。
-
-## 升级须知
-
-1. **服务端**：只需替换二进制为 `strix-server`，旧标识会自动兼容，不需要重新导入授权。
-2. **采集端**：平台下发的发布物名已变为 `strix-agent-*`；老采集端（`opsmonitor-agent`）仍能上报，
-   但建议随后重装为 `strix-agent`，否则进程名与新发布物不一致（自动升级会替换为 `strix-agent`）。
-3. **systemd 老部署**：旧单元名 `opsmonitor.service` 与新单元 `strix.service` 不能并存，
-   升级时先 `systemctl disable --now opsmonitor` 再装新单元。
-4. **容器部署**：镜像名改为 `strix/strix-server:1.2.0`，需要重新 build 或改 tag；
-   数据卷里的 `opsmonitor.db` 会被自动识别沿用。
-5. **授权签发侧**：授权中心若要签发新前缀 `STRIX2-` 的码，需同步修改签发端；在此之前签发的
-   `OPSM2-` 码依然可用（本版本两种前缀都认）。
+> Win7 兼容版**不参与 `release.sh` 上传**，需手工分发。部署时必须加 `-remote-config off -update off`，
+> 否则平台下发的全局 `updateMode=auto` 会让它在 30 分钟内把自己换回 Go 1.23 版本，再次闪退。

@@ -38,9 +38,10 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sheet, file = "告警记录", "alerts"
-		rows = [][]string{{"主机", "类型", "级别", "数值", "内容", "状态", "时间"}}
+		rows = [][]string{{"主机", "类型", "级别", "数值", "内容", "状态", "时间", "认领人", "认领时间", "处理备注"}}
 		for _, a := range alerts {
-			rows = append(rows, []string{a.Hostname, a.Type, a.Level, a.Value, a.Content, alertStateCN(a.State), a.CreateTime})
+			rows = append(rows, []string{a.Hostname, a.Type, a.Level, a.Value, a.Content,
+				alertStateCN(a.State), a.CreateTime, a.AckBy, a.AckTime, a.Note})
 		}
 	case "tasks":
 		tasks, err := s.store.ListTasks()

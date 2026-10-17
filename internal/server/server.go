@@ -127,6 +127,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/metrics/overview", s.auth(http.HandlerFunc(s.handleMetricOverview)))
 	mux.Handle("GET /api/alerts", s.auth(http.HandlerFunc(s.handleAlerts)))
 	mux.Handle("POST /api/alerts/{id}/resolve", s.auth(s.audit(http.HandlerFunc(s.handleResolve))))
+	// 告警闭环：认领 / 释放 / 备注 / 静默规则
+	mux.Handle("POST /api/alerts/{id}/ack", s.auth(s.audit(http.HandlerFunc(s.handleAlertAck))))
+	mux.Handle("POST /api/alerts/{id}/unack", s.auth(s.audit(http.HandlerFunc(s.handleAlertUnack))))
+	mux.Handle("POST /api/alerts/{id}/note", s.auth(s.audit(http.HandlerFunc(s.handleAlertNote))))
+	mux.Handle("GET /api/alert-silences", s.auth(http.HandlerFunc(s.handleSilences)))
+	mux.Handle("POST /api/alert-silences", s.auth(s.audit(http.HandlerFunc(s.handleAddSilence))))
+	mux.Handle("DELETE /api/alert-silences/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDelSilence))))
 	mux.Handle("GET /api/login-events", s.auth(http.HandlerFunc(s.handleLoginEvents)))
 
 	// 监控项管理
@@ -451,6 +458,8 @@ func (s *Server) maintenance() {
 			if n := s.store.TimeoutCommands(2 * time.Minute); n > 0 {
 				log.Printf("标记 %d 条下发指令为超时", n)
 			}
+			// 未认领告警催办，跟状态刷新同频跑（一次带索引的查询，开销可忽略）
+			s.escalateUnackedAlerts()
 		case <-checkpoint.C:
 			if err := s.store.Checkpoint(); err != nil {
 				log.Printf("WAL 检查点失败: %v", err)
@@ -510,6 +519,7 @@ func (s *Server) pushAlertMail() {
 		return
 	}
 	levels := levelFilter(settings["mailLevels"])
+	silenced := s.store.SilenceChecker()
 	list := make([]notify.Alert, 0, len(alertItems))
 	maxTime := settings["mailLastSent"]
 	for _, a := range alertItems {
@@ -517,6 +527,10 @@ func (s *Server) pushAlertMail() {
 			maxTime = a.CreateTime
 		}
 		if !levels[a.Level] {
+			continue
+		}
+		// 命中静默规则：告警照常入库留痕，但不在静默期内打扰值班人
+		if silenced(a.Hostname, a.Type, a.Level, a.CreateTime) {
 			continue
 		}
 		list = append(list, notify.Alert{Hostname: a.Hostname, Type: a.Type, Level: a.Level,
@@ -915,6 +929,84 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.ResolveAlert(r.PathValue("id")); err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+// handleAlertAck 认领告警。操作人取当前会话账号 —— 认领的意义就是「谁在看」，
+// 不允许前端随便传一个名字上来。
+func (s *Server) handleAlertAck(w http.ResponseWriter, r *http.Request) {
+	user := "未知"
+	if m := s.currentUser(r); m != nil {
+		if m.Nickname != "" {
+			user = m.Nickname
+		} else {
+			user = m.Username
+		}
+	}
+	if err := s.store.AckAlert(r.PathValue("id"), user); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "ackBy": user})
+}
+
+func (s *Server) handleAlertUnack(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.UnackAlert(r.PathValue("id")); err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (s *Server) handleAlertNote(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Note string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "请求格式错误"})
+		return
+	}
+	if err := s.store.SetAlertNote(r.PathValue("id"), body.Note); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (s *Server) handleSilences(w http.ResponseWriter, r *http.Request) {
+	list, err := s.store.AlertSilences()
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	writeJSON(w, list)
+}
+
+func (s *Server) handleAddSilence(w http.ResponseWriter, r *http.Request) {
+	var body model.AlertSilence
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "请求格式错误"})
+		return
+	}
+	if m := s.currentUser(r); m != nil {
+		body.CreateBy = m.Username
+		if m.Nickname != "" {
+			body.CreateBy = m.Nickname
+		}
+	}
+	out, err := s.store.AddAlertSilence(body)
+	if err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "item": out})
+}
+
+func (s *Server) handleDelSilence(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.DelAlertSilence(r.PathValue("id")); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": err.Error()})
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})

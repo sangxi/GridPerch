@@ -2122,14 +2122,49 @@ async function openTaskEditor(id) {
 const SERVER_TYPES = ['tcp', 'httpapi', 'icmp', 'snmp', 'mysql', 'redis', 'kafka', 'rabbitmq', 'elasticsearch', 'ftp', 'sftp', 'ssh', 'ipmi', 'k8s'];
 
 /* ================= 告警中心 ================= */
+
+// 告警闭环：认领 / 释放 / 备注 / 静默。
+// 注意告警是「按次数入库」的（同一故障每个冷却窗口一行），所以认领记在行上，
+// 静默规则则按「主机 + 监控项」匹配 —— 按单条告警静默挡不住后续每次复发。
+
+// dtLocal 把 Date 格式化成 <input type="datetime-local"> 需要的 "YYYY-MM-DDTHH:mm"。
+function dtLocal(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// dtToServer 把 datetime-local 的值转成后端认的 "YYYY-MM-DD HH:mm:ss"。
+function dtToServer(v) {
+  if (!v) return '';
+  const s = String(v).replace('T', ' ');
+  return s.length === 16 ? s + ':00' : s;
+}
+
+// alertHandleTag 渲染「处理状态」：静默 > 已认领 > 未认领。
+function alertHandleTag(a) {
+  if (a.state !== '1') return '<span class="tag ok">已恢复</span>';
+  if (a.ackBy) {
+    return `<span class="tag ok" title="认领时间 ${esc(a.ackTime || '-')}">${esc(a.ackBy)} 处理中</span>`;
+  }
+  return '<span class="tag warn">未认领</span>';
+}
+
 async function renderAlerts() {
-  const [alerts, logins] = await Promise.all([getList('/api/alerts?limit=200'), getList('/api/login-events?limit=50')]);
-  const active = alerts.filter((a) => a.state === '1');
-  let html = `<div class="toolbar">
+  const [alerts, logins, silences] = await Promise.all([
+    getList('/api/alerts?limit=200'),
+    getList('/api/login-events?limit=50'),
+    getList('/api/alert-silences').catch(() => []),
+  ]);
+  const liveSilence = silences.filter((s) => s.active);
+
+  let html = '<div class="kpi-grid" id="aKpi"></div>';
+  html += `<div class="toolbar">
     <select id="aType"><option value="">全部类型</option>${Object.keys(ALERT_TYPE_CN).map((k) => `<option value="${k}">${esc(ALERT_TYPE_CN[k])}</option>`).join('')}</select>
     <select id="aState"><option value="">全部状态</option><option value="1">未恢复</option><option value="0">已恢复</option></select>
+    <select id="aAck"><option value="">全部处理状态</option><option value="unacked">未认领</option><option value="acked">处理中</option><option value="silenced">已静默</option></select>
     <input type="search" id="aKeyword" placeholder="按主机或内容搜索">
     <span class="spacer"></span>
+    <button class="btn ghost small" id="aSilenceMgr">静默规则${liveSilence.length ? `（${liveSilence.length}）` : ''}</button>
     <a class="btn ghost small" href="/api/export/alerts?format=csv">导出 CSV</a>
     <a class="btn ghost small" href="/api/export/alerts?format=xlsx">导出 Excel</a>
   </div>`;
@@ -2138,22 +2173,246 @@ async function renderAlerts() {
   html += panel('主机登录提醒', dataTable(['主机', '新增登录用户', '当前在线用户', '时间'], loginRows,
     '暂无登录变化记录（由采集端上报登录用户变化自动生成）'));
   app().innerHTML = html;
+
+  // KPI 单独渲染，认领/释放后可以只刷这一块，不用整页重绘把筛选条件冲掉
+  const drawKpi = () => { $('#aKpi').innerHTML = alertKpiHtml(alerts, liveSilence.length); };
+  drawKpi();
   const draw = () => {
     const kw = ($('#aKeyword').value || '').toLowerCase();
-    const list = alerts.filter((a) =>
-      (!$('#aType').value || a.type === $('#aType').value) &&
-      (!$('#aState').value || a.state === $('#aState').value) &&
-      (!kw || (a.hostname + a.content).toLowerCase().includes(kw)));
-    const rows = list.map((a) => [
-      esc(a.hostname), esc(typeCN(a.type)), levelTag(a.level), esc(a.content), esc(a.createTime),
-      a.state === '1' ? `<button class="btn small" data-resolve="${esc(a.id)}">标记恢复</button>` : '<span class="tag ok">已恢复</span>',
-    ]);
-    $('#alertBox').innerHTML = dataTable(['主机', '类型', '级别', '内容', '时间', '操作'], rows, '无匹配告警');
-    bindDashboardActions();
+    const ack = $('#aAck').value;
+    const list = alerts.filter((a) => {
+      if ($('#aType').value && a.type !== $('#aType').value) return false;
+      if ($('#aState').value && a.state !== $('#aState').value) return false;
+      if (ack === 'unacked' && (a.ackBy || a.silenced || a.state !== '1')) return false;
+      if (ack === 'acked' && !a.ackBy) return false;
+      if (ack === 'silenced' && !a.silenced) return false;
+      if (kw && !(a.hostname + a.content).toLowerCase().includes(kw)) return false;
+      return true;
+    });
+    const noteMap = new Map(alerts.map((a) => [a.id, a.note || '']));
+    const rows = list.map((a) => {
+      const acts = [];
+      if (a.state === '1') {
+        if (!a.ackBy) acts.push(`<button class="btn small" data-ack="${esc(a.id)}">认领</button>`);
+        else acts.push(`<button class="btn small ghost" data-unack="${esc(a.id)}">释放</button>`);
+      }
+      acts.push(`<button class="btn small ghost" data-note="${esc(a.id)}">备注</button>`);
+      acts.push(`<button class="btn small ghost" data-silence="${esc(a.hostname)}" data-silencetype="${esc(a.type)}">静默</button>`);
+      if (a.state === '1') acts.push(`<button class="btn small" data-resolve="${esc(a.id)}">标记恢复</button>`);
+      const content = esc(a.content) +
+        (a.silenced ? ' <span class="tag" title="静默期内产生，未发通知">已静默</span>' : '') +
+        (a.note ? `<div class="sub-note">备注：${esc(a.note)}</div>` : '');
+      return [
+        esc(a.hostname), esc(typeCN(a.type)), levelTag(a.level), content, esc(a.createTime),
+        alertHandleTag(a), acts.join(' '),
+      ];
+    });
+    $('#alertBox').innerHTML = dataTable(['主机', '类型', '级别', '内容', '时间', '处理状态', '操作'], rows, '无匹配告警');
+    bindAlertActions({ refresh: () => { drawKpi(); draw(); }, alerts, noteMap });
   };
-  ['#aType', '#aState'].forEach((s) => { $(s).onchange = draw; });
+  ['#aType', '#aState', '#aAck'].forEach((s) => { $(s).onchange = draw; });
   $('#aKeyword').oninput = draw;
+  $('#aSilenceMgr').onclick = () => openSilenceManager(renderAlerts);
   draw();
+}
+
+// alertKpiHtml 顶部指标条。单独成函数是为了认领/释放后能原地刷新数字，
+// 而不是整页重绘（重绘会把用户刚填的筛选条件冲掉）。
+function alertKpiHtml(alerts, liveSilenceCount) {
+  const active = alerts.filter((a) => a.state === '1');
+  const unacked = active.filter((a) => !a.ackBy && !a.silenced);
+  const acked = active.filter((a) => a.ackBy);
+  return [
+    kpiCard({ icon: 'bell', label: '未恢复告警', value: active.length, tone: active.length ? 'danger' : 'ok', sub: `共 ${alerts.length} 条记录` }),
+    kpiCard({ icon: 'pulse', label: '待认领', value: unacked.length, tone: unacked.length ? 'warn' : 'ok', sub: '尚未有人接手' }),
+    kpiCard({ icon: 'task', label: '处理中', value: acked.length, tone: '', sub: '已认领未恢复' }),
+    kpiCard({ icon: 'shield', label: '静默生效中', value: liveSilenceCount, tone: '', sub: liveSilenceCount ? '这些规则期间不发通知' : '当前无静默规则' }),
+  ].join('');
+}
+
+// fmtAlertTime 生成与后端一致的 "YYYY-MM-DD HH:mm:ss"，认领时间本地预填用。
+function fmtAlertTime(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+// bindAlertActions 绑定告警行内按钮。
+//
+// 所有操作都只做「本地改一行 + 局部重绘」，不整页 render() —— 否则用户刚筛好的
+// 条件、输入的关键字全被冲掉，巡检时特别难用。
+// noteMap 保存 id → 备注原文：备注可能带引号和换行，塞进 data-* 属性会被转义破坏。
+function bindAlertActions(opts) {
+  const refresh = opts.refresh;
+  const alerts = opts.alerts || [];
+  const noteMap = opts.noteMap || new Map();
+  // patch 同步本地副本，让指标条与「处理状态」列立刻反映新状态
+  const patch = (id, obj) => {
+    const a = alerts.find((x) => x.id === id);
+    if (a) Object.assign(a, obj);
+  };
+  const run = async (fn, okMsg) => {
+    try { await fn(); toast(okMsg); refresh(); }
+    catch (e) { toast('操作失败：' + e.message, true); }
+  };
+  document.querySelectorAll('[data-ack]').forEach((b) => {
+    b.onclick = () => run(async () => {
+      const r = await post(`/api/alerts/${b.dataset.ack}/ack`, {});
+      patch(b.dataset.ack, { ackBy: (r && r.ackBy) || '已认领', ackTime: fmtAlertTime(new Date()) });
+    }, '已认领，由你处理');
+  });
+  document.querySelectorAll('[data-unack]').forEach((b) => {
+    b.onclick = () => run(async () => {
+      await post(`/api/alerts/${b.dataset.unack}/unack`, {});
+      patch(b.dataset.unack, { ackBy: '', ackTime: '' });
+    }, '已释放认领');
+  });
+  document.querySelectorAll('[data-note]').forEach((b) => {
+    b.onclick = () => {
+      const id = b.dataset.note;
+      const m = ensureModal();
+      m.show(`<div class="modal-head"><h3>处理备注</h3>
+          <button class="btn ghost" data-close aria-label="关闭">✕</button></div>
+        <div class="modal-body">
+          <label>记录处理过程、结论或后续动作（最多 500 字）
+            <textarea id="aNoteText" rows="5" placeholder="例如：已联系机房更换硬盘，预计 18:00 前后完成">${esc(noteMap.get(id) || '')}</textarea>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" data-close>取消</button>
+          <button class="btn primary" id="aNoteSave">保存</button>
+        </div>`);
+      bindModalClose();
+      $('#aNoteSave').onclick = async () => {
+        const note = $('#aNoteText').value;
+        try {
+          await post(`/api/alerts/${id}/note`, { note });
+          noteMap.set(id, note);
+          patch(id, { note: note.trim() });
+          m.close(); toast('备注已保存'); refresh();
+        } catch (e) { toast('保存失败：' + e.message, true); }
+      };
+    };
+  });
+  document.querySelectorAll('[data-silence]').forEach((b) => {
+    b.onclick = () => openSilenceForm({ hostname: b.dataset.silence, type: b.dataset.silencetype }, renderAlerts);
+  });
+  document.querySelectorAll('[data-resolve]').forEach((btn) => {
+    btn.onclick = () => run(async () => {
+      await post(`/api/alerts/${btn.dataset.resolve}/resolve`, {});
+      patch(btn.dataset.resolve, { state: '0' });
+    }, '已标记为恢复');
+  });
+}
+
+// openSilenceForm 新增静默规则。预设主机/类型由行内「静默」按钮带进来。
+async function openSilenceForm(pre, after) {
+  const m = ensureModal();
+  // 告警中心不一定要先逛过主机页，这里按需补一次主机列表，失败就退化成「手填 + 全部」
+  if (!window.__hosts || !window.__hosts.length) {
+    try { window.__hosts = asList(await get('/api/hosts')); } catch (e) { window.__hosts = []; }
+  }
+  const now = new Date();
+  const t = (h) => dtLocal(new Date(now.getTime() + h * 3600 * 1000));
+  const hostOpts = ['<option value="">全部主机</option>'].concat(
+    (window.__hosts || []).map((h) => `<option value="${esc(h.hostname)}" ${pre.hostname === h.hostname ? 'selected' : ''}>${esc(h.hostname)}</option>`));
+  if (pre.hostname && !(window.__hosts || []).some((h) => h.hostname === pre.hostname)) {
+    hostOpts.push(`<option value="${esc(pre.hostname)}" selected>${esc(pre.hostname)}</option>`);
+  }
+  const typeOpts = ['<option value="">全部监控项</option>'].concat(
+    Object.keys(ALERT_TYPE_CN).map((k) => `<option value="${k}" ${pre.type === k ? 'selected' : ''}>${esc(ALERT_TYPE_CN[k])}</option>`));
+  m.show(`<div class="modal-head"><h3>新增静默规则</h3>
+      <button class="btn ghost" data-close aria-label="关闭">✕</button></div>
+    <div class="modal-body">
+      <div class="seg-note">静默期间命中的告警<strong>照常记录</strong>，但不再发邮件和机器人通知。
+        规则按「主机 + 监控项」匹配，所以能挡住同一故障的反复告警，而不只是一条。</div>
+      <div class="form-grid">
+        <label>主机<select id="sHost">${hostOpts.join('')}</select></label>
+        <label>监控项<select id="sType">${typeOpts.join('')}</select></label>
+        <label>级别<select id="sLevel">
+          <option value="">全部级别</option><option value="critical">仅严重</option>
+          <option value="warning">仅警告</option><option value="info">仅提示</option>
+        </select></label>
+        <label>原因<input id="sReason" placeholder="如：机房割接 / 已知问题" value="${esc(pre.reason || '')}"></label>
+        <label>开始时间<input type="datetime-local" id="sStart" value="${dtLocal(now)}"></label>
+        <label>结束时间<input type="datetime-local" id="sEnd" value="${t(2)}"></label>
+      </div>
+      <div class="toolbar" style="margin-top:8px">
+        <span class="seg-note">快捷时长：</span>
+        <button class="btn small ghost" data-dur="1">1 小时</button>
+        <button class="btn small ghost" data-dur="4">4 小时</button>
+        <button class="btn small ghost" data-dur="24">1 天</button>
+        <button class="btn small ghost" data-dur="72">3 天</button>
+      </div>
+      <div id="sResult"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn primary" id="sSave">创建静默</button>
+    </div>`);
+  bindModalClose();
+  document.querySelectorAll('.modal-mask [data-dur]').forEach((b) => {
+    b.onclick = () => {
+      const end = new Date(now.getTime() + Number(b.dataset.dur) * 3600 * 1000);
+      $('#sEnd').value = dtLocal(end);
+    };
+  });
+  $('#sSave').onclick = async () => {
+    const body = {
+      hostname: $('#sHost').value, type: $('#sType').value, level: $('#sLevel').value,
+      reason: $('#sReason').value.trim(),
+      startTime: dtToServer($('#sStart').value), endTime: dtToServer($('#sEnd').value),
+    };
+    try {
+      await post('/api/alert-silences', body);
+      m.close(); toast('静默规则已创建，期间不再通知');
+      if (after) after();
+    } catch (e) {
+      $('#sResult').innerHTML = `<div class="test-result bad" style="margin-top:10px">${esc(e.message)}</div>`;
+    }
+  };
+}
+
+// openSilenceManager 静默规则列表：查看生效期、随时删除（立即恢复通知）。
+async function openSilenceManager(after) {
+  const m = ensureModal();
+  m.show('<div class="empty">加载中…</div>');
+  let list = [];
+  try { list = asList(await get('/api/alert-silences')); } catch (e) { list = []; }
+  const rows = list.map((s) => [
+    esc(s.hostname || '全部主机'),
+    esc(s.type ? (ALERT_TYPE_CN[s.type] || s.type) : '全部监控项'),
+    esc(s.level || '全部级别'),
+    esc(s.reason || '-'),
+    esc(s.startTime) + ' ~ ' + esc(s.endTime),
+    s.active ? '<span class="tag warn">生效中</span>' : '<span class="tag">已结束</span>',
+    esc(s.createBy || '-'),
+    `<button class="btn small ghost" data-delsil="${esc(s.id)}">删除</button>`,
+  ]);
+  m.show(`<div class="modal-head"><h3>静默规则</h3>
+      <button class="btn ghost" data-close aria-label="关闭">✕</button></div>
+    <div class="modal-body">
+      <div class="toolbar"><span class="seg-note">共 ${list.length} 条，${list.filter((x) => x.active).length} 条生效中</span>
+        <span class="spacer"></span>
+        <button class="btn primary small" id="silNew">+ 新增规则</button></div>
+      <div id="silBox">${dataTable(['主机', '监控项', '级别', '原因', '生效区间', '状态', '创建人', '操作'], rows, '暂无静默规则')}</div>
+    </div>
+    <div class="modal-actions"><button class="btn" data-close>关闭</button></div>`, 'wide');
+  bindModalClose();
+  document.querySelectorAll('.modal-mask [data-delsil]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('删除后这条静默立即失效，相关告警会马上恢复通知。确认删除？')) return;
+      try {
+        await del(`/api/alert-silences/${b.dataset.delsil}`);
+        toast('已删除，通知恢复');
+        m.close();
+        openSilenceManager(after);
+        if (after) after();
+      } catch (e) { toast('删除失败：' + e.message, true); }
+    };
+  });
+  $('#silNew').onclick = () => {
+    openSilenceForm({}, () => { m.close(); openSilenceManager(after); if (after) after(); });
+  };
 }
 
 /* ================= 指令下发模块 ================= */
@@ -3031,8 +3290,13 @@ async function renderSettings() {
           ${[['off', '关闭'], ['soft', '轻柔'], ['normal', '标准'], ['urgent', '紧急']].map((s) => `<option value="${s[0]}" ${val('alertSound', 'off') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}
         </select></label>
         <label>主机登录提醒<input type="checkbox" id="sLoginAlert" ${val('loginAlert') === 'true' ? 'checked' : ''}></label>
+        <label>未认领催办（分钟）
+          <input type="number" id="sEscalate" min="0" max="1440" value="${esc(val('alertEscalateMin', '30'))}">
+        </label>
       </div>
-      <div class="hint-box">告警提示音在浏览器检测到新增未处理告警时播放；主机登录提醒依赖采集端上报登录用户信息。</div>`;
+      <div class="hint-box">告警提示音在浏览器检测到新增未处理告警时播放；主机登录提醒依赖采集端上报登录用户信息。<br>
+        <strong>未认领催办</strong>：告警产生后超过该分钟数仍无人认领，会再推一轮邮件 / 机器人消息，
+        标题带「未认领催办」前缀，避免半夜的告警沉在聊天记录里没人跟。填 <code>0</code> 表示关闭催办。</div>`;
     } else if (tab === 'webhook') {
       body = `<div class="hint-box">
         把告警推送到钉钉、企业微信、飞书等群机器人，无需邮件服务器。
@@ -3142,7 +3406,8 @@ async function renderSettings() {
       if (!(Number(patch.agentRefreshSec) >= 30)) { toast('配置刷新间隔至少 30 秒', true); return false; }
     } else if (tab === 'alert') {
       set('alertPrefix', $('#sPrefix')); set('alertSignature', $('#sSign')); set('alertSound', $('#sSound'));
-      set('loginAlert', $('#sLoginAlert'));
+      set('loginAlert', $('#sLoginAlert')); set('alertEscalateMin', $('#sEscalate'));
+      if (!(Number($('#sEscalate').value) >= 0)) { toast('催办时长不能为负数，填 0 表示关闭', true); return false; }
     } else {
       set('mailEnabled', $('#sMailEnabled')); set('mailHost', $('#sHost')); set('mailPort', $('#sPort'));
       set('mailUser', $('#sUser')); set('mailPassword', $('#sPass')); set('mailFrom', $('#sFrom'));
@@ -3501,7 +3766,13 @@ function ensureModal() {
   }
   const box = mask.querySelector('.modal-box');
   return {
-    show(html) { box.innerHTML = html; mask.classList.add('show'); },
+    // cls 用于宽版弹窗（'wide'）等变体。每次都重设 className，
+    // 避免上一个弹窗留下的样式影响下一个。
+    show(html, cls) {
+      box.className = 'modal-box' + (cls ? ' ' + cls : '');
+      box.innerHTML = html;
+      mask.classList.add('show');
+    },
     close() { mask.classList.remove('show'); },
   };
 }

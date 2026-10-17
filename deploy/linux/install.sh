@@ -21,7 +21,7 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="${STRIX_VERSION:-1.2.0}"
+VERSION="${STRIX_VERSION:-1.2.1}"
 APP="strix-server"
 # 前缀沿用顺序：显式 --prefix > STRIX_PREFIX > 更名前的 OPSM_PREFIX > 默认路径
 PREFIX="${STRIX_PREFIX:-${OPSM_PREFIX:-/opt/strix}}"

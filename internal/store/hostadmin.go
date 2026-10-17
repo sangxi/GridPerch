@@ -33,6 +33,9 @@ var hostnameRefTables = []string{
 	"diskio_state",
 	"sys_load_state",
 	"alert",
+	// 静默规则的 hostname 为空表示「全部主机」，迁移时空值天然不会命中，
+	// 不影响通配规则；但如果漏了这张表，按主机设的静默会在改名后失效。
+	"alert_silence",
 	"process_state",
 	"monitor_state",
 	"monitor_event",
