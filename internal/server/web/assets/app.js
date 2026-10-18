@@ -218,6 +218,18 @@ const ICONS = {
   box: '<path d="M21 8.4v7.2a2 2 0 0 1-1 1.7l-7 4a2 2 0 0 1-2 0l-7-4a2 2 0 0 1-1-1.7V8.4a2 2 0 0 1 1-1.7l7-4a2 2 0 0 1 2 0l7 4a2 2 0 0 1 1 1.7z"/><path d="M3.3 7.4 12 12.3l8.7-4.9M12 12.3V21"/>',
   key: '<circle cx="8" cy="14" r="4"/><path d="M11 11l8-8M17 5l2 2M15 7l2 2"/>',
   upload: '<path d="M12 16V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/>',
+  // 行内操作图标：表格里用图标代替文字按钮，操作列能窄一半
+  user: '<circle cx="12" cy="8" r="3.6"/><path d="M4.8 20c0-3.4 3.2-5.6 7.2-5.6s7.2 2.2 7.2 5.6"/>',
+  undo: '<path d="M4.5 9H14a5.5 5.5 0 0 1 0 11H8.5"/><path d="M8 5 4.5 9 8 12.5"/>',
+  edit: '<path d="M4 20h4L19 9a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5V20z"/><path d="M14.5 6.5 17.5 9.5"/>',
+  bellOff: '<path d="M18 8a6 6 0 0 0-9.2-5.1M6.2 6.4A6 6 0 0 0 6 8c0 7-3 9-3 9h11"/><path d="M13.7 21a2 2 0 0 1-3.4 0M2.5 2.5l19 19"/>',
+  check: '<path d="M20 6.5 9.6 17 4 11.4"/>',
+  download: '<path d="M12 4v12M7.5 11.5 12 16l4.5-4.5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/>',
+  terminal: '<path d="M5 8.5 8.5 12 5 15.5"/><path d="M11 16h6"/><rect x="2.5" y="3.5" width="19" height="17" rx="2.5"/>',
+  sliders: '<path d="M5 5v5M5 14v5M12 5v3M12 12v7M19 5v8M19 17v2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="19" cy="15" r="2"/>',
+  folder: '<path d="M3 7.5A2 2 0 0 1 5 5.5h4l2 2.5h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  trash: '<path d="M4 7h16"/><path d="M9 7V4.8h6V7"/><path d="M6.5 7l.9 12.2a1.8 1.8 0 0 0 1.8 1.6h5.6a1.8 1.8 0 0 0 1.8-1.6L17.5 7"/><path d="M10 11v6M14 11v6"/>',
+  x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
 };
 
 // icon 输出统一风格的线性图标。
@@ -485,7 +497,8 @@ async function renderDashboard() {
   const memSeries = (trend || []).find((s) => /内存/.test(s.name)) || { points: [] };
   const cpuDelta = cpuSeries.points.length > 1
     ? cpuSeries.points[cpuSeries.points.length - 1].value - cpuSeries.points[0].value : NaN;
-  html += `<div class="kpi-grid">
+  // 仪表盘固定 6 张卡，用 dense 让它们在常见宽度下一行排满，不留半行空白
+  html += `<div class="kpi-grid dense">
     ${kpiCard({
       icon: 'host', label: '接入主机', value: total, unit: ' 台',
       sub: `<span class="tag ok">在线 ${online}</span> <span class="tag ${offline ? 'danger' : 'off'}">离线 ${offline}</span>`,
@@ -568,7 +581,7 @@ async function renderDashboard() {
     esc(a.hostname), esc(typeCN(a.type)), levelTag(a.level),
     `<span class="ellipsis" title="${esc(a.content)}">${esc(a.content)}</span>`,
     `<span class="mono">${esc(a.createTime)}</span>`,
-    `<button class="btn small" data-resolve="${esc(a.id)}">标记恢复</button>`,
+    `<span class="row-acts"><button class="ico-btn ok" data-resolve="${esc(a.id)}" title="标记为已恢复">${icon('check')}</button></span>`,
   ]);
   const evRows = (events || []).map((e) => [
     esc(e.name), esc(typeCN(e.type)), esc(e.hostname),
@@ -651,12 +664,15 @@ async function renderHosts() {
   window.__catalogs = catalogs;
   // 主机改名 / 删除会级联改动历史数据，只给管理员开放
   const isAdmin = !!(state.user && state.user.role === 'admin');
+  // 行内操作统一用图标按钮：文案按钮五个并排能把操作列撑到 300px，
+  // 表格横向溢出后「最后上报」这类时间列最先被挤掉。title 里保留完整文案。
+  const canCfg = !(state.user && state.user.role === 'viewer');
   const hostActions = (h) => `<span class="row-acts">
-      <button class="btn small" data-cmd="${esc(h.hostname)}">下发指令</button>
-      ${state.user && state.user.role === 'viewer' ? '' : `<button class="btn small ghost" data-hcfg="${esc(h.hostname)}">采集端配置</button>`}
-      ${state.user && state.user.role === 'viewer' ? '' : `<button class="btn small ghost" data-hcat="${esc(h.hostname)}">归类</button>`}
-      ${isAdmin ? `<button class="btn small ghost" data-hren="${esc(h.hostname)}">重命名</button>` : ''}
-      ${isAdmin ? `<button class="btn small ghost danger" data-hdel="${esc(h.hostname)}">删除</button>` : ''}
+      <button class="ico-btn" data-cmd="${esc(h.hostname)}" title="向 ${esc(h.hostname)} 下发指令">${icon('terminal')}</button>
+      ${canCfg ? `<button class="ico-btn" data-hcfg="${esc(h.hostname)}" title="采集端配置（单机覆盖）">${icon('sliders')}</button>` : ''}
+      ${canCfg ? `<button class="ico-btn" data-hcat="${esc(h.hostname)}" title="归类到主机目录">${icon('folder')}</button>` : ''}
+      ${isAdmin ? `<button class="ico-btn" data-hren="${esc(h.hostname)}" title="重命名（历史数据一并迁移）">${icon('edit')}</button>` : ''}
+      ${isAdmin ? `<button class="ico-btn danger" data-hdel="${esc(h.hostname)}" title="删除主机及其历史数据">${icon('trash')}</button>` : ''}
     </span>`;
   // 双击主机名进入四方格详情，链接本身保留单击跳转抽屉的可发现性
   const hostCell = (h) => `<a href="javascript:openHost('${esc(h.hostname)}')" data-dbl="${esc(h.hostname)}" title="双击查看四方格详情">${esc(h.hostname)}</a>`;
@@ -817,8 +833,8 @@ async function renderCatalogs() {
     String(c.sort || 0),
     esc(c.updateTime || c.createTime || ''),
     canEdit ? `<span class="row-acts">
-      <button class="btn small" data-cedit="${esc(c.id)}">编辑</button>
-      <button class="btn small ghost" data-cdel="${esc(c.id)}">删除</button>
+      <button class="ico-btn" data-cedit="${esc(c.id)}" title="编辑目录">${icon('edit')}</button>
+      <button class="ico-btn danger" data-cdel="${esc(c.id)}" title="删除目录">${icon('trash')}</button>
     </span>` : '',
   ]);
   const ungrouped = hosts.filter((h) => !h.catalogId);
@@ -1270,7 +1286,7 @@ function onboardCmds(p) {
     cmdBlock('ob-a3', '改配置与卸载', '运行配置由平台下发，改完自动生效，无需重装',
       `# 改配置：控制台「系统设置 → 采集端配置」调整上报间隔、执行指令开关、\n` +
       `#         跳过磁盘、更新策略；采集端在刷新周期内自动应用，不用重启。\n` +
-      `# 单台主机想用不同配置：「主机监控」中该主机行的「采集端配置」按钮。\n\n` +
+      `# 单台主机想用不同配置：「主机监控」主机行最右侧的滑块图标（采集端配置）。\n\n` +
       (os.key === 'darwin'
         ? `# 卸载：\nsudo launchctl unload /Library/LaunchDaemons/strix-agent.plist\nsudo rm -f /Library/LaunchDaemons/strix-agent.plist /usr/local/bin/strix-agent`
         : `# 卸载：\nsudo systemctl disable --now strix-agent\nsudo rm -f /etc/systemd/system/strix-agent.service /usr/local/bin/strix-agent`)),
@@ -1988,8 +2004,10 @@ async function renderTasks() {
       `${t.intervalSec}s / ${t.timeoutSec}s`,
       t.autoHeal ? '<span class="tag ok">已开启自动处理</span>' : '<span class="tag off">未开启</span>',
       enabled,
-      `<button class="btn small" data-edit="${esc(t.id)}">编辑</button>
-       <button class="btn small ghost" data-del="${esc(t.id)}">删除</button>`,
+      `<span class="row-acts">
+        <button class="ico-btn" data-edit="${esc(t.id)}" title="编辑监控项">${icon('edit')}</button>
+        <button class="ico-btn danger" data-del="${esc(t.id)}" title="删除监控项">${icon('trash')}</button>
+      </span>`,
     ];
   });
   const stateRows = states.map((s) => [
@@ -2164,14 +2182,16 @@ async function renderAlerts() {
     <select id="aAck"><option value="">全部处理状态</option><option value="unacked">未认领</option><option value="acked">处理中</option><option value="silenced">已静默</option></select>
     <input type="search" id="aKeyword" placeholder="按主机或内容搜索">
     <span class="spacer"></span>
-    <button class="btn ghost small" id="aSilenceMgr">静默规则${liveSilence.length ? `（${liveSilence.length}）` : ''}</button>
-    <a class="btn ghost small" href="/api/export/alerts?format=csv">导出 CSV</a>
-    <a class="btn ghost small" href="/api/export/alerts?format=xlsx">导出 Excel</a>
+    <button class="btn ghost small with-ic" id="aSilenceMgr">${icon('bellOff')}静默规则${liveSilence.length ? `（${liveSilence.length}）` : ''}</button>
+    <a class="btn ghost small with-ic" href="/api/export/alerts?format=csv">${icon('download')}CSV</a>
+    <a class="btn ghost small with-ic" href="/api/export/alerts?format=xlsx">${icon('download')}Excel</a>
   </div>`;
-  html += panel('告警记录', '<div id="alertBox"></div>', '');
+  html += panel('告警记录', '<div id="alertBox" class="alert-table"></div>', '');
   const loginRows = logins.map((e) => [esc(e.hostname), esc(e.diff), esc(e.users), esc(e.createTime)]);
-  html += panel('主机登录提醒', dataTable(['主机', '新增登录用户', '当前在线用户', '时间'], loginRows,
-    '暂无登录变化记录（由采集端上报登录用户变化自动生成）'));
+  // 没有登录变化时不要整块空 panel，压成一条提示条，页面不会拖出一大片白
+  html += loginRows.length
+    ? panel('主机登录提醒', dataTable(['主机', '新增登录用户', '当前在线用户', '时间'], loginRows))
+    : `<div class="empty-strip">${icon('user')}<span><b>主机登录提醒</b>：暂无记录，采集端上报登录用户变化后自动生成</span></div>`;
   app().innerHTML = html;
 
   // KPI 单独渲染，认领/释放后可以只刷这一块，不用整页重绘把筛选条件冲掉
@@ -2191,20 +2211,27 @@ async function renderAlerts() {
     });
     const noteMap = new Map(alerts.map((a) => [a.id, a.note || '']));
     const rows = list.map((a) => {
+      // 操作列用图标按钮：四个文字按钮并排要 200px，图标不到 110px，
+      // 省下来的宽度给「内容」列。含义靠 title 悬停提示。
       const acts = [];
       if (a.state === '1') {
-        if (!a.ackBy) acts.push(`<button class="btn small" data-ack="${esc(a.id)}">认领</button>`);
-        else acts.push(`<button class="btn small ghost" data-unack="${esc(a.id)}">释放</button>`);
+        acts.push(a.ackBy
+          ? `<button class="ico-btn" data-unack="${esc(a.id)}" title="释放认领（当前处理人：${esc(a.ackBy)}）">${icon('undo')}</button>`
+          : `<button class="ico-btn ok" data-ack="${esc(a.id)}" title="认领这条告警">${icon('user')}</button>`);
       }
-      acts.push(`<button class="btn small ghost" data-note="${esc(a.id)}">备注</button>`);
-      acts.push(`<button class="btn small ghost" data-silence="${esc(a.hostname)}" data-silencetype="${esc(a.type)}">静默</button>`);
-      if (a.state === '1') acts.push(`<button class="btn small" data-resolve="${esc(a.id)}">标记恢复</button>`);
+      acts.push(`<button class="ico-btn" data-note="${esc(a.id)}" title="${a.note ? '修改处理备注' : '填写处理备注'}">${icon('edit')}</button>`);
+      acts.push(`<button class="ico-btn" data-silence="${esc(a.hostname)}" data-silencetype="${esc(a.type)}"
+        title="静默：${esc(a.hostname)} 的${esc(typeCN(a.type))}，一段时间内不再通知">${icon('bellOff')}</button>`);
+      if (a.state === '1') {
+        acts.push(`<button class="ico-btn ok" data-resolve="${esc(a.id)}" title="标记为已恢复">${icon('check')}</button>`);
+      }
       const content = esc(a.content) +
         (a.silenced ? ' <span class="tag" title="静默期内产生，未发通知">已静默</span>' : '') +
         (a.note ? `<div class="sub-note">备注：${esc(a.note)}</div>` : '');
       return [
-        esc(a.hostname), esc(typeCN(a.type)), levelTag(a.level), content, esc(a.createTime),
-        alertHandleTag(a), acts.join(' '),
+        esc(a.hostname), esc(typeCN(a.type)), levelTag(a.level), content,
+        `<span class="cell-time">${esc(a.createTime)}</span>`,
+        alertHandleTag(a), `<span class="row-acts">${acts.join('')}</span>`,
       ];
     });
     $('#alertBox').innerHTML = dataTable(['主机', '类型', '级别', '内容', '时间', '处理状态', '操作'], rows, '无匹配告警');
@@ -2386,7 +2413,7 @@ async function openSilenceManager(after) {
     esc(s.startTime) + ' ~ ' + esc(s.endTime),
     s.active ? '<span class="tag warn">生效中</span>' : '<span class="tag">已结束</span>',
     esc(s.createBy || '-'),
-    `<button class="btn small ghost" data-delsil="${esc(s.id)}">删除</button>`,
+    `<span class="row-acts"><button class="ico-btn danger" data-delsil="${esc(s.id)}" title="删除这条静默规则">${icon('trash')}</button></span>`,
   ]);
   m.show(`<div class="modal-head"><h3>静默规则</h3>
       <button class="btn ghost" data-close aria-label="关闭">✕</button></div>
@@ -2430,8 +2457,10 @@ async function renderCommands() {
   const rows = cmds.map((c) => [
     esc(c.createTime), esc(c.host), `<span class="mono">${esc(c.cmd)}</span>`, esc(c.user || '-'),
     commandStatusTag(c.status), String(c.exitCode), esc(c.finishTime || '-'),
-    `<button class="btn small" data-view="${esc(c.id)}">查看输出</button>
-     ${c.status === 'pending' ? `<button class="btn small ghost" data-cancel="${esc(c.id)}">撤销</button>` : ''}`,
+    `<span class="row-acts">
+       <button class="ico-btn" data-view="${esc(c.id)}" title="查看输出">${icon('terminal')}</button>
+       ${c.status === 'pending' ? `<button class="ico-btn danger" data-cancel="${esc(c.id)}" title="撤销这条指令">${icon('x')}</button>` : ''}
+     </span>`,
   ]);
   html += panel('指令执行历史', dataTable(['下发时间', '主机', '指令', '执行人', '状态', '退出码', '完成时间', '操作'], rows, '暂无下发记录'));
   app().innerHTML = html;
@@ -2762,8 +2791,10 @@ async function renderAssets() {
     const rows = filtered.map((a) => [
       esc(a.name), esc(a.category || '-'), esc(a.type || '-'), esc(a.ip || '-'), esc(a.location || '-'),
       esc(a.owner || '-'), esc(a.expireDate || '-'), statusTag(ASSET_STATUS[a.status] || a.status),
-      `<button class="btn small" data-edit="${esc(a.id)}">编辑</button>
-       <button class="btn small ghost" data-del="${esc(a.id)}">删除</button>`,
+      `<span class="row-acts">
+        <button class="ico-btn" data-edit="${esc(a.id)}" title="编辑资产">${icon('edit')}</button>
+        <button class="ico-btn danger" data-del="${esc(a.id)}" title="删除资产">${icon('trash')}</button>
+      </span>`,
     ]);
     $('#assetBox').innerHTML = dataTable(['名称', '类别', '型号', 'IP', '位置', '责任人', '维保到期', '状态', '操作'], rows, '暂无资产记录');
     document.querySelectorAll('[data-edit]').forEach((b) => { b.onclick = () => openAssetEditor(list.find((x) => x.id === b.dataset.edit)); });
@@ -2870,9 +2901,11 @@ async function renderDevices() {
     esc(a.host || '-'), String(a.port || '-'), esc(a.username || '-'),
     a.hasSecret ? '<span class="tag ok">已保存</span>' : '<span class="tag off">未设置</span>',
     esc(a.remark || '-'),
-    `<button class="btn small" data-test="${esc(a.id)}">检测</button>
-     <button class="btn small ghost" data-edit="${esc(a.id)}">编辑</button>
-     <button class="btn small ghost" data-del="${esc(a.id)}">删除</button>`,
+    `<span class="row-acts">
+       <button class="ico-btn" data-test="${esc(a.id)}" title="用已保存的凭据检测连通性">${icon('pulse')}</button>
+       <button class="ico-btn" data-edit="${esc(a.id)}" title="编辑账号">${icon('edit')}</button>
+       <button class="ico-btn danger" data-del="${esc(a.id)}" title="删除账号">${icon('trash')}</button>
+     </span>`,
   ]);
   let html = `<div class="toolbar">
     <span class="spacer"></span>
@@ -2956,8 +2989,10 @@ async function renderInspections() {
     esc(r.scope || '-'), esc(r.author || '-'),
     `<span class="score-badge ${scoreClass(r.score)}">${r.score}</span>`,
     esc(r.summary || '-'), esc(r.createTime),
-    `<a class="btn small ghost" href="/api/inspections/${esc(r.id)}/export?format=xlsx">导出</a>
-     <button class="btn small ghost" data-del="${esc(r.id)}">删除</button>`,
+    `<span class="row-acts">
+       <a class="ico-btn" href="/api/inspections/${esc(r.id)}/export?format=xlsx" title="导出 Excel">${icon('download')}</a>
+       <button class="ico-btn danger" data-del="${esc(r.id)}" title="删除报告">${icon('trash')}</button>
+     </span>`,
   ]);
   let html = `<div class="toolbar">
     <span class="spacer"></span>
@@ -3018,8 +3053,10 @@ async function renderMembers() {
     `<span class="mono">${esc((MenusCN(m.menus) || (m.role === 'admin' ? '全部' : '-')))}</span>`,
     m.enabled ? '<span class="tag ok">启用</span>' : '<span class="tag off">停用</span>',
     esc(m.lastLogin || '-'), esc(m.lastLoginIp || '-'), String(m.loginCount || 0),
-    `<button class="btn small" data-edit="${esc(m.username)}">编辑</button>
-     ${m.role === 'admin' ? '' : `<button class="btn small ghost" data-del="${esc(m.username)}">删除</button>`}`,
+    `<span class="row-acts">
+       <button class="ico-btn" data-edit="${esc(m.username)}" title="编辑成员">${icon('edit')}</button>
+       ${m.role === 'admin' ? '' : `<button class="ico-btn danger" data-del="${esc(m.username)}" title="删除成员">${icon('trash')}</button>`}
+     </span>`,
   ]);
   let html = `<div class="toolbar"><span class="spacer"></span><button class="btn primary" id="memNew">+ 新增成员</button></div>
   <div class="hint-box">成员权限按角色 + 菜单两级控制：管理员拥有全部权限；运维可下发指令与维护台账；只读仅能查看。可在此基础上逐账号勾选可见菜单。<br>
@@ -3089,7 +3126,7 @@ async function renderTokens() {
     esc(t.name), `<span class="mono">${esc(t.token)}</span>`, esc(t.perms || '-'),
     t.enabled ? '<span class="tag ok">启用</span>' : '<span class="tag off">停用</span>',
     esc(t.lastUsed || '未使用'), esc(t.createTime),
-    `<button class="btn small ghost" data-del="${esc(t.id)}">删除</button>`,
+    `<span class="row-acts"><button class="ico-btn danger" data-del="${esc(t.id)}" title="删除凭证">${icon('trash')}</button></span>`,
   ]);
   let html = `<div class="toolbar"><span class="spacer"></span><button class="btn primary" id="tkNew">+ 创建凭证</button></div>
   <div class="hint-box">开放接口用于对接第三方平台或自研看板，示例：
@@ -3562,7 +3599,7 @@ async function loadAgentConfig() {
     o.allowCommand === 'true' ? '开启' : (o.allowCommand === 'false' ? '关闭' : dash),
     o.skipDisk ? esc(o.skipDisk) : dash,
     o.updateMode ? esc(o.updateMode) : dash,
-    `<button class="btn small ghost" data-cfg="${esc(o.hostname)}">编辑</button>`,
+    `<span class="row-acts"><button class="ico-btn" data-cfg="${esc(o.hostname)}" title="编辑这台主机的采集端覆盖配置">${icon('edit')}</button></span>`,
   ]);
   box.innerHTML = `<div style="margin-top:16px"></div>` + panel('已单独配置的主机',
     dataTable(['主机', '上报间隔', '执行指令', '跳过磁盘', '更新策略', ''], rows, '暂无主机单独覆盖，全部沿用上面的全局配置'),
@@ -3602,9 +3639,9 @@ async function loadWebhooks() {
       ? `${esc(h.lastTime)} ${h.lastState === 'ok' ? '<span class="tag ok">成功</span>' : `<span class="tag danger" title="${esc(h.lastError || '')}">失败</span>`}`
       : '<span class="mono">尚未推送</span>',
     `<span class="row-acts">
-       <button class="btn small ghost" data-hook-test="${esc(h.id)}">测试</button>
-       <button class="btn small ghost" data-hook-edit="${esc(h.id)}">编辑</button>
-       <button class="btn small ghost danger" data-hook-del="${esc(h.id)}">删除</button>
+       <button class="ico-btn" data-hook-test="${esc(h.id)}" title="发送一条测试消息">${icon('pulse')}</button>
+       <button class="ico-btn" data-hook-edit="${esc(h.id)}" title="编辑机器人">${icon('edit')}</button>
+       <button class="ico-btn danger" data-hook-del="${esc(h.id)}" title="删除机器人">${icon('trash')}</button>
      </span>`,
   ]);
   box.innerHTML = panel('机器人列表',

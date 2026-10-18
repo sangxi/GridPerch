@@ -47,7 +47,13 @@ a { color: inherit; text-decoration: none; }
   color: var(--text); font-size: 13.5px; font-weight: 500; white-space: nowrap;
 }
 .nav a:hover { background: var(--primary-soft); color: var(--primary); }
+/* 当前页导航：浅蓝底之外再加一条主色竖条，扫视侧栏时定位更快 */
+.nav a { position: relative; }
 .nav a.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.nav a.active::before {
+  content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 15px; border-radius: 0 3px 3px 0; background: var(--primary);
+}
 
 .sidebar-foot {
   border-top: 1px solid var(--border); padding: 10px 16px;
@@ -70,6 +76,8 @@ a { color: inherit; text-decoration: none; }
   position: sticky;
   top: 0;
   z-index: 20;
+  /* 内容滚动时给顶栏一层极淡的投影，滚动条一动就能看出「这一层浮在上面」 */
+  box-shadow: 0 1px 0 rgba(16, 24, 40, .02), 0 4px 12px -8px rgba(16, 24, 40, .18);
 }
 .page-title { margin: 0; font-size: 15.5px; font-weight: 600; }
 .topbar-right {
@@ -99,6 +107,30 @@ a { color: inherit; text-decoration: none; }
 .btn.ghost { background: transparent; }
 .btn.block { width: 100%; padding: 10px; font-size: 15px; margin-top: 6px; }
 .btn.small { padding: 4px 10px; font-size: 12px; }
+/* 带图标的按钮：只给显式加了 with-ic 的用 flex 排版，
+   不去改 .btn 本身，免得影响其它页面已有的纯文字按钮 */
+.btn.with-ic { display: inline-flex; align-items: center; gap: 6px; }
+.btn.with-ic .ic { width: 15px; height: 15px; flex: none; }
+
+/* 表格行内图标按钮：文字按钮四个并排要 200px 宽，图标按钮不到 110px，
+   操作列能省出一大截给内容。含义靠 title 提示，鼠标悬停即可看到。 */
+.ico-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 27px; height: 27px; padding: 0;
+  border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: #4b5563; cursor: pointer;
+  text-decoration: none; /* 导出这类操作用 <a>，别带上下划线 */
+  transition: background .15s, color .15s, border-color .15s;
+}
+/* 15px 下 1.7 的描边偏细，单独加粗一点，否则图标看着发灰发虚 */
+.ico-btn .ic { width: 15px; height: 15px; stroke-width: 1.85; }
+.ico-btn:hover { background: var(--primary-soft); border-color: #cfe0ff; color: var(--primary); }
+.ico-btn.ok:hover { background: #e8f7ef; border-color: #b9ecd0; color: var(--ok); }
+.ico-btn.danger:hover { background: #fdecec; border-color: #f6c9c9; color: var(--danger); }
+.ico-btn[disabled] { opacity: .4; cursor: default; }
+.ico-btn[disabled]:hover { background: transparent; border-color: transparent; color: var(--muted); }
+/* 同一行里的多个图标按钮保持等距，不需要每处自己拼空格 */
+.row-acts { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
 
 .cards {
   display: grid;
@@ -153,8 +185,12 @@ td.num, th.num { text-align: right; }
 .tag.off { background: #f1f2f6; color: var(--muted); }
 .tag.warn { background: #fef4e6; color: var(--warn); }
 .tag.danger { background: #fdecec; color: var(--danger); }
-/* 表格单元格内的次要说明（告警处理备注等），不抢主内容的注意力 */
-.sub-note { color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 4px; max-width: 420px; }
+/* 表格单元格内的次要说明（告警处理备注等），不抢主内容的注意力。
+   左侧竖线让它读起来像「附注」，而不是混在告警正文里的第二句话。 */
+.sub-note {
+  color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 5px;
+  max-width: 420px; border-left: 2px solid var(--border); padding-left: 7px;
+}
 .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
 .bar { height: 6px; border-radius: 4px; background: #eef1f7; overflow: hidden; min-width: 90px; }
@@ -186,6 +222,9 @@ td.num, th.num { text-align: right; }
 .kv .k { color: var(--muted); margin-right: 8px; }
 
 .empty { padding: 36px; text-align: center; color: var(--muted); font-size: 13px; }
+/* 面板内的空状态：36px 上下内边距会把一个空面板撑到近 150px 高，
+   页面上出现两三个空面板就显得整页都是洞。面板里收紧到刚好留白。 */
+.panel .empty { padding: 22px 16px; }
 
 .login-mask {
   position: fixed;
@@ -340,10 +379,15 @@ td.num, th.num { text-align: right; }
    而不是把所有列压到最小内容宽度（中文会被逐字拆行） */
 table.data { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 13.5px; }
 table.data th, table.data td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
-table.data th { color: var(--muted); font-weight: 600; background: #fafbfe; position: sticky; top: 0; white-space: nowrap; }
+table.data th { color: var(--muted); font-weight: 600; background: #fafbfe; position: sticky; top: 0; white-space: nowrap; font-size: 12.5px; }
 table.data td:last-child { white-space: nowrap; }
 table.data tr:hover td { background: #fafbfe; }
 table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* 告警表：行高靠图标按钮撑起，内容垂直居中比顶对齐整齐；
+   时间列用等宽数字并对齐颜色，扫视时不会和正文抢注意力 */
+.alert-table table.data td { vertical-align: middle; }
+.alert-table .cell-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.alert-table table.data td:last-child { padding-top: 5px; padding-bottom: 5px; }
 
 .drawer-mask { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none; z-index: 40; }
 .drawer-mask.show { display: block; }
@@ -475,11 +519,18 @@ textarea {
 .hero-ring { flex: none; position: relative; }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 14px; margin-bottom: 20px; }
+/* 张数固定（仪表盘 6 张）时用 dense：把最小宽度降下来，让它们一行排满 */
+.kpi-grid.dense { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+@media (max-width: 720px) {
+  .kpi-grid.dense { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .kpi {
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: var(--shadow); padding: 15px 17px 14px; position: relative; overflow: hidden;
+  box-shadow: var(--shadow); padding: 13px 16px 12px; position: relative; overflow: hidden;
   display: flex; flex-direction: column;
+  transition: box-shadow .18s, border-color .18s;
 }
+.kpi:hover { border-color: #d8e1f2; box-shadow: 0 2px 6px rgba(16,24,40,.07), 0 10px 24px rgba(16,24,40,.07); }
 .kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--primary); opacity: .85; }
 .kpi.ok::before { background: var(--ok); }
 .kpi.warn::before { background: var(--warn); }
@@ -490,7 +541,7 @@ textarea {
 .kpi.warn .kpi-icon { color: var(--warn); }
 .kpi.danger .kpi-icon { color: var(--danger); }
 .ic { width: 16px; height: 16px; display: block; }
-.kpi-value { font-size: 27px; font-weight: 700; letter-spacing: -.6px; margin: 6px 0 2px; }
+.kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -.7px; margin: 4px 0 1px; font-variant-numeric: tabular-nums; }
 .kpi.ok .kpi-value { color: var(--ok); }
 .kpi.warn .kpi-value { color: var(--warn); }
 .kpi.danger .kpi-value { color: var(--danger); }
@@ -598,6 +649,15 @@ textarea {
   margin: -6px 0 12px;
 }
 .hint-line b { color: var(--primary); font-weight: 600; }
+/* 空列表面板：整块白色 panel 只剩一句「暂无数据」太浪费版面，压成一条浅色提示条 */
+.empty-strip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; margin-bottom: 16px;
+  border: 1px dashed var(--border); border-radius: 10px;
+  background: #fcfdff; color: var(--muted); font-size: 13px;
+}
+.empty-strip .ic { width: 15px; height: 15px; flex: none; opacity: .75; }
+.empty-strip b { color: var(--text); font-weight: 600; }
 .check-list {
   display: flex; flex-direction: column; gap: 6px;
   max-height: 180px; overflow: auto;
