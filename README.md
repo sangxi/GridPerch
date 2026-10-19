@@ -107,27 +107,67 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 
 ## 快速开始
 
-完整部署方案见 [DEPLOY.md](DEPLOY.md)。
+完整部署方案见 [DEPLOY.md](DEPLOY.md)；图文步骤见独立教程站 <https://opsmonitor-docs.pages.dev>。
 
-### Docker Compose（推荐）
+### 第 0 步：选对产物（平台 × 架构）
+
+一个版本共 **11 个产物**：2 个角色 × 5 个平台组合 + 1 个 Windows 旧系统兼容版。
+命名规则 `strix-<角色>-<系统>-<架构>[.exe]`，产物在 `dist/`（发布包为 `release/<版本>/`）。
+
+| 系统 | 架构 | 监控端 server | 采集端 agent |
+| --- | --- | --- | --- |
+| Linux | amd64 | `strix-server-linux-amd64` | `strix-agent-linux-amd64` |
+| Linux | arm64（鲲鹏 / 飞腾 / 倚天 / 树莓派 64 位） | `strix-server-linux-arm64` | `strix-agent-linux-arm64` |
+| macOS | amd64（Intel） | `strix-server-darwin-amd64` | `strix-agent-darwin-amd64` |
+| macOS | arm64（Apple M 系列） | `strix-server-darwin-arm64` | `strix-agent-darwin-arm64` |
+| Windows | amd64 | `strix-server-windows-amd64.exe` | `strix-agent-windows-amd64.exe` |
+| Windows | amd64（Win7 / Server 2008 R2 专用） | — | `strix-agent-windows-amd64-win7.exe` |
+
+- **只提供 64 位**：没有 386 / armv7 产物，32 位系统会报 `Exec format error`，请换 64 位系统
+- **Windows 只有 amd64**：Windows on ARM 只能靠 x64 模拟层跑标准版，生产不建议
+- **Linux 不看发行版**：产物是纯静态链接（无 `PT_INTERP`、不依赖 glibc/musl），Debian / CentOS 7 / Rocky / openEuler / 麒麟 / 统信 / Alpine 通用
+- **旧系统**：Win7 SP1 / Server 2008 R2 必须用 `-win7.exe` 兼容版（Go 1.21.5+ 的 `ProcessPrng` 依赖 Win8 才有的 `bcryptprimitives.dll`，普通版在这些系统上会静默崩溃），且启动参数必须带 `-remote-config off -update off`
+- 自查：`uname -m` → `x86_64` 对应 amd64、`aarch64` 对应 arm64；Windows 看 `$env:PROCESSOR_ARCHITECTURE` = `AMD64`
+- 校验：`sha256sum -c SHA256SUMS.txt`，再跑 `./strix-server-linux-amd64 -version` 确认自报架构与文件名一致
+
+### 方式一：Docker Compose（最快）
 
 ```bash
-mkdir -p /opt/strix/data && cd /opt/strix
-# 按 DEPLOY.md 编写 docker-compose.yml 后
-docker compose up -d
+cd deploy/docker
+cp .env.example .env                 # 至少改 STRIX_ADMIN_PASS / STRIX_TOKEN / STRIX_LICENSE_MACHINE
+docker compose up -d                 # 镜像架构跟随宿主机：amd64 / arm64 都支持
 docker compose logs -f --tail=100
 ```
 
-### 二进制
+`Dockerfile.binary` 用仓库里现成的二进制（由 BuildKit 的 `TARGETARCH` 自动挑 `-linux-amd64` 或 `-linux-arm64`），
+`Dockerfile` 从源码构建、产物为构建机架构。老 docker 无 BuildKit 时显式传 `--build-arg TARGETARCH=arm64`。
+
+### 方式二：安装脚本（生产推荐）
 
 ```bash
-./build.sh                # 当前平台，产物在 bin/
-./build.sh all            # 交叉编译 linux/darwin/windows (amd64/arm64)，产物在 dist/
+# Linux（脚本自适应 apt/yum/dnf + systemd / OpenRC / nohup，并自动放行防火墙）
+sudo ./deploy/linux/install.sh
+
+# macOS（自动识别 Intel / Apple 芯片，launchd 托管）
+sudo ./deploy/macos/install.sh
+
+# Windows（管理员 PowerShell，注册计划任务，无需 NSSM）
+.\deploy\windows\install.ps1
 ```
 
+脚本会校验传入的二进制确实是本平台可执行文件、用其自报的 `-version` 覆盖脚本里的版本号、
+创建低权限用户/目录、写入 `/etc/strix/strix.env`（0600）、注册开机自启、放行端口，
+最后打印**只显示一次**的控制台账号与通信密钥。
+
+### 方式三：直接跑二进制
+
 ```bash
+./build.sh all            # 交叉编译 linux/darwin/windows × amd64/arm64，产物在 dist/
 ./bin/strix-server -addr :9999 -db ./data/strix.db -token strix -public-url http://<服务器IP>:9999
 ```
+
+> ⚠️ `-db` 默认是**相对当前工作目录**的 `./data/strix.db`，在别的目录裸跑会新建一个空库（现象「数据没了」）。
+> 更名前的老库 `opsmonitor.db` 会被自动识别沿用（启动日志会提示）。
 
 ### 接入采集端
 
@@ -149,7 +189,8 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://<服务器IP>:9999
 **完整部署方案见 [DEPLOY.md](DEPLOY.md)** —— 含容量规划、反向代理、备份恢复、升级回滚与排障手册。
 
 > 各平台的**可执行部署脚本**在 [`deploy/`](deploy/) 目录：`deploy/linux`、`deploy/windows`、`deploy/macos`、`deploy/docker`。
-> 图文部署教程（选型 / 四平台步骤 / 兼容矩阵 / 排障）作为**独立静态站点**单独维护，不在本仓库内。
+> 图文部署教程（选型 / 产物与架构 / 四平台步骤 / 兼容矩阵 / 排障）作为**独立静态站点**单独维护，不在本仓库内：
+> <https://opsmonitor-docs.pages.dev>
 
 ## 配置项摘要
 

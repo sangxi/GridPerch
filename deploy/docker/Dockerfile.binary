@@ -2,18 +2,24 @@
 #  Strix 监控端（server）镜像 · 直接用已编译好的 Linux 二进制
 # ----------------------------------------------------------------------------
 #  适合本地/内网快速部署：不需要 Go 环境、不需要联网拉模块，几十秒出镜像。
-#  依赖：仓库里已有 release/<版本>/strix-server-linux-amd64
+#  依赖：仓库里已有 release/<版本>/strix-server-linux-<架构>
 #
 #  构建上下文必须是**仓库根目录**：
 #    docker build -f deploy/docker/Dockerfile.binary \
-#      --build-arg VERSION=1.1.0 \
-#      -t strix/strix-server:1.1.0 .
+#      --build-arg VERSION=1.2.2 \
+#      -t strix/strix-server:1.2.2 .
+#
+#  架构：BuildKit 会自动把 TARGETARCH 设成目标架构（amd64 / arm64），
+#  于是同一个 Dockerfile 在 x86 机器上取 amd64 产物、在 arm64 机器上取 arm64 产物。
+#  用 `docker buildx build --platform linux/arm64` 交叉构建时同样成立。
+#  老版本 docker（无 BuildKit）不会传 TARGETARCH，退回 amd64。
 # ============================================================================
 
-ARG VERSION=1.1.0
+ARG VERSION=1.2.2
 FROM alpine:3.20
 
 ARG VERSION
+ARG TARGETARCH=amd64
 LABEL org.opencontainers.image.title="Strix Server" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.description="轻量级分布式运维监控系统 · 监控端"
@@ -22,7 +28,7 @@ RUN apk add --no-cache ca-certificates tzdata \
  && mkdir -p /data /releases
 
 # 二进制是 CGO_ENABLED=0 的纯静态文件，放进任何基础镜像都能跑
-COPY release/${VERSION}/strix-server-linux-amd64 /usr/local/bin/strix-server
+COPY release/${VERSION}/strix-server-linux-${TARGETARCH} /usr/local/bin/strix-server
 RUN chmod 0755 /usr/local/bin/strix-server
 
 ENV TZ=Asia/Shanghai \

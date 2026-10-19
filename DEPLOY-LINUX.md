@@ -28,21 +28,20 @@
 scp dist/strix-server-linux-amd64 root@<监控端IP>:/tmp/strix-server
 ```
 
-当前产物校验值（传完可核对）：
+当前产物校验值（传完可核对，`dist/SHA256SUMS.txt` 里就是这些值）：
 
-```
-# md5
-dd2ec410604b12b38e0642c60e4d796f  strix-server-linux-amd64
-5e6d0063a4bdb75317eeda426e1e3c93  strix-agent-linux-amd64      # 采集端，见 §7
+```bash
+# 在 dist/ 里核对全部 11 个产物
+sha256sum -c SHA256SUMS.txt
 
-# sha256
-ca300e62de113f9324d3877f92ff479736cbfdcabbb7e8289b2add8e4345495e  strix-server-linux-amd64
-b66bab0d7a314874e62b27a9bfbbc365e370f8c4bee29b391f4f87d79d79da1b  strix-agent-linux-amd64
+# 只核对本机要用的两个
+grep -E 'strix-(server|agent)-linux-amd64' SHA256SUMS.txt | sha256sum -c -
 ```
 
 > 需要别的架构（arm64 等）时在本仓库根目录执行 `./build.sh all`，一次产出 5 个平台 × 2 角色
 > 共 10 个文件到 `dist/`，命名形如 `strix-{server,agent}-{goos}-{goarch}[.exe]`
-> （与 `release.sh` 上传授权平台时使用的名字一致）。
+> （与 `release.sh` 上传授权平台时使用的名字一致）。Win7 / Server 2008 R2 的采集端还要额外
+> 跑 `./build-win7.sh` 生成 `strix-agent-windows-amd64-win7.exe`。
 
 ---
 
@@ -62,7 +61,7 @@ cd /opt/strix && ./strix-server -version
 ```
 
 ```
-strix-server v1.1.5，控制台账号：admin / strix（首次启动后请在启动参数中修改）
+strix-server v1.2.2，控制台账号：admin / strix（首次启动后请在启动参数中修改）
 授权验签公钥指纹：278D-4852-7191-E7CE（应与授权中心启动日志一致）
 服务端启动：监听 :9999，数据库 /opt/strix/data/strix.db，数据保留 30 天
 控制台访问地址：http://<本机IP>:9999

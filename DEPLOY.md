@@ -1,7 +1,8 @@
 # Strix 部署方案
 
-> 适用版本：v1.1.5+（构建时间 2026-10-13T14:01:00）· 项目地址：<https://github.com/sangxi/strix>
+> 适用版本：v1.2.2+（构建时间 2026-10-18T11:34:27）· 项目地址：<https://github.com/sangxi/Strix>
 > 授权中心：默认授权中心（地址已内置在程序里，无需手工配置）
+> 图文步骤：<https://opsmonitor-docs.pages.dev>
 
 本文是 Strix 从零到上线的完整部署方案，覆盖架构选型、部署拓扑、文件清单、
 容量规划、授权通信、上线检查、升级回滚与排障。控制台内置同一份教程（访问 `/docs`），
@@ -81,6 +82,18 @@
 > - **1.1.3**：平台自升级后**自动重启生效**（见上方）；新增 `-hub-restart`；启动时端口被占用会**自动重试最多 20 秒**。
 > - **1.1.4**：控制台「在线升级」「授权购买」页**不再展示授权中心域名**、也没有跳转到授权站的按钮（授权站遭 DDoS 期间降低暴露面），保留机器码与同步状态；前端加 `SHOW_HUB_URL` 开关，需要排障时改回 `true` 重新构建即恢复显示。
 > - **1.1.5**：修复「一键安装脚本把中文主机名清成一串 `-`」——`sanitizeAgentName()` 改为放行任意语言的字母/数字/组合符号（中文、日文等均可正常作主机名），元字符仍一律替换为 `-`，注入面不变；顺带修掉按字节截断会把汉字劈成半个的乱码隐患（改为按字符截断）。新增**主机重命名**与**删除主机**（主机列表行内按钮，限管理员）：改名会级联迁移指标、告警、系统事件、目录归属、采集端配置、监控项「作用主机」与资产关联，并登记「旧名 → 新名」映射，**仍在用旧名上报的采集端会自动归位，无需重装**；删除会连同历史数据一并清理（采集端若仍在运行会被重新发现）。
+> - **1.2.0**：**品牌更名为 Strix**（原 OpsMonitor）。二进制 `strix-*`、目录 `/opt/strix`、环境变量 `STRIX_*`、
+>   授权码前缀 `STRIX2-`、服务 `strix.service`、用户 `strix`、默认库 `strix.db`。旧标识全兼容：`OPSM_*`
+>   环境变量回落、`OPSM2-`/`OPSM1-`/`WGC-` 存量授权码仍验、同级目录下的 `opsmonitor.db` 自动沿用
+>   （启动日志会打印「沿用更名前的数据库文件」）。**机器码与设备密钥的历史盐值永久冻结**，老授权不需要重签。
+>   老部署换一个二进制并重启即可，无需迁移数据。
+> - **1.2.1**：**告警闭环** —— 告警可认领/释放（记录认领人与时间）、可写处理备注；新增**静默规则**（按
+>   主机 + 监控项 + 级别 + 时间段匹配，静默期内告警照常入库留痕但**不发邮件、不推机器人**）；**未认领催办**
+>   （超过 `alertEscalateMin` 分钟仍无人认领再推一轮，填 `0` 关闭）。告警中心新增四张指标卡与「处理状态」筛选，
+>   导出 CSV/Excel 带出认领人与备注。库变更由 `migrateExtra()` 启动时自动补列/建表。
+> - **1.2.2**：**界面收束**（纯前端）—— 各列表操作列由文字按钮改为图标按钮（悬停有中文提示），
+>   主机表操作列宽度 300px → 219px；空白列表改为虚线提示条；仪表盘 6 张指标卡排满一行。
+>   后端接口、库结构、采集端逻辑与 1.2.1 完全一致。
 
 ---
 
@@ -262,6 +275,42 @@ curl -sS https://<你的授权中心地址>/healthz     # 期望 {"ok":true,...}
 ---
 
 ## 三、部署方式
+
+### 3.0 先选对产物：平台 × 架构
+
+一个版本共 **11 个产物**：监控端（server）与采集端（agent）各 5 个平台组合，外加 1 个 Windows 旧系统兼容版。
+命名规则 `strix-<角色>-<系统>-<架构>[.exe]`。
+
+| 系统 | 架构 | 监控端 | 采集端 | 说明 |
+| --- | --- | --- | --- | --- |
+| Linux | amd64 | `strix-server-linux-amd64` | `strix-agent-linux-amd64` | 绝大多数云主机 / 虚拟机 |
+| Linux | arm64 | `strix-server-linux-arm64` | `strix-agent-linux-arm64` | 鲲鹏 920 / 飞腾 / 倚天 710 / 树莓派 64 位 |
+| macOS | amd64 | `strix-server-darwin-amd64` | `strix-agent-darwin-amd64` | Intel 芯片 |
+| macOS | arm64 | `strix-server-darwin-arm64` | `strix-agent-darwin-arm64` | Apple M1/M2/M3/M4 |
+| Windows | amd64 | `strix-server-windows-amd64.exe` | `strix-agent-windows-amd64.exe` | Win10/11、Server 2016+ |
+| Windows | amd64（旧系统） | — | `strix-agent-windows-amd64-win7.exe` | Win7 SP1 / Server 2008 R2 |
+
+**四条硬约束：**
+
+1. **只有 64 位。** 没有 386 / armv7 产物。32 位系统（如 32 位 Raspberry Pi OS，`uname -m` 显示 `armv7l`）
+   会报 `cannot execute binary file: Exec format error`，请重装 64 位系统，不要找 `arm` 版本。
+2. **Windows 只有 amd64。** Windows on ARM 只能通过 x64 模拟层跑标准版，生产不建议。
+3. **Linux 不分发行版。** 产物是纯静态链接（校验：`PT_INTERP` 不存在、不引用 `libc.so` / `ld-musl`），
+   Debian / Ubuntu / CentOS 7 / RHEL / Rocky / Alma / Fedora / openEuler / 麒麟 / 统信 / Alpine 通用。
+4. **旧系统专用版不可省参数。** Win7 / Server 2008 R2 必须用 `-win7.exe`（Go 1.21.5+ 起随机源依赖
+   Win8 才有的 `bcryptprimitives.dll`，普通版在 runtime 初始化阶段静默崩溃、不留日志），
+   且启动参数必须带 `-remote-config off -update off` —— 平台下发的 `updateMode` 是**全局**默认 `auto`，
+   否则它 30 分钟内会把自己换成普通版，继续闪退。
+
+**自查与校验：**
+
+```bash
+uname -m                 # x86_64 -> amd64 ; aarch64/arm64 -> arm64
+# Windows PowerShell: $env:PROCESSOR_ARCHITECTURE   ->  AMD64
+
+sha256sum -c SHA256SUMS.txt                       # 11 个产物逐一校验
+./strix-server-linux-amd64 -version               # 自报 (linux/amd64)，与文件名不一致说明被改名错了
+```
 
 ### 3.1 Docker Compose（推荐）
 

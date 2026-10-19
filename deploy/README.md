@@ -46,7 +46,7 @@ CPU 架构只需要选对文件：
 
 ## 部署前先确认二进制来源
 
-二进制在仓库的 `release/<版本>/` 下（例如 `release/1.1.5/`），文件名形如
+二进制在仓库的 `release/<版本>/` 下（例如 `release/1.2.2/`），文件名形如
 `strix-server-{linux,windows,darwin}-{amd64,arm64}[.exe]`。
 
 各平台的 `install.sh` / `install.ps1` 会自己往上找这些目录，通常不用手动指定路径；
