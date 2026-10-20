@@ -107,6 +107,9 @@ func (s *Store) migrateExtra() error {
 		{"alert", "note", "ALTER TABLE alert ADD COLUMN note TEXT"},
 		// 未认领超时后是否已发过升级提醒，防止每轮维护任务重复推送
 		{"alert", "escalated", "ALTER TABLE alert ADD COLUMN escalated INTEGER DEFAULT 0"},
+		// 发布记录区分「正式版 / 旧系统兼容版」（1.2.3）：Windows 2012 R2 及更早
+		// 系统需要 Go 1.20 构建的采集端，同版本同平台要能并存两份产物。
+		{"release", "variant", "ALTER TABLE release ADD COLUMN variant TEXT DEFAULT ''"},
 	}
 	for _, a := range adds {
 		exist, err := s.hasColumn(a.table, a.col)
@@ -123,6 +126,17 @@ func (s *Store) migrateExtra() error {
 	// 保证管理员拥有全部权限
 	if _, err := s.wdb.Exec(`UPDATE user SET role='admin', enabled=1 WHERE role IS NULL OR role=''`); err != nil {
 		return err
+	}
+	// 唯一键补上 variant：老库里 uniq_release 只有 (version,goos,goarch)，
+	// 那样同一版本上传兼容版会与正式版冲突。这里重建一次（幂等，代价极小）。
+	// 必须用纯列名建索引：AddRelease 的 ON CONFLICT 目标要和它逐列对上，
+	// 表达式索引（IFNULL(...)）对不上冲突目标。
+	if _, err := s.wdb.Exec(`DROP INDEX IF EXISTS uniq_release`); err != nil {
+		return fmt.Errorf("重建发布唯一索引失败: %w", err)
+	}
+	if _, err := s.wdb.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_release
+		ON release(version, goos, goarch, variant)`); err != nil {
+		return fmt.Errorf("重建发布唯一索引失败: %w", err)
 	}
 	return nil
 }

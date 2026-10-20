@@ -1092,7 +1092,36 @@ function renderReleaseWarn() {
   }
 
   const hit = list.find((r) => r.os === p.os && r.arch === p.arch);
-  if (hit) { el.innerHTML = ''; return; }
+  if (hit) {
+    // Windows 有「正式版 / 兼容版」两套产物，选错会让安装在一半失败，
+    // 所以按缺哪一套分别给出结论，而不是只说「已发布」。
+    if (!hit.version) {
+      el.innerHTML = `<div class="warn-box danger">
+        <strong>Windows / ${esc(p.arch)} 只发布了旧系统兼容版，Windows 10 / Server 2016 以上反而装不上。</strong>
+        请到 <a href="#/releases">版本发布</a> 再上传同版本的正式版（不勾「旧系统兼容版」）。
+      </div>`;
+      return;
+    }
+    if (p.os === 'windows' && !hit.legacy) {
+      el.innerHTML = `<div class="warn-box">
+        <strong>Windows 旧系统（Windows 7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2）现在还装不上。</strong>
+        当前只有正式版 ${esc(hit.version)}，它要求 Windows 10 / Server 2016 以上，在这些系统上
+        会<strong>启动即退出且没有任何日志</strong>。请到 <a href="#/releases">版本发布</a>
+        上传同版本的<strong>旧系统兼容版</strong>（勾选「旧系统兼容版」），安装命令会自动选它。
+      </div>`;
+      return;
+    }
+    if (p.os === 'windows' && hit.legacy) {
+      el.innerHTML = `<div class="hint-box">
+        已备好两套采集端：Windows 10 / Server 2016 以上用正式版 <b>${esc(hit.version)}</b>，
+        Windows 7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 自动改用兼容版
+        <b>${esc(hit.legacyVersion)}</b>。同一份命令，脚本会自己判断系统版本。
+      </div>`;
+      return;
+    }
+    el.innerHTML = '';
+    return;
+  }
 
   const others = list.map((r) => `${cn(r.os)} / ${r.arch}`).join('、');
   el.innerHTML = `<div class="warn-box danger">
@@ -1430,8 +1459,10 @@ async function renderUpgrade() {
       <div class="seg-note" style="margin-top:10px">改为默认授权中心后重启服务端即可恢复自动同步；
         若仍在授权购买页手工导入授权码，可点下方按钮从本地发布物列表手动升级。</div>
     </div>`);
+    html += await releaseAdminPanel();
     app().innerHTML = html;
     renderUpgradeOfflineActions();
+    bindReleaseAdmin();
     return;
   }
 
@@ -1545,7 +1576,12 @@ async function renderUpgrade() {
     <span class="panel-note">平台每 ${Math.max(1, Math.round((data.hub && data.hub.intervalSec) || 300) / 60)} 分钟自动同步一次</span>
   </div>`;
 
+  // 旧系统兼容版没法走授权系统（那边只有一份产物），只能从本地上传，
+  // 所以这块在离线与在线两种模式下都要出现。
+  html += await releaseAdminPanel();
+
   app().innerHTML = html;
+  bindReleaseAdmin();
 
   $('#upCheck').onclick = async () => {
     try {
@@ -1584,6 +1620,127 @@ function renderUpgradeOfflineActions() {
   btn.onclick = () => {
     toast('当前为离线模式，如需自动同步请去掉 -hub 参数后重启（地址已内置，不在界面显示）', true);
   };
+}
+
+/* ---------------- 采集端发布物：本地上传与管理 ---------------- */
+
+// 为什么页面上要专门解释「兼容版」：
+// 运维看到这三个字时，必须先知道它和正式版的区别，否则不会想到去勾。
+const LEGACY_NOTE = 'Go 1.21 起编译的采集端要求 Windows 10 / Server 2016 以上，'
+  + '在 Windows 7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 上启动即退出且没有任何日志。'
+  + '这些系统必须用 Go 1.20 构建的兼容版（build-win7.sh 产出），同一个版本号可与正式版并存。';
+
+// releaseAdminPanel 渲染「本地上传 + 发布记录」面板。
+// 离线模式下这是接入采集端的唯一途径；在线模式下平台会自动从授权系统缓存，
+// 这个面板主要用来补旧系统兼容版。
+async function releaseAdminPanel() {
+  let list = [];
+  try {
+    const d = await get('/api/releases');
+    list = asList(d.list);
+  } catch (e) { list = []; }
+
+  const rows = list.length
+    ? list.map((r) => {
+      const legacy = r.variant === 'legacy';
+      return `<tr>
+        <td class="mono">${esc(r.goos)}/${esc(r.goarch)}${legacy ? ' <span class="badge warn">兼容版</span>' : ''}</td>
+        <td><b>${esc(r.version)}</b></td>
+        <td>${((r.size || 0) / 1048576).toFixed(1)} MB</td>
+        <td>${r.isLatest ? '<span class="badge ok">下发中</span>' : '—'}</td>
+        <td>${r.downloads || 0}</td>
+        <td>${esc(r.notes || '—')}</td>
+        <td><span class="row-acts">
+          ${r.isLatest ? '' : `<button class="ico-btn" data-rel-latest="${esc(r.id)}" title="设为该平台的下发版本">${icon('check')}</button>`}
+          <button class="ico-btn danger" data-rel-del="${esc(r.id)}" title="删除这条记录并清理磁盘文件">${icon('trash')}</button>
+        </span></td></tr>`;
+    }).join('')
+    : `<tr><td colspan="7"><div class="empty-strip">${icon('box')}<span>还没有本地上传的发布物。在线模式下平台会自动从授权系统缓存，通常无需手工上传。</span></div></td></tr>`;
+
+  return panel('采集端发布物（本地上传 / 兼容版）', `<div class="panel-body">
+    <div class="table-wrap"><table class="table"><thead><tr>
+      <th>平台</th><th>版本</th><th>大小</th><th>下发</th><th>下载</th><th>说明</th><th>操作</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="form-grid" style="margin-top:16px">
+      <label>版本号<input id="relVer" placeholder="与服务端一致，如 1.2.3"></label>
+      <label>目标系统<select id="relOs">
+        <option value="windows">Windows</option><option value="linux">Linux</option><option value="darwin">macOS</option>
+      </select></label>
+      <label>CPU 架构<select id="relArch">
+        <option value="amd64">amd64</option><option value="arm64">arm64</option>
+        <option value="386">386</option><option value="arm">arm</option>
+      </select></label>
+      <label class="full">程序文件<input id="relFile" type="file"></label>
+      <label class="full">更新说明<input id="relNotes" placeholder="可留空"></label>
+      <label class="full" style="display:flex;gap:8px;align-items:flex-start">
+        <input id="relLegacy" type="checkbox" style="width:auto;margin-top:4px">
+        <span><b>旧系统兼容版</b><br><span class="panel-note">${LEGACY_NOTE}</span></span>
+      </label>
+      <label class="full" style="display:flex;gap:8px;align-items:center">
+        <input id="relLatest" type="checkbox" style="width:auto">
+        <span>上传后设为该平台的下发版本（该平台首个版本会自动设为最新）</span>
+      </label>
+    </div>
+    <div class="toolbar" style="margin-top:12px">
+      <button class="btn primary" id="relUpload">上传并登记</button>
+      <span class="spacer"></span>
+      <span class="panel-note">单文件上限 200MB；同版本、同平台、同类型的重复上传会覆盖</span>
+    </div>
+  </div>`);
+}
+
+// bindReleaseAdmin 绑定上传表单与列表操作。
+function bindReleaseAdmin() {
+  const btn = $('#relUpload');
+  if (!btn) return;
+
+  btn.onclick = async () => {
+    const v = ($('#relVer').value || '').trim();
+    const f = $('#relFile').files && $('#relFile').files[0];
+    if (!v) { toast('请先填版本号', true); return; }
+    if (!f) { toast('请选择采集端程序文件', true); return; }
+    const fd = new FormData();
+    fd.append('version', v);
+    fd.append('goos', $('#relOs').value);
+    fd.append('goarch', $('#relArch').value);
+    fd.append('notes', ($('#relNotes').value || '').trim());
+    if ($('#relLegacy').checked) fd.append('legacy', '1');
+    if ($('#relLatest').checked) fd.append('latest', '1');
+    fd.append('file', f);
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '上传中…';
+    try {
+      await request('/api/releases', { method: 'POST', body: fd });
+      toast('上传完成，已登记为发布记录');
+      render();
+    } catch (e) {
+      toast('上传失败：' + e.message, true);
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  };
+
+  document.querySelectorAll('[data-rel-latest]').forEach((b) => {
+    b.onclick = async () => {
+      try {
+        await post('/api/releases/' + b.dataset.relLatest + '/latest', {});
+        toast('已设为该平台的下发版本');
+        render();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+
+  document.querySelectorAll('[data-rel-del]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('删除这条发布记录？磁盘上的文件也会一并删除，已安装的采集端不受影响。')) return;
+      try {
+        await del('/api/releases/' + b.dataset.relDel);
+        toast('已删除');
+        render();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
 }
 
 /* ---------------- 授权购买 ---------------- */

@@ -115,9 +115,16 @@ func checkUpdate(cfg config.Agent, client *http.Client, base, wgToken, exe strin
 }
 
 // fetchUpdateInfo 向服务端查询本平台的最新版本。
+//
+// 兼容版（Go 1.20 构建，跑在 Windows 7 / Server 2012 R2 这类系统上）必须带
+// legacy=1：否则平台会把正式版下发给它，替换后进程直接起不来 ——
+// 现象是「升级完成后采集端消失」，且没有任何日志可看（崩在 runtime 初始化）。
 func fetchUpdateInfo(client *http.Client, base, wgToken string) (*updateInfo, error) {
 	url := fmt.Sprintf("%s/agent/version?os=%s&arch=%s&wgToken=%s&current=%s",
 		base, runtime.GOOS, runtime.GOARCH, wgToken, version.Version)
+	if isLegacyWindowsBuild() {
+		url += "&legacy=1"
+	}
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
@@ -298,4 +305,14 @@ func truncateText(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// isLegacyWindowsBuild 判断当前这个采集端是不是「旧系统兼容版」。
+//
+// 判据不是运行时的系统版本，而是**编译时注入的标记**：兼容版与正式版是两份
+// 不同的二进制，只有兼容版自己知道自己是兼容版。按系统版本判断反而会出错 ——
+// 兼容版同样能跑在 Windows 10 上，那时它照样只能接兼容版的升级流，
+// 否则升级一次就变成正式版，等于把这份机器从「能跑」推到「下次换机器才崩」。
+func isLegacyWindowsBuild() bool {
+	return runtime.GOOS == "windows" && strings.TrimSpace(version.LegacyWindows) != ""
 }

@@ -61,11 +61,12 @@ func (s *Server) handleReleases(w http.ResponseWriter, r *http.Request) {
 		}
 		stats, _ := s.store.ReleaseStats()
 		hosts, _ := s.store.ListHosts()
-		// 统计各平台待升级主机数，页面直接展示「有多少台需要升级」
+		// 统计各平台待升级主机数，页面直接展示「有多少台需要升级」。
+		// 只按正式版统计：兼容版是给旧系统兜底的，重复计入会让这个数字翻倍。
 		stale := map[string]int{}
 		latest := map[string]string{}
 		for _, rel := range list {
-			if rel.IsLatest {
+			if rel.IsLatest && rel.Variant == "" {
 				latest[rel.Goos+"/"+rel.Goarch] = rel.Version
 			}
 		}
@@ -108,6 +109,16 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 	notes := strings.TrimSpace(r.FormValue("notes"))
 	minVer := strings.TrimSpace(r.FormValue("minVersion"))
 	makeLatest := r.FormValue("latest") == "true" || r.FormValue("latest") == "1"
+	// 旧系统兼容版（Windows 7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2）。
+	// 与正式版同版本号并存，靠 variant 区分。
+	variant := ""
+	if v := strings.ToLower(strings.TrimSpace(r.FormValue("legacy"))); v == "1" || v == "true" || v == "yes" {
+		if goos != "windows" {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "「旧系统兼容版」只对 Windows 有意义，其它平台请取消勾选"})
+			return
+		}
+		variant = store.VariantLegacy
+	}
 
 	if ver == "" || goos == "" || goarch == "" {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "版本号、操作系统、CPU 架构均为必填"})
@@ -138,6 +149,9 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 		ext = ".exe"
 	}
 	name := fmt.Sprintf("strix-agent-%s-%s", goos, goarch)
+	if variant != "" {
+		name += "-" + variant // 与正式版放在同一版本目录里，文件名必须能区分
+	}
 	// 版本目录 + 平台文件名，便于人工核对与回滚
 	dir := filepath.Join(s.releasesDir(), ver)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -174,7 +188,7 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 	_ = os.Chmod(dstPath, 0o755)
 
 	rel := &store.Release{
-		Version: ver, Goos: goos, Goarch: goarch,
+		Version: ver, Goos: goos, Goarch: goarch, Variant: variant,
 		Filename: name + ext, Path: dstPath, Size: size,
 		SHA256: hex.EncodeToString(h.Sum(nil)), Notes: notes,
 		MinVersion: minVer, IsLatest: makeLatest,
@@ -183,27 +197,29 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
 		return
 	}
-	saved, err := s.store.GetReleaseByVersion(goos, goarch, ver)
+	saved, err := s.store.GetReleaseByVersion(goos, goarch, ver, variant)
 	if err != nil || saved == nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": "发布记录写入后读取失败"})
 		return
 	}
-	// 勾选了「设为该平台最新版本」才推送；首个版本默认自动成为最新
-	if makeLatest || s.isFirstRelease(goos, goarch, saved.ID) {
+	// 勾选了「设为该平台最新版本」才推送；该平台该变体的首个版本默认自动成为最新
+	if makeLatest || s.isFirstRelease(goos, goarch, variant, saved.ID) {
 		_ = s.store.SetReleaseLatest(saved.ID)
 	}
 	writeJSON(w, map[string]any{"ok": true, "release": saved})
 }
 
-// isFirstRelease 判断该平台上是否只有这一条记录，是则自动设为最新。
-func (s *Server) isFirstRelease(goos, goarch, id string) bool {
+// isFirstRelease 判断该平台该变体上是否只有这一条记录，是则自动设为最新。
+// 兼容版与正式版各算各的：只上传了兼容版时，它同样应该自动成为最新，
+// 否则要用户再手工点一次「设为最新」才生效。
+func (s *Server) isFirstRelease(goos, goarch, variant, id string) bool {
 	list, err := s.store.ListReleases()
 	if err != nil {
 		return false
 	}
 	n := 0
 	for _, r := range list {
-		if r.Goos == goos && r.Goarch == goarch {
+		if r.Goos == goos && r.Goarch == goarch && r.Variant == variant {
 			n++
 		}
 	}
@@ -257,6 +273,19 @@ func (s *Server) agentTokenOK(r *http.Request) bool {
 	return s.cfg.TokenOK(got)
 }
 
+// releaseVariant 从请求里判定要下发哪种产物。
+//
+// legacy=1 表示「旧系统兼容版」：Windows 7 / 8 / 8.1 / Server 2008 R2 /
+// 2012 / 2012 R2 这些系统跑不了当前工具链（Go 1.21+ 要求 Win10 起）构建的
+// 二进制，必须换成 Go 1.20 编的兼容版。安装脚本与采集端自升级都会带上这个参数。
+func releaseVariant(r *http.Request) string {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("legacy"))) {
+	case "1", "true", "yes", "on":
+		return store.VariantLegacy
+	}
+	return ""
+}
+
 // handleAgentVersion 采集端查询自己所在平台的最新版本。
 // 返回 force=true 时表示当前版本低于该平台设置的最低版本，必须升级。
 func (s *Server) handleAgentVersion(w http.ResponseWriter, r *http.Request) {
@@ -271,25 +300,36 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "缺少 os / arch 参数"})
 		return
 	}
-	rel, err := s.store.LatestRelease(goos, goarch)
+	variant := releaseVariant(r)
+	rel, err := s.store.LatestRelease(goos, goarch, variant)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
 		return
 	}
 	if rel == nil {
+		msg := "服务端尚未发布该平台的采集端版本"
+		if variant == store.VariantLegacy {
+			msg = "服务端尚未发布该平台的「旧系统兼容版」采集端。" +
+				"该主机是 Windows 7 / 8 / 8.1 或 Server 2008 R2 / 2012 / 2012 R2，" +
+				"只能用兼容版；请在控制台「版本发布」上传对应平台的兼容包（勾选「旧系统兼容版」）"
+		}
 		writeJSON(w, map[string]any{
 			"ok": true, "version": "", "hasUpdate": false,
-			"server": version.Version, "msg": "服务端尚未发布该平台的采集端版本",
+			"server": version.Version, "msg": msg,
 		})
 		return
 	}
 	token := config.MD5Token(s.cfg.Token)
 	url := fmt.Sprintf("%s/agent/download?os=%s&arch=%s&version=%s&wgToken=%s",
 		s.baseURL(r), rel.Goos, rel.Goarch, rel.Version, token)
+	if rel.Variant != "" {
+		url += "&legacy=1"
+	}
 	force := rel.MinVersion != "" && version.IsNewer(rel.MinVersion, current)
 	writeJSON(w, map[string]any{
 		"ok":         true,
 		"version":    rel.Version,
+		"variant":    rel.Variant,
 		"hasUpdate":  version.IsNewer(rel.Version, current),
 		"force":      force,
 		"url":        url,
@@ -312,12 +352,13 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 	goos := strings.TrimSpace(r.URL.Query().Get("os"))
 	goarch := strings.TrimSpace(r.URL.Query().Get("arch"))
 	ver := strings.TrimSpace(r.URL.Query().Get("version"))
+	variant := releaseVariant(r)
 	var rel *store.Release
 	var err error
 	if ver != "" {
-		rel, err = s.store.GetReleaseByVersion(goos, goarch, ver)
+		rel, err = s.store.GetReleaseByVersion(goos, goarch, ver, variant)
 	} else {
-		rel, err = s.store.LatestRelease(goos, goarch)
+		rel, err = s.store.LatestRelease(goos, goarch, variant)
 	}
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
@@ -635,10 +676,21 @@ $Goarch = switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 Write-Host "    平台 windows/$Goarch"
 
+# 旧系统要走兼容版：Go 1.21 起编译出的程序要求 Windows 10 / Server 2016 以上，
+# 在 Windows 7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 上会直接起不来
+# （崩在 runtime 初始化，没有日志、没有报错框）。兼容版是 Go 1.20 构建的，
+# 这些系统都能跑，装的时候必须显式告诉平台要哪一份。
+$OsVer  = [Environment]::OSVersion.Version
+$Legacy = ''
+if ($OsVer.Major -lt 10) {
+  $Legacy = '&legacy=1'
+  Write-Host ("    系统版本 {0}.{1}，属于旧版 Windows，将安装「旧系统兼容版」采集端" -f $OsVer.Major, $OsVer.Minor)
+}
+
 Write-Host '==> 检查与平台的连通性'
 # 先探一次平台：连不通时直接把排查方向说清楚，而不是让后面的下载抛一串 .NET 异常
 try {
-  $null = Invoke-WebRequest -UseBasicParsing -Uri "$Server/agent/version?os=windows&arch=$Goarch&wgToken=$TokenHash&current=0.0.0" -TimeoutSec 15
+  $null = Invoke-WebRequest -UseBasicParsing -Uri "$Server/agent/version?os=windows&arch=$Goarch&wgToken=$TokenHash&current=0.0.0$Legacy" -TimeoutSec 15
 } catch {
   # 有 HTTP 响应说明网络本身是通的（例如密钥不匹配返回 401），交给后面的接口去校验
   if (-not $_.Exception.Response) {
@@ -655,13 +707,20 @@ try {
 }
 
 Write-Host '==> 查询服务端发布的最新版本'
-$meta = Invoke-RestMethod -Uri "$Server/agent/version?os=windows&arch=$Goarch&wgToken=$TokenHash&current=0.0.0" -TimeoutSec 15
+$meta = Invoke-RestMethod -Uri "$Server/agent/version?os=windows&arch=$Goarch&wgToken=$TokenHash&current=0.0.0$Legacy" -TimeoutSec 15
 if (-not $meta.version) {
   Write-Host ''
-  Write-Host "服务端尚未发布 windows/$Goarch 的采集端版本，安装无法继续。" -ForegroundColor Red
-  Write-Host '  请在服务端控制台的「版本发布」页面上传该平台的采集端程序：'
-  Write-Host "    目标系统：Windows     CPU 架构：$Goarch     版本号：与本次构建一致"
-  Write-Host '  或在服务端源码目录执行 ./release.sh，会一次性构建并上传全部平台的采集端。'
+  if ($Legacy) {
+    Write-Host "服务端尚未发布 windows/$Goarch 的「旧系统兼容版」采集端，安装无法继续。" -ForegroundColor Red
+    Write-Host '  本机是旧版 Windows（Win7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2），只能用兼容版：'
+    Write-Host '    控制台「版本发布」→ 上传采集端 → 目标系统选 Windows、架构选 amd64，'
+    Write-Host '    并勾选「旧系统兼容版」，版本号与本次构建一致。'
+  } else {
+    Write-Host "服务端尚未发布 windows/$Goarch 的采集端版本，安装无法继续。" -ForegroundColor Red
+    Write-Host '  请在服务端控制台的「版本发布」页面上传该平台的采集端程序：'
+    Write-Host "    目标系统：Windows     CPU 架构：$Goarch     版本号：与本次构建一致"
+    Write-Host '  或在服务端源码目录执行 ./release.sh，会一次性构建并上传全部平台的采集端。'
+  }
   Write-Host "  控制台地址：$Server"
   throw '安装中止：服务端尚未发布该平台的采集端版本。'
 }
@@ -670,7 +729,7 @@ Write-Host "    最新版本 $($meta.version)"
 Write-Host '==> 从平台下载采集端'
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
 $tmp = Join-Path $InstallDir '.strix-agent.download'
-Invoke-WebRequest -UseBasicParsing -Uri "$Server/agent/download?os=windows&arch=$Goarch&wgToken=$TokenHash" -OutFile $tmp -TimeoutSec 300
+Invoke-WebRequest -UseBasicParsing -Uri "$Server/agent/download?os=windows&arch=$Goarch&wgToken=$TokenHash$Legacy" -OutFile $tmp -TimeoutSec 300
 
 if ($meta.sha256) {
   $actual = (Get-FileHash $tmp -Algorithm SHA256).Hash.ToLower()

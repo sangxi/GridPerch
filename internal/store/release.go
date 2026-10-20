@@ -8,12 +8,21 @@ import (
 
 /* ---------------- 采集端版本发布 ---------------- */
 
+// VariantLegacy 旧系统兼容版。
+//
+// Windows 采集端有两种构建：正式版（当前 Go 工具链，官方要求 Windows 10 /
+// Server 2016 起）与兼容版（Go 1.20 构建，可跑在 Windows 7 / 8 / 8.1 /
+// Server 2008 R2 / 2012 / 2012 R2）。同一版本号、同一平台会有两份产物，
+// 所以发布记录必须用 variant 区分，否则后上传的会把先上传的顶掉。
+const VariantLegacy = "legacy"
+
 // Release 一条采集端发布记录：某个平台（goos/goarch）的一个版本。
 type Release struct {
 	ID         string `json:"id"`
 	Version    string `json:"version"`
 	Goos       string `json:"goos"`
 	Goarch     string `json:"goarch"`
+	Variant    string `json:"variant"` // "" = 正式版；legacy = 旧系统兼容版
 	Filename   string `json:"filename"`
 	Path       string `json:"path"` // 二进制在服务端磁盘上的存放路径
 	Size       int64  `json:"size"`
@@ -31,9 +40,13 @@ func (s *Store) schemaRelease() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS release (
 			id TEXT PRIMARY KEY, version TEXT, goos TEXT, goarch TEXT,
+			variant TEXT DEFAULT '',
 			filename TEXT, path TEXT, size INTEGER DEFAULT 0, sha256 TEXT,
 			notes TEXT, is_latest INTEGER DEFAULT 0, min_version TEXT,
 			downloads INTEGER DEFAULT 0, archived INTEGER DEFAULT 0, create_time TEXT)`,
+		// 唯一键只到 (version,goos,goarch)，variant 由 migrateExtra 补列后重建索引。
+		// 不能在这里直接写四列：老库此时还没有 variant 列，CREATE INDEX 会失败并
+		// 让整个升级启动不起来（建表语句带 variant 只对全新库有效）。
 		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_release ON release(version, goos, goarch)`,
 		`CREATE INDEX IF NOT EXISTS idx_release_platform ON release(goos, goarch, is_latest)`,
 		// 当前授权码，单行存放
@@ -58,24 +71,24 @@ func (s *Store) AddRelease(r *Release) error {
 		r.CreateTime = nowStr()
 	}
 	_, err := s.wdb.Exec(`INSERT INTO release
-		(id, version, goos, goarch, filename, path, size, sha256, notes, is_latest, min_version, downloads, archived, create_time)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(version, goos, goarch) DO UPDATE SET
+		(id, version, goos, goarch, variant, filename, path, size, sha256, notes, is_latest, min_version, downloads, archived, create_time)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(version, goos, goarch, variant) DO UPDATE SET
 			filename=excluded.filename, path=excluded.path, size=excluded.size, sha256=excluded.sha256,
 			notes=excluded.notes, min_version=excluded.min_version, create_time=excluded.create_time`,
-		r.ID, r.Version, r.Goos, r.Goarch, r.Filename, r.Path, r.Size, r.SHA256, r.Notes,
+		r.ID, r.Version, r.Goos, r.Goarch, r.Variant, r.Filename, r.Path, r.Size, r.SHA256, r.Notes,
 		boolInt(r.IsLatest), r.MinVersion, r.Downloads, boolInt(r.Archived), r.CreateTime)
 	return err
 }
 
-const releaseCols = `id, version, IFNULL(goos,''), IFNULL(goarch,''), IFNULL(filename,''), IFNULL(path,''),
+const releaseCols = `id, version, IFNULL(goos,''), IFNULL(goarch,''), IFNULL(variant,''), IFNULL(filename,''), IFNULL(path,''),
 	IFNULL(size,0), IFNULL(sha256,''), IFNULL(notes,''), IFNULL(is_latest,0), IFNULL(min_version,''),
 	IFNULL(downloads,0), IFNULL(archived,0), IFNULL(create_time,'')`
 
 func scanRelease(row interface{ Scan(...any) error }) (*Release, error) {
 	var r Release
 	var latest, archived int
-	if err := row.Scan(&r.ID, &r.Version, &r.Goos, &r.Goarch, &r.Filename, &r.Path, &r.Size, &r.SHA256,
+	if err := row.Scan(&r.ID, &r.Version, &r.Goos, &r.Goarch, &r.Variant, &r.Filename, &r.Path, &r.Size, &r.SHA256,
 		&r.Notes, &latest, &r.MinVersion, &r.Downloads, &archived, &r.CreateTime); err != nil {
 		return nil, err
 	}
@@ -107,12 +120,14 @@ func (s *Store) GetRelease(id string) (*Release, error) {
 	return scanRelease(s.rdb.QueryRow(`SELECT `+releaseCols+` FROM release WHERE id=?`, id))
 }
 
-// LatestRelease 返回某平台当前下发的版本：优先取标记为最新的记录，
-// 没有标记时退回该平台版本号最高的一条。
-func (s *Store) LatestRelease(goos, goarch string) (*Release, error) {
+// LatestRelease 返回某平台某变体当前下发的版本：优先取标记为最新的记录，
+// 没有标记时退回该平台该变体最新入库的一条。
+// variant 传空串即正式版；store.VariantLegacy 为旧系统兼容版。
+func (s *Store) LatestRelease(goos, goarch, variant string) (*Release, error) {
 	r, err := scanRelease(s.rdb.QueryRow(`SELECT `+releaseCols+`
-		FROM release WHERE goos=? AND goarch=? AND IFNULL(archived,0)=0 AND IFNULL(is_latest,0)=1
-		ORDER BY create_time DESC LIMIT 1`, goos, goarch))
+		FROM release WHERE goos=? AND goarch=? AND IFNULL(variant,'')=?
+		  AND IFNULL(archived,0)=0 AND IFNULL(is_latest,0)=1
+		ORDER BY create_time DESC LIMIT 1`, goos, goarch, variant))
 	if err == nil {
 		return r, nil
 	}
@@ -120,25 +135,28 @@ func (s *Store) LatestRelease(goos, goarch string) (*Release, error) {
 		return nil, err
 	}
 	r, err = scanRelease(s.rdb.QueryRow(`SELECT `+releaseCols+`
-		FROM release WHERE goos=? AND goarch=? AND IFNULL(archived,0)=0
-		ORDER BY create_time DESC LIMIT 1`, goos, goarch))
+		FROM release WHERE goos=? AND goarch=? AND IFNULL(variant,'')=? AND IFNULL(archived,0)=0
+		ORDER BY create_time DESC LIMIT 1`, goos, goarch, variant))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return r, err
 }
 
-// GetReleaseByVersion 按平台与版本号查发布记录，供指定版本回滚下载。
-func (s *Store) GetReleaseByVersion(goos, goarch, ver string) (*Release, error) {
+// GetReleaseByVersion 按平台、变体与版本号查发布记录，供指定版本回滚下载。
+func (s *Store) GetReleaseByVersion(goos, goarch, ver, variant string) (*Release, error) {
 	r, err := scanRelease(s.rdb.QueryRow(`SELECT `+releaseCols+`
-		FROM release WHERE goos=? AND goarch=? AND version=?`, goos, goarch, ver))
+		FROM release WHERE goos=? AND goarch=? AND version=? AND IFNULL(variant,'')=?`,
+		goos, goarch, ver, variant))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return r, err
 }
 
-// SetReleaseLatest 把某条记录标记为它所在平台的最新版本，同平台其余记录取消标记。
+// SetReleaseLatest 把某条记录标记为「它所在平台 + 它所在变体」的最新版本，
+// 同平台同变体其余记录取消标记。
+// 兼容版与正式版必须分开算，否则上传兼容版会把正式版从最新位上顶下来。
 func (s *Store) SetReleaseLatest(id string) error {
 	r, err := s.GetRelease(id)
 	if err != nil {
@@ -149,7 +167,8 @@ func (s *Store) SetReleaseLatest(id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`UPDATE release SET is_latest=0 WHERE goos=? AND goarch=?`, r.Goos, r.Goarch); err != nil {
+	if _, err := tx.Exec(`UPDATE release SET is_latest=0
+		WHERE goos=? AND goarch=? AND IFNULL(variant,'')=?`, r.Goos, r.Goarch, r.Variant); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`UPDATE release SET is_latest=1, archived=0 WHERE id=?`, id); err != nil {

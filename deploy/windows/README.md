@@ -2,10 +2,10 @@
 
 需要 64 位 Windows。**官方支持 Windows 10 / 11、Windows Server 2016 及以上。**
 
-> 工具链的硬性下限其实是 **Windows 8 / Server 2012**（Go 1.21.5 起 runtime 依赖
-> `bcryptprimitives.dll`，该 DLL 自 Windows 8 起才有），但这几个版本不在官方支持列表内，
-> 只作参考。**Windows 7 SP1 / Server 2008 R2 无法运行当前产物** —— 采集端的兼容方案
-> 见文末「采集端（agent）」一章。
+> 这个限制来自工具链本身：Go 1.21 起编译出的程序最低要求 Windows 10 / Server 2016，
+> 之前的 Win7 / 8 / 8.1 与 Server 2008 R2 / 2012 / 2012 R2 全部不再支持。
+> **监控端（server）同样受此限制** —— 旧系统上跑不了监控端，请把监控端放在
+> Linux / Docker / Windows 10+ 上；被监控的旧系统装**采集端兼容版**即可（见文末一章）。
 
 ## 快速开始
 
@@ -111,67 +111,103 @@ Stop-ScheduledTask -TaskName strix; Start-ScheduledTask -TaskName strix
 
 # 采集端（agent）· Windows 部署
 
-采集端**没有**独立的安装脚本文件。正常路径是在平台控制台「添加主机」页面生成一键命令
-（服务端动态吐出 `/install.ps1`），在 Windows 10 / Server 2016 及以上可直接使用。
+采集端**没有**独立的安装脚本文件。正常路径是在平台控制台「添加主机」页生成一键命令
+（服务端动态吐出 `/install.ps1`，脚本自己判断该装哪一套产物）。
 
-## 系统要求（与监控端同源，边界要记清）
+## 系统要求：两套产物，按系统版本分流
 
-| 系统 | 能否运行当前产物 |
-|---|---|
-| Windows 10 / 11、Server 2016 / 2019 / 2022 | ✅ 官方支持 |
-| Windows 8 / 8.1、Server 2012 / 2012 R2 | ⚠️ 不在官方支持列表，但实际可运行（`bcryptprimitives.dll` 自 Windows 8 起存在） |
-| **Windows 7 SP1 / Server 2008 R2** | ❌ **跑不了**，见下一节 |
+| 系统 | 用哪套产物 | 一键命令能否用 |
+|---|---|---|
+| Windows 10 / 11、Server 2016 / 2019 / 2022 | 正式版（当前工具链） | ✅ 直接用 |
+| **Windows 8 / 8.1、Server 2012 / 2012 R2** | **旧系统兼容版**（Go 1.20 构建） | ✅ 脚本自动识别并选兼容版 |
+| Windows 7 SP1 / Server 2008 R2 | 旧系统兼容版 | ❌ 系统只带 PowerShell 2.0，见下文手工部署 |
 
-原因：Go **1.21.5** 起，runtime 的随机数源从 `RtlGenRandom`（`advapi32!SystemFunction036`，
-XP 起就有）换成了 `ProcessPrng`（`bcryptprimitives.dll`）。Windows 7 / Server 2008 R2 上没有
-这个 DLL，Go 加载失败后拿到的函数指针是 `NULL`，runtime 初始化阶段一调用就触发
-`0xc0000005` 退出。崩在 runtime 里、早于任何业务日志，所以现象是
-**双击后黑窗口一闪就没了，既没有报错框也没有日志文件**。
+### 为什么旧系统非要兼容版
+
+Go **1.21 起，编译出的程序最低要求 Windows 10 / Server 2016**，官方明确不再支持
+Windows 7 / 8 / 8.1 与 Server 2008 R2 / 2012 / 2012 R2。落到代码上是两处硬伤：
+
+- Go 1.21.5 起 runtime 的随机数源从 `RtlGenRandom`（`advapi32!SystemFunction036`）换成
+  `ProcessPrng`（`bcryptprimitives.dll`）—— Windows 7 / Server 2008 R2 上根本没有这个 DLL；
+- 即使在 2012 R2 上这个 DLL 存在，Go 1.21+ 还砍掉了 `WSASocket` 的旧回退、
+  `LoadLibraryEx` 的回退和旧版控制台句柄处理，在 6.x 内核上同样起不来。
+
+崩点都在 **runtime 初始化阶段**，早于任何一行业务日志，所以现象是
+**双击后黑窗口一闪就没了，既没有报错框、也没有日志文件**。
 
 快速判断手上这个 exe 属于哪一类（在**开发机**上对二进制执行）：
 
 ```bash
-grep -ac bcryptprimitives  strix-agent-windows-amd64.exe        # >0 → 跑不了旧系统
-grep -ac SystemFunction036 strix-agent-windows-amd64-win7.exe   # >0 → 可以跑旧系统
+grep -ac bcryptprimitives  strix-agent-windows-amd64.exe        # >0 → 正式版，跑不了旧系统
+grep -ac SystemFunction036 strix-agent-windows-amd64-win7.exe   # >0 → 兼容版，旧系统可用
 ```
 
-## Windows 7 SP1 / Server 2008 R2 专用部署
+## 两套产物从哪来
 
-用 Go 1.20.14（官方最后一个支持这两个系统的版本）单独构建的兼容产物：
+| 产物 | 构建命令 | 文件名 |
+|---|---|---|
+| 正式版 | `./build.sh all` | `dist/strix-agent-windows-amd64.exe` |
+| 旧系统兼容版 | `./build-win7.sh` | `dist/strix-agent-windows-amd64-win7.exe` |
+
+兼容版用 Go 1.20.14 + 裁剪过的 `go120.mod` 单独构建（采集端不依赖 sqlite/mysql，
+所以能绕开「这两个库要求 go 1.21」的限制）。构建时注入了
+`version.LegacyWindows=1`，它从此**自己表明身份**，见下面「自动升级」一节。
+
+### 上传到平台（关键一步）
+
+授权系统那条线只存一份产物，**兼容版只能从平台侧本地上传**：
+
+1. 控制台 → **版本发布** → 拉到最下面的「采集端发布物（本地上传 / 兼容版）」
+2. 版本号填**与正式版完全一致**的号（如 `1.2.3`），系统选 `Windows`，架构选 `amd64`
+3. 勾选 **旧系统兼容版**，选文件，上传
+
+记录靠 `variant` 区分，同一个版本号下正式版与兼容版**并存**，互不覆盖。
+「设为最新」也只影响各自那一类，不会把对方顶下来。
+
+## 自动升级不会再把兼容版换回正式版
+
+以前这是个坑：平台下发的更新策略是全局 `auto`，兼容版会在 30 分钟内把自己换成正式版，
+**换完就闪退**，所以老文档要求启动参数必须带 `-remote-config off -update off`。
+
+1.2.3 起从协议上解决了：
+
+- 兼容版查版本、拉更新时都带 `legacy=1`，平台**只回兼容版**；
+- 平台没有兼容版记录时返回空版本 → 采集端判定「无更新」，**什么都不做**（安全兜底）；
+- 安装脚本也会按系统版本自动带 `legacy=1`，不需要人工选。
+
+所以在 1.2.3 及以上，**不再需要** `-remote-config off -update off`。
+仍在跑 1.2.2 及更早兼容版的机器，升级到 1.2.3 的兼容版后即可去掉这两个参数。
+
+## 一键安装（Windows 8.1 / Server 2012 / 2012 R2）
+
+在**管理员 PowerShell** 里直接粘贴控制台「添加主机」页给的命令即可。脚本会先打印一行：
 
 ```
-strix-agent-windows-amd64-win7.exe
+系统版本 6.3，属于旧版 Windows，将安装「旧系统兼容版」采集端
 ```
 
-在源码根执行 `./build-win7.sh` 生成（依赖 `go120.mod` 这份裁剪版 modfile）。
-该产物**不参与 `release.sh` 上传**，平台的在线升级与一键安装都不会用到它，
-也不会覆盖 `dist/` 里的正式产物。
+`6.3` 就是 Server 2012 R2 / Windows 8.1。看到这行说明分流正确，后面照常走完。
 
-### ⚠️ 必须关掉自动升级（最容易漏的一步）
+> 2012 R2 自带 PowerShell 4.0，`Register-ScheduledTask`、`Get-FileHash`、
+> `Invoke-RestMethod` 都有，脚本能完整跑完；TLS 1.2 也在脚本里显式打开了
+> （这些系统默认只启用 TLS 1.0，不打开会报「基础连接已经关闭」）。
 
-平台下发的「更新策略」是**全局设置**且默认 `auto`。不关掉的话，兼容版会在 30 分钟内向平台
-下载正常（Go 1.23）构建的采集端并替换自己 —— **换完又闪退**。所以启动参数必须带
-`-remote-config off -update off`。
+## 手工部署（Windows 7 SP1 / Server 2008 R2）
 
-`-remote-config off` 只掐掉「拉取平台配置」这一条链路，指标上报、指令下发、监控项采集照常工作。
-
-### 部署步骤
-
-Windows Server 2008 R2 自带的 PowerShell 只有 **2.0**，**没有 `Register-ScheduledTask` /
-`Get-ScheduledTask`**，平台「添加主机」页给的一键命令在它上面必然失败。改用系统自带的
-`schtasks.exe`：
+这两个系统只有 **PowerShell 2.0**，没有 `Register-ScheduledTask` / `Get-ScheduledTask`，
+平台给的一键命令在上面必然失败，改用系统自带的 `schtasks.exe`：
 
 ```cmd
-:: 1) 先验证二进制能在本机跑起来（应打印 strix-agent 1.2.0 (windows/amd64) …）
+:: 1) 先验证二进制能在本机跑起来（应打印 strix-agent 1.2.3 (windows/amd64) …）
 C:\Strix\strix-agent-windows-amd64-win7.exe -version
 
 :: 2) 把本目录的 start-agent.cmd 与 exe 放在同一目录，用记事本改开头那 4 项
 ::    （平台地址 / 密钥MD5 / 主机名 / 上报间隔）—— 其余参数已在脚本里固化
 
 :: 3) 双击 start-agent.cmd 试跑。日志里应出现
-::    「采集端启动：版本 1.2.0 …，更新策略 off」以及「已上报 CPU …」，即已连上平台
+::    「采集端启动：版本 1.2.3 …」，以及「已上报 CPU …」，即已连上平台
 
-:: 4) 注册开机自启（管理员 cmd，注意末尾 log 参数让输出写进 agent.log）
+:: 4) 注册开机自启（管理员 cmd，末尾 log 参数让输出写进 agent.log）
 schtasks /create /tn strix-agent /tr "C:\Strix\start-agent.cmd log" /sc onstart /ru SYSTEM /rl HIGHEST /f
 schtasks /run /tn strix-agent
 
@@ -183,29 +219,34 @@ type C:\Strix\agent.log
 `密钥MD5` 就是平台「添加主机」页面生成命令里的 `wgToken` 值（= 监控端 `token` 的 MD5）。
 `-name` 建议用纯英文；不写则用系统主机名。
 
-日志出现 `采集端启动：版本 1.2.0，本机名称 …，服务端 …，更新策略 off` 即成功，
-随后控制台「主机监控」里会出现这台机器。
+> 在 2008 R2 这一类只能用 PowerShell 2.0 的机器上，**平台自升级用不了**
+> （自动升级依赖计划任务机制），换版本按下一节手工替换 exe。
 
-### 升级这个兼容版
+## 升级兼容版
 
-版本号变更后，在**开发机**上重新构建，再把新 exe 手工拷到目标机替换：
+版本号变更后，在**开发机**上重新构建，把新 exe 传到平台（勾「旧系统兼容版」），
+再让目标机替换：
 
 ```bash
 ./build-win7.sh          # 产物：dist/strix-agent-windows-amd64-win7.exe
 ```
 
 ```cmd
-:: 在 2008 R2 上
+:: 在旧系统上手工替换
 schtasks /end /tn strix-agent
 :: 覆盖 exe 之后再启动
 schtasks /run /tn strix-agent
 ```
 
-### 排障
+Windows 8.1 / Server 2012 R2 上如果当初用的是一键命令安装的，平台发布新兼容版后
+采集端会自己升级（走的仍是 `legacy=1` 那条流）。
+
+## 排障
 
 | 现象 | 处理 |
 |---|---|
-| 双击闪退、无任何输出 | 就是系统兼容问题，换 `-win7` 兼容版 |
-| `-version` 正常但注册任务后平台看不到主机 | 看 `C:\Strix\agent.log`；多半是 `-server` 写成了 `127.0.0.1`，或平台 IP/端口不可达 |
-| 稳定运行一段时间后突然又闪退 | 检查启动参数是否漏了 `-remote-config off -update off`，被平台下发的 `auto` 换成了正常版 |
+| 双击闪退、无任何输出 | 系统兼容问题，换兼容版（`-win7.exe`） |
+| `-version` 正常但平台看不到主机 | 看 `C:\Strix\agent.log`；多半是 `-server` 写成 `127.0.0.1`，或平台 IP/端口不可达 |
+| 一键安装报「尚未发布…旧系统兼容版」 | 平台「版本发布」里没有勾选兼容版上传，按上文补一次 |
+| 稳定运行后突然又闪退 | 用 `-version` 看版本；若变成了没有 `-win7` 后缀的正式版，说明是被旧平台换掉的（1.2.2 及更早的行为），部署 1.2.3+ 后不再发生 |
 | 不确定手上的 exe 是哪个构建 | `-version` 看构建时间；或 `grep -ac bcryptprimitives`，结果为 0 才是兼容版 |

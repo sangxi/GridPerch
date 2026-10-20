@@ -910,7 +910,10 @@ sudo systemctl start strix</code></pre>
           <tr><td>提示需要管理员权限</td><td>Windows 安装脚本要求管理员 PowerShell</td><td>右键「以管理员身份运行」</td></tr>
           <tr><td>重启后数据全丢</td><td><code>data</code> 目录没挂载</td><td>按文件挂载清单挂上 <code>/opt/strix/data</code></td></tr>
           <tr><td>告警时间差 8 小时</td><td>容器时区是 UTC</td><td>设置 <code>TZ=Asia/Shanghai</code> 并挂载 <code>/etc/localtime</code></td></tr>
-          <tr><td><strong>Windows 7 / Server 2008 R2</strong> 上采集端双击后闪退，没有窗口也没有日志</td><td>Go 1.21.5 起 runtime 的随机数源依赖 Windows 8 才有的 <code>bcryptprimitives.dll</code>，旧系统上加载失败，进程在 runtime 初始化阶段直接退出（早于任何业务日志，所以看不到报错）</td><td>改用专用兼容产物 <code>strix-agent-windows-amd64-win7.exe</code>，启动参数<strong>必须</strong>加 <code>-remote-config off -update off</code> —— 否则它会在 30 分钟内被平台下发的更新策略换成普通版，又闪退；旧系统没有 <code>Register-ScheduledTask</code>，用系统自带的 <code>schtasks.exe</code> 注册开机自启</td></tr>
+          <tr><td><strong>Windows 7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2</strong> 上采集端双击后闪退，没有窗口也没有日志</td><td>Go 1.21 起编译的程序要求 Windows 10 / Server 2016 以上：随机数源依赖 <code>bcryptprimitives.dll</code>（Win7/2008R2 没有），且砍掉了 <code>WSASocket</code> / <code>LoadLibraryEx</code> 的旧回退。进程在 runtime 初始化阶段就退出，早于任何业务日志</td><td>改用兼容产物 <code>strix-agent-windows-amd64-win7.exe</code>（Go 1.20 构建），并在「版本发布」页勾选<strong>旧系统兼容版</strong>上传一次 —— 1.2.3 起安装脚本按系统版本自动选、自升级也只拿兼容版，<strong>不再需要</strong> <code>-remote-config off -update off</code>（1.2.2 及更早仍需）。Win7 / 2008 R2 只有 PowerShell 2.0，用系统自带的 <code>schtasks.exe</code> 注册开机自启</td></tr>
+          <tr><td>旧系统一键安装报「尚未发布…旧系统兼容版」</td><td>平台只有正式版，没有兼容版记录（授权系统那条线只存一份产物）</td><td>控制台「版本发布」→「采集端发布物（本地上传）」→ 填<strong>同一个版本号</strong>、勾选「旧系统兼容版」上传；正式版与兼容版并存，互不覆盖</td></tr>
+          <tr><td>「授权系统返回 HTTP 502（网关错误）」</td><td>请求已到达反向代理/CDN，但它没能从上游的授权中心拿到应答 —— <strong>不是 <code>-hub</code> 地址写错</strong></td><td>查四处：中心进程是否在跑、<code>proxy_pass</code> 端口是否一致、上游是 HTTPS 时是否加了 <code>proxy_ssl_server_name on;</code>、中心侧日志有没有收到请求。「在线升级」页会显示响应页面标题与 <code>Server</code> 头，据此判断卡在哪一层</td></tr>
+          <tr><td>「返回的是网页，说明地址落到了静态站点上」</td><td><code>-hub</code> 指到了站点首页而不是接口</td><td><code>-hub</code> 只写到域名的上一级（可带子路径），形如 <code>https://域名</code>；<code>/api/v1/check</code> 由程序自己拼，误填了也会被自动削掉</td></tr>
         </tbody>
       </table>
 

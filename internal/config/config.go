@@ -271,7 +271,7 @@ func ParseServer() *Server {
 	if strings.TrimSpace(cfg.HubToken) == "" {
 		cfg.HubToken = defaultHubToken()
 	}
-	cfg.HubURL = strings.TrimRight(strings.TrimSpace(cfg.HubURL), "/")
+	cfg.HubURL = normalizeHubURL(cfg.HubURL)
 	if hubMin < 1 {
 		hubMin = 5
 	}
@@ -359,4 +359,26 @@ func ParseAgent() *Agent {
 		cfg.RemoteConfig = "auto"
 	}
 	return cfg
+}
+
+// normalizeHubURL 容错处理授权系统地址：允许误填接口路径。
+//
+// 中心地址只写到「接口的上一级」（域名，可带子路径），/api/v1/check 由程序自己拼。
+// 但运维排查时最容易做的事，就是把日志里那条完整请求 URL 复制过来填进 -hub，
+// 于是变成 https://域名/api/v1/check，程序再拼一次就成了 .../api/v1/check/api/v1/check，
+// 中心侧只会回 404 —— 现象是「地址看着完全正确却一直失败」。
+// 这里把常见的误填统一削掉，宁可多让一步也不让人在这儿卡住。
+func normalizeHubURL(v string) string {
+	v = strings.TrimRight(strings.TrimSpace(v), "/")
+	if v == "" {
+		return ""
+	}
+	// 长后缀优先，避免 /api/v1 先命中把 /check 留在原地
+	for _, suffix := range []string{"/api/v1/check", "/api/v1/report", "/api/v1"} {
+		if strings.HasSuffix(strings.ToLower(v), suffix) {
+			v = strings.TrimRight(v[:len(v)-len(suffix)], "/")
+			break
+		}
+	}
+	return v
 }

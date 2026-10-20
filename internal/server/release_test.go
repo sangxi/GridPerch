@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -31,5 +32,27 @@ func TestSanitizeAgentName(t *testing.T) {
 				t.Fatalf("sanitizeAgentName(%q) = %q，期望 %q", c.in, got, c.want)
 			}
 		})
+	}
+}
+
+// TestInstallPS1Template installPS1 是用 fmt.Fprintf 填三个占位符的模板。
+// 模板里一旦出现裸 %，Fprintf 会输出 %!x(MISSING) 之类的东西 ——
+// 而这段文本是直接给 Windows 主机执行的，坏掉之后报错极难定位。
+func TestInstallPS1Template(t *testing.T) {
+	out := fmt.Sprintf(installPS1, "http://10.0.0.1:9999", "abcdef", "web-01")
+	if strings.Contains(out, "%!") {
+		t.Fatalf("安装脚本模板存在非法的格式化占位符：\n%s", out)
+	}
+	for _, want := range []string{
+		"http://10.0.0.1:9999",
+		"abcdef",
+		"web-01",
+		"$Legacy",     // 旧系统分支必须留在脚本里
+		"&legacy=1",   // 下载与查版本都要带上
+		"strix-agent", // 计划任务名
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("安装脚本缺少 %q", want)
+		}
 	}
 }

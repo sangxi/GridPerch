@@ -61,7 +61,7 @@ cd /opt/strix && ./strix-server -version
 ```
 
 ```
-strix-server v1.2.2，控制台账号：admin / strix（首次启动后请在启动参数中修改）
+strix-server v1.2.3，控制台账号：admin / strix（首次启动后请在启动参数中修改）
 授权验签公钥指纹：278D-4852-7191-E7CE（应与授权中心启动日志一致）
 服务端启动：监听 :9999，数据库 /opt/strix/data/strix.db，数据保留 30 天
 控制台访问地址：http://<本机IP>:9999

@@ -11,7 +11,7 @@
 | 目录 | 平台 | 注册方式 | 适用 |
 |---|---|---|---|
 | [`linux/`](linux/) | Linux 全发行版（Debian / Ubuntu / CentOS / RHEL / openEuler / Alpine / 麒麟 / 统信…） | systemd / OpenRC / nohup | 服务器主流选择 |
-| [`windows/`](windows/) | Windows 10 / 11 / Server 2012 R2+ | 计划任务（SYSTEM 权限） | 内网 Windows 服务器 |
+| [`windows/`](windows/) | Windows 10 / 11 / Server 2016+（旧系统的采集端见该目录「兼容版」一章） | 计划任务（SYSTEM 权限） | 内网 Windows 服务器 |
 | [`macos/`](macos/) | macOS 11+（Intel 与 Apple 芯片） | launchd | 开发机 / 办公 Mac |
 | [`docker/`](docker/) | 任何装了 Docker 的机器 | Docker Compose | 最快跑起来、1Panel/宝塔面板环境 |
 
@@ -46,7 +46,7 @@ CPU 架构只需要选对文件：
 
 ## 部署前先确认二进制来源
 
-二进制在仓库的 `release/<版本>/` 下（例如 `release/1.2.2/`），文件名形如
+二进制在仓库的 `release/<版本>/` 下（例如 `release/1.2.3/`），文件名形如
 `strix-server-{linux,windows,darwin}-{amd64,arm64}[.exe]`。
 
 各平台的 `install.sh` / `install.ps1` 会自己往上找这些目录，通常不用手动指定路径；

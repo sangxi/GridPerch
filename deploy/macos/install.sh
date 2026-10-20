@@ -17,7 +17,7 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="${STRIX_VERSION:-1.2.2}"
+VERSION="${STRIX_VERSION:-1.2.3}"
 APP="strix-server"
 PREFIX="${STRIX_PREFIX:-/usr/local/strix}"
 BIN="$PREFIX/$APP"

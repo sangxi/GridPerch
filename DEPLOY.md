@@ -1,8 +1,8 @@
 # Strix 部署方案
 
-> 适用版本：v1.2.2+（构建时间 2026-10-18T11:34:27）· 项目地址：<https://github.com/sangxi/Strix>
+> 适用版本：v1.2.3+（构建时间 2026-10-20T17:51:46）· 项目地址：<https://github.com/sangxi/Strix>
 > 授权中心：默认授权中心（地址已内置在程序里，无需手工配置）
-> 图文步骤：<https://opsmonitor-docs.pages.dev>
+> 图文步骤：<https://strix.az01.cc.cd>（备用 <https://opsmonitor-docs.pages.dev>）
 
 本文是 Strix 从零到上线的完整部署方案，覆盖架构选型、部署拓扑、文件清单、
 容量规划、授权通信、上线检查、升级回滚与排障。控制台内置同一份教程（访问 `/docs`），
@@ -94,6 +94,12 @@
 > - **1.2.2**：**界面收束**（纯前端）—— 各列表操作列由文字按钮改为图标按钮（悬停有中文提示），
 >   主机表操作列宽度 300px → 219px；空白列表改为虚线提示条；仪表盘 6 张指标卡排满一行。
 >   后端接口、库结构、采集端逻辑与 1.2.1 完全一致。
+> - **1.2.3**：**旧系统兼容 + 同步诊断** —— 采集端新增「旧系统兼容版」发布通道（`release` 表加 `variant` 列，
+>   正式版与兼容版并存、各自「最新」，旧库启动时自动补列并重建唯一索引），覆盖 Win7 / 8 / 8.1 /
+>   Server 2008 R2 / 2012 / 2012 R2；兼容版自报身份（`legacy=1`），一键安装脚本按系统版本自动选，
+>   自动升级也只会拿到兼容版，**不再需要 `-remote-config off -update off`**。授权中心同步的报错口径重做：
+>   502/503/504 归因为**网关错误**并给出四处排查点，不再误报「`-hub` 地址可能写错」；`-hub` 误填
+>   `/api/v1/check` 之类后缀会被自动削掉。
 
 ---
 
@@ -288,7 +294,7 @@ curl -sS https://<你的授权中心地址>/healthz     # 期望 {"ok":true,...}
 | macOS | amd64 | `strix-server-darwin-amd64` | `strix-agent-darwin-amd64` | Intel 芯片 |
 | macOS | arm64 | `strix-server-darwin-arm64` | `strix-agent-darwin-arm64` | Apple M1/M2/M3/M4 |
 | Windows | amd64 | `strix-server-windows-amd64.exe` | `strix-agent-windows-amd64.exe` | Win10/11、Server 2016+ |
-| Windows | amd64（旧系统） | — | `strix-agent-windows-amd64-win7.exe` | Win7 SP1 / Server 2008 R2 |
+| Windows | amd64（旧系统） | — | `strix-agent-windows-amd64-win7.exe` | Win7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 |
 
 **四条硬约束：**
 
@@ -297,10 +303,12 @@ curl -sS https://<你的授权中心地址>/healthz     # 期望 {"ok":true,...}
 2. **Windows 只有 amd64。** Windows on ARM 只能通过 x64 模拟层跑标准版，生产不建议。
 3. **Linux 不分发行版。** 产物是纯静态链接（校验：`PT_INTERP` 不存在、不引用 `libc.so` / `ld-musl`），
    Debian / Ubuntu / CentOS 7 / RHEL / Rocky / Alma / Fedora / openEuler / 麒麟 / 统信 / Alpine 通用。
-4. **旧系统专用版不可省参数。** Win7 / Server 2008 R2 必须用 `-win7.exe`（Go 1.21.5+ 起随机源依赖
-   Win8 才有的 `bcryptprimitives.dll`，普通版在 runtime 初始化阶段静默崩溃、不留日志），
-   且启动参数必须带 `-remote-config off -update off` —— 平台下发的 `updateMode` 是**全局**默认 `auto`，
-   否则它 30 分钟内会把自己换成普通版，继续闪退。
+4. **旧系统必须用兼容版。** Win7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 都用 `-win7.exe`
+   （Go 1.21 起编译的程序要求 Windows 10 / Server 2016 以上，正式版在这些系统上会在 runtime
+   初始化阶段静默退出、不留日志）。
+   1.2.3 起兼容版自带 `version.LegacyWindows=1`：查版本与自升级都带 `legacy=1`，平台只回兼容版，
+   **不再需要 `-remote-config off -update off`**；兼容版要在控制台「版本发布」勾选「旧系统兼容版」
+   上传一次（授权系统那条线只有一份产物，传不了第二种）。
 
 **自查与校验：**
 

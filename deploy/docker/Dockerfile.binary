@@ -6,8 +6,8 @@
 #
 #  构建上下文必须是**仓库根目录**：
 #    docker build -f deploy/docker/Dockerfile.binary \
-#      --build-arg VERSION=1.2.2 \
-#      -t strix/strix-server:1.2.2 .
+#      --build-arg VERSION=1.2.3 \
+#      -t strix/strix-server:1.2.3 .
 #
 #  架构：BuildKit 会自动把 TARGETARCH 设成目标架构（amd64 / arm64），
 #  于是同一个 Dockerfile 在 x86 机器上取 amd64 产物、在 arm64 机器上取 arm64 产物。
@@ -15,7 +15,7 @@
 #  老版本 docker（无 BuildKit）不会传 TARGETARCH，退回 amd64。
 # ============================================================================
 
-ARG VERSION=1.2.2
+ARG VERSION=1.2.3
 FROM alpine:3.20
 
 ARG VERSION

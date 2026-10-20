@@ -75,3 +75,24 @@ func TestTokenOK(t *testing.T) {
 		t.Fatal("使用强密钥时不应再接受旧默认值")
 	}
 }
+
+// TestNormalizeHubURL 授权中心地址容错：运维常把日志里的完整接口 URL
+// 直接填进 -hub，再拼一次就成了重复路径，只会收到 404。
+func TestNormalizeHubURL(t *testing.T) {
+	cases := map[string]string{
+		"https://hub.example.com":                  "https://hub.example.com",
+		"https://hub.example.com/":                 "https://hub.example.com",
+		"https://hub.example.com/api/v1/check":     "https://hub.example.com",
+		"https://hub.example.com/api/v1/check?x=1": "https://hub.example.com/api/v1/check?x=1",
+		"https://hub.example.com/api/v1":           "https://hub.example.com",
+		"https://hub.example.com/hub":              "https://hub.example.com/hub",
+		"https://hub.example.com/hub/api/v1/check": "https://hub.example.com/hub",
+		"  https://hub.example.com//  ":            "https://hub.example.com",
+		"":                                         "",
+	}
+	for in, want := range cases {
+		if got := normalizeHubURL(in); got != want {
+			t.Errorf("normalizeHubURL(%q) = %q，期望 %q", in, got, want)
+		}
+	}
+}

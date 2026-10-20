@@ -27,6 +27,25 @@ build_one() {
     go build -trimpath -ldflags "$LDFLAGS" -o "${out}/strix-agent-${goos}-${goarch}${ext}" ./cmd/strix-agent
 }
 
+# 按目录里现存的产物重算校验和。
+# 必须由「最后跑的那个构建脚本」调用：build.sh all 出 10 个正式产物、
+# build-win7.sh 追加兼容版，谁后跑谁重算，顺序换了也不会漏。
+# 之前这一步是手工做的，结果 1.2.3 的 dist/ 里躺着 1.2.2 的 SHA256SUMS.txt，
+# 用户照着校验会 11/11 FAILED —— 比没有校验和更糟。
+write_sums() {
+  local out=$1
+  [[ -d "$out" ]] || return 0
+  if command -v sha256sum >/dev/null 2>&1; then
+    ( cd "$out" && sha256sum strix-* > SHA256SUMS.txt )
+  elif command -v shasum >/dev/null 2>&1; then
+    ( cd "$out" && shasum -a 256 strix-* > SHA256SUMS.txt )
+  else
+    echo "警告：找不到 sha256sum / shasum，跳过校验和生成" >&2
+    return 0
+  fi
+  echo "校验和 ${out}/SHA256SUMS.txt（$(wc -l < "${out}/SHA256SUMS.txt" | tr -d ' ') 条）"
+}
+
 if [[ "${1:-}" == "all" ]]; then
   OUT=dist
   mkdir -p "$OUT"
@@ -38,6 +57,7 @@ if [[ "${1:-}" == "all" ]]; then
   # 记录本批产物对应的版本号：release.sh 上传前会比对，防止
   # 「复用旧 dist 却登记新版本号」——那会让平台自升级永远换不到新版本。
   printf '%s\n' "$VERSION" > "$OUT/VERSION"
+  write_sums "$OUT"
   echo "全部完成，产物在 dist/ 目录"
   exit 0
 fi

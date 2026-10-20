@@ -561,14 +561,27 @@ func firstNonEmpty(vals ...string) string {
 
 // describeHubStatus 把非 200 响应翻译成人能照着改的结论。
 //
-// 授权端通常挂在 CDN / WAF 后面，这些网关会拦掉一切非浏览器客户端，
-// 返回的却是一段 HTML 挑战页。若只把状态码原样抛出来，
-// 运维看到「HTTP 403」根本无从下手，因此这里单独识别并给出处理建议。
+// 授权端通常挂在 CDN / WAF / 反向代理后面，同一个「非 200」可能来自三层：
+//   - 静态站点把请求吃掉了（返回首页 HTML）
+//   - 网关连不上上游（502/503/504，通常也是 HTML）
+//   - 中心自己拒绝（401/403/404，JSON 带 msg）
+//
+// 若只把状态码原样抛出来，运维看到「HTTP 502」根本无从下手，更糟的是
+// 统一按「内容为网页 = 地址填错」归因，会把人引到错误的方向（地址明明是对的，
+// 是上游挂了）。因此这里按「网关 → 鉴权 → 路由 → 兜底」逐层判定，
+// 并把实际请求的 URL、页面标题、Server 头一并带出来——这三样足以定位到层。
 func (s *Server) describeHubStatus(resp *http.Response, body []byte) error {
 	status := resp.StatusCode
 	snippet := strings.TrimSpace(string(body))
 	if len(snippet) > 120 {
 		snippet = snippet[:120]
+	}
+	ct := firstNonEmpty(resp.Header.Get("Content-Type"), "未提供")
+	title := htmlTitle(body)
+	serverHdr := firstNonEmpty(resp.Header.Get("Server"), resp.Header.Get("Via"))
+	reqURL := "(未知)"
+	if resp.Request != nil && resp.Request.URL != nil {
+		reqURL = s.redactHubToken(resp.Request.URL.String())
 	}
 
 	// Cloudflare 的人机校验页
@@ -590,16 +603,98 @@ func (s *Server) describeHubStatus(resp *http.Response, body []byte) error {
 			status, snippet, hubTokenSourceText(s.hubTokenSource()))
 	}
 
-	// 返回了 HTML 而不是 JSON：通常是地址指到了网页而不是接口
-	if ct := resp.Header.Get("Content-Type"); strings.Contains(ct, "text/html") {
-		return fmt.Errorf("授权系统返回 HTTP %d 且内容为网页（%s），说明 -hub 指向的可能不是接口地址。"+
-			"正确地址应形如 https://域名（不含 /api/v1/check）", status, ct)
+	// 网关层错误：请求已经到达反代/CDN，但它没能从上游拿到应答。
+	// 这类响应几乎都是反代的 HTML 错误页，绝不能判成「-hub 地址写错」。
+	if status == http.StatusBadGateway || status == http.StatusServiceUnavailable ||
+		status == http.StatusGatewayTimeout {
+		return fmt.Errorf("授权系统返回 HTTP %d（网关错误）%s，说明请求已经到达反向代理/CDN，"+
+			"但它没能从上游的授权中心拿到应答 —— 这不是 -hub 地址写错，地址本身是通的。"+
+			"按顺序查四处：① 授权中心进程是否在运行、监听端口与反代 proxy_pass 是否一致；"+
+			"② 反代 location /api/ 是否写反了 http/https，上游是 HTTPS 时必须加 proxy_ssl_server_name on; "+
+			"③ 上游若套了容器，端口映射/内网地址是否可达；"+
+			"④ 看中心侧日志有没有收到这次请求——收到说明是中心内部报错，没收到说明卡在反代。"+
+			"本次请求：%s",
+			status, optionalDetail(title, serverHdr), reqURL)
+	}
+
+	// 返回了 HTML 但不是网关错误：地址落到了某个站点的页面上
+	if strings.Contains(strings.ToLower(ct), "text/html") {
+		// 404 + 网页，最常见的原因是中心挂在子路径下而 -hub 少了前缀
+		if status == http.StatusNotFound {
+			return fmt.Errorf("HTTP 404 且返回的是网页%s，说明这个路径下没有接口。"+
+				"若授权中心挂在域名的子路径（如 https://域名/hub），-hub 必须写到那一层：%s；"+
+				"若中心在根路径，请确认反代把 /api/ 转发给了中心而不是静态站点。"+
+				"本次请求：%s",
+				optionalDetail(title, serverHdr), s.cfg.HubURL, reqURL)
+		}
+		return fmt.Errorf("授权系统返回 HTTP %d 且内容是网页%s，说明这个地址落在了一个静态站点上，不是接口。"+
+			"-hub 应写到「接口的上一级」，形如 https://域名 或 https://域名/子路径（不要带 /api/v1/check，程序会自己拼）。"+
+			"本次请求：%s",
+			status, optionalDetail(title, serverHdr), reqURL)
+	}
+
+	// 路由错误：中心在线，但没有这个接口
+	if status == http.StatusNotFound {
+		return fmt.Errorf("授权系统返回 HTTP 404（中心可达，但%s 不存在）。"+
+			"通常是 -hub 少了子路径，或中心版本过旧没有这个接口。本次请求：%s",
+			"/api/v1/check", reqURL)
 	}
 
 	if snippet == "" {
-		return fmt.Errorf("授权系统返回 HTTP %d", status)
+		return fmt.Errorf("授权系统返回 HTTP %d。本次请求：%s", status, reqURL)
 	}
-	return fmt.Errorf("授权系统返回 %d：%s", status, snippet)
+	return fmt.Errorf("授权系统返回 %d：%s。本次请求：%s", status, snippet, reqURL)
+}
+
+// optionalDetail 把「页面标题」「Server 头」拼成一句补充说明，都没有时返回空串。
+//
+// 这两项是判断「到底命中了哪一层」最快的线索：标题能看出落到的是谁的站点，
+// Server 头能看出回应来自 nginx / Caddy / Cloudflare 还是中心自己。
+func optionalDetail(title, server string) string {
+	var parts []string
+	if title != "" {
+		parts = append(parts, "页面标题「"+title+"」")
+	}
+	if server != "" {
+		parts = append(parts, "Server: "+server)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "（" + strings.Join(parts, "，") + "）"
+}
+
+// htmlTitle 从响应体里抠出 <title>，用于判断这次请求落到了哪个站点。
+// 抠不到（非 HTML、超大页面、标题跨行）就返回空串，不影响主流程。
+func htmlTitle(body []byte) string {
+	const (
+		open  = "<title"
+		close = "</title>"
+	)
+	s := string(body)
+	if len(s) > 64<<10 {
+		s = s[:64<<10]
+	}
+	lower := strings.ToLower(s)
+	i := strings.Index(lower, open)
+	if i < 0 {
+		return ""
+	}
+	// 跳过 <title ...> 的属性部分
+	j := strings.Index(s[i:], ">")
+	if j < 0 {
+		return ""
+	}
+	rest := s[i+j+1:]
+	k := strings.Index(strings.ToLower(rest), close)
+	if k < 0 {
+		return ""
+	}
+	out := strings.Join(strings.Fields(rest[:k]), " ")
+	if rs := []rune(out); len(rs) > 60 {
+		out = string(rs[:60]) + "…"
+	}
+	return out
 }
 
 // applyHubHeaders 统一设置访问授权系统的请求头。
@@ -723,8 +818,9 @@ func (s *Server) cacheAgentRelease(r *hubRel) error {
 	if r.OS == "" || r.Arch == "" || r.Version == "" {
 		return nil
 	}
-	// 本地已有同平台同版本则跳过，避免每次同步重复下载
-	if cur, _ := s.store.LatestRelease(r.OS, r.Arch); cur != nil && cur.Version == r.Version {
+	// 本地已有同平台同版本则跳过，避免每次同步重复下载。
+	// 授权端只发正式版，这里固定按正式版判定。
+	if cur, _ := s.store.LatestRelease(r.OS, r.Arch, ""); cur != nil && cur.Version == r.Version {
 		s.markAgentCached(r)
 		return nil
 	}

@@ -48,20 +48,21 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 
 ## 账号ops     密码：123456
 
-## 版本更新（1.1.1 → 1.2.2）
+## 二开版本更新（1.1.1 → 1.2.3）
 
 | 版本 | 重点 |
 | --- | --- |
+| 1.2.3 | **旧系统兼容 + 同步诊断**：Windows 采集端拆成「正式版 / 旧系统兼容版」两套产物，同一版本号并存（库表加 `variant`，唯一键改为四列，老库自动补列并重建索引）。兼容版由 Go 1.20 构建，覆盖 Win7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 —— 这些系统跑不了 Go 1.21+ 的产物；兼容版注入 `version.LegacyWindows`，查版本与自升级都带 `legacy=1`，平台只回兼容版，**不再需要 `-remote-config off -update off`**；安装脚本按 `[Environment]::OSVersion` 自动分流。「版本发布」页新增**本地上传 / 兼容版**面板（离线模式下也可用）。授权同步报错按「网关 → 鉴权 → 路由 → 兜底」分层归因：502/503/504 不再误报成「-hub 地址写错」，并带出实际请求 URL、响应页面标题与 `Server` 头；`-hub` 误填成 `https://域名/api/v1/check` 会被自动削正 |
 | 1.1.1 | 采集端发布物按 5 个平台（linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64）逐个补拉，修复「Linux 服务端装不上 Windows 采集端 / 授权系统尚未发布该平台」；补拉在后台执行，避免「立即检查更新」被网关超时（HTTP 524）拖死；`-public-url` 配成回环/内网/CGNAT 地址时启动告警 |
 | 1.1.2 | 控制台登录失败明确提示原因（用户名或密码错误 / 账号已停用）；内嵌前端资源统一 `Cache-Control: no-cache`，升级二进制后浏览器/反向代理不会再用旧前端 |
 | 1.1.3 | 平台自升级后自动重启生效（systemd `Restart=always` / Docker Compose `restart: unless-stopped` / 手工 `nohup` 自拉起，启动失败自动回滚 `.bak`）；新增 `-hub-restart` / `STRIX_HUB_RESTART` |
 | 1.1.4 | 控制台「在线升级」「授权购买」页不再展示授权中心域名，也去掉了跳转到授权站的按钮（授权站遭 DDoS 期间降低暴露面），保留机器码与同步状态；前端加 `SHOW_HUB_URL` 开关，排障时可改回显示 |
 | 1.1.5 | 修复一键安装脚本把中文主机名清成一串 `-`（现在中/日文等都能正常作主机名，元字符仍被替换，注入面不变）；新增**主机重命名**与**删除主机**（主机列表行内按钮，限管理员），改名级联迁移全部历史数据并登记旧名→新名映射，**旧名仍在上报的采集端自动归位、无需重装** |
 | 1.2.0 | **品牌更名为 Strix**（原 OpsMonitor 同名项目过多）。二进制、目录、部署路径、环境变量前缀、授权码前缀统一改为 `strix` / `STRIX_` / `STRIX2-`；同时保留旧标识兼容：`OPSM_*` 环境变量自动回落、`OPSM2-`／`OPSM1-`／`WGC-` 存量授权码继续有效、旧 `opsmonitor.db` 自动沿用、机器码与设备密钥的历史盐值不变。老部署换二进制即可，无需重新授权或迁移数据 |
-| 1.2.2 | **全站界面收束**：主机、监控项、指令、资产、设备账号、巡检、成员、凭证、Webhook 等表格的操作列由「一排文字按钮」改为**图标按钮**（27×27，悬停有底色变化与中文提示），操作列宽度从 200~300px 降到 120~160px，把空间让给内容列；告警中心「主机登录提醒」为空时不再渲染整块白色面板，改为一条虚线提示条；仪表盘 6 张指标卡在常见屏宽下排满一行，不再折出半行空白；表格时间列统一 `tabular-nums`，侧栏当前项加主色竖条 |
 | 1.2.1 | **告警闭环**：告警可**认领 / 释放**（记录认领人与时间，重复认领会提示是谁在处理）、可写**处理备注**；新增**告警静默规则**（按主机 + 监控项 + 级别 + 时间段匹配，静默期内告警照常入库留痕但**不发邮件、不推机器人**）；**未认领催办**：告警超过设定分钟数仍无人认领，再推一轮带「未认领催办」前缀的通知（设置里填 `0` 关闭）。告警中心顶部新增未恢复 / 待认领 / 处理中 / 静默生效中四张指标卡，导出 CSV/Excel 一并带出认领人与备注 |
+| 1.2.2 | **全站界面收束**：主机、监控项、指令、资产、设备账号、巡检、成员、凭证、Webhook 等表格的操作列由「一排文字按钮」改为**图标按钮**（27×27，悬停有底色变化与中文提示），操作列宽度从 200~300px 降到 120~160px，把空间让给内容列；告警中心「主机登录提醒」为空时不再渲染整块白色面板，改为一条虚线提示条；仪表盘 6 张指标卡在常见屏宽下排满一行，不再折出半行空白；表格时间列统一 `tabular-nums`，侧栏当前项加主色竖条 |
 
-当前版本 **1.2.2**。版本沿革：官方 1.0.3 → 二开 1.1.0 → 1.1.1 → 1.1.2 → 1.1.3 → 1.1.4 → 1.1.5 → 1.1.6 → 1.1.7 → 1.2.0（更名 Strix）→ 1.2.1（告警闭环）→ **1.2.2（界面收束）**。
+当前版本 **1.2.3**。版本沿革：官方 1.0.3 → 二开 1.1.0 → 1.1.1 → 1.1.2 → 1.1.3 → 1.1.4 → 1.1.5 → 1.1.6 → 1.1.7 → 1.2.0（更名 Strix）→ 1.2.1（告警闭环）→ 1.2.2（界面收束）→ **1.2.3（旧系统兼容 + 同步诊断）**。
 
 ## 监控能力
 
@@ -126,12 +127,12 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 | macOS | amd64（Intel） | `strix-server-darwin-amd64` | `strix-agent-darwin-amd64` |
 | macOS | arm64（Apple M 系列） | `strix-server-darwin-arm64` | `strix-agent-darwin-arm64` |
 | Windows | amd64 | `strix-server-windows-amd64.exe` | `strix-agent-windows-amd64.exe` |
-| Windows | amd64（Win7 / Server 2008 R2 专用） | — | `strix-agent-windows-amd64-win7.exe` |
+| Windows | amd64（Win7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 专用） | — | `strix-agent-windows-amd64-win7.exe` |
 
 - **只提供 64 位**：没有 386 / armv7 产物，32 位系统会报 `Exec format error`，请换 64 位系统
 - **Windows 只有 amd64**：Windows on ARM 只能靠 x64 模拟层跑标准版，生产不建议
 - **Linux 不看发行版**：产物是纯静态链接（无 `PT_INTERP`、不依赖 glibc/musl），Debian / CentOS 7 / Rocky / openEuler / 麒麟 / 统信 / Alpine 通用
-- **旧系统**：Win7 SP1 / Server 2008 R2 必须用 `-win7.exe` 兼容版（Go 1.21.5+ 的 `ProcessPrng` 依赖 Win8 才有的 `bcryptprimitives.dll`，普通版在这些系统上会静默崩溃），且启动参数必须带 `-remote-config off -update off`
+- **旧系统（Win7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2）**：工具链本身要求 Windows 10 / Server 2016 起，正式版在这些系统上**启动即退出且不留日志**，必须用 `-win7.exe` 兼容版（Go 1.20 构建）。1.2.3 起兼容版会自报身份（`legacy=1`），安装脚本按系统版本自动选、自动升级也只会拿到兼容版，**不再需要 `-remote-config off -update off`**（1.2.2 及更早仍需）
 - 自查：`uname -m` → `x86_64` 对应 amd64、`aarch64` 对应 arm64；Windows 看 `$env:PROCESSOR_ARCHITECTURE` = `AMD64`
 - 校验：`sha256sum -c SHA256SUMS.txt`，再跑 `./strix-server-linux-amd64 -version` 确认自报架构与文件名一致
 
@@ -195,7 +196,7 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://<服务器IP>:9999
 
 > 各平台的**可执行部署脚本**在 [`deploy/`](deploy/) 目录：`deploy/linux`、`deploy/windows`、`deploy/macos`、`deploy/docker`。
 > 图文部署教程（选型 / 产物与架构 / 四平台步骤 / 兼容矩阵 / 排障）作为**独立静态站点**单独维护，不在本仓库内：
-> <https://opsmonitor-docs.pages.dev>
+> <https://strix.az01.cc.cd>（备用地址 <https://opsmonitor-docs.pages.dev>）
 
 ## 配置项摘要
 

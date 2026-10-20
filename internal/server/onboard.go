@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/strix/internal/store"
 	"github.com/sangxi/strix/internal/version"
 )
 
@@ -19,6 +20,10 @@ type agentPlatform struct {
 	Arch    string `json:"arch"`
 	Version string `json:"version"`
 	Size    int64  `json:"size"`
+	// Legacy 是否已上传旧系统兼容版（Windows 7 / 8.1 / Server 2012 R2 等）。
+	// 兼容版与正式版并存，页面上提示「这些系统请用兼容版安装命令」。
+	Legacy        bool   `json:"legacy"`
+	LegacyVersion string `json:"legacyVersion"`
 }
 
 // publishedPlatforms 汇总当前有可下发采集端的平台。
@@ -40,11 +45,24 @@ func (s *Server) publishedPlatforms() []agentPlatform {
 			continue
 		}
 		seen[key] = true
-		rel, err := s.store.LatestRelease(r.Goos, r.Goarch)
-		if err != nil || rel == nil {
+		rel, err := s.store.LatestRelease(r.Goos, r.Goarch, "")
+		if err != nil {
 			continue
 		}
-		out = append(out, agentPlatform{OS: rel.Goos, Arch: rel.Goarch, Version: rel.Version, Size: rel.Size})
+		lg, _ := s.store.LatestRelease(r.Goos, r.Goarch, store.VariantLegacy)
+		if rel == nil && lg == nil {
+			continue
+		}
+		p := agentPlatform{OS: r.Goos, Arch: r.Goarch}
+		if rel != nil {
+			p.Version = rel.Version
+			p.Size = rel.Size
+		}
+		if lg != nil {
+			p.Legacy = true
+			p.LegacyVersion = lg.Version
+		}
+		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].OS != out[j].OS {
