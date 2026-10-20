@@ -43,6 +43,8 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 - **上报可调**：默认每分钟上报一次，间隔由平台统一下发，改配置不用登主机、不用重启
 - **部署即用**：支持 Docker Compose / 1Panel / 宝塔面板 / docker / 二进制直接运行，全中文 UI
 
+### 演示站 ###
+## https://www.az01.site/#/dashboard        账号ops     密码：123456
 ## 版本更新（1.1.1 → 1.2.2）
 
 | 版本 | 重点 |
@@ -107,7 +109,7 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 
 ## 快速开始
 
-完整部署方案见 [DEPLOY.md](DEPLOY.md)；图文步骤见独立教程站 <https://opsmonitor-docs.pages.dev>。
+完整部署方案见 [DEPLOY.md](DEPLOY.md)；图文步骤见独立教程站 <https://strix.az01.cc.cd>。
 
 ### 第 0 步：选对产物（平台 × 架构）
 
@@ -186,7 +188,7 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://<服务器IP>:9999
 脚本自动完成：识别系统与架构 → 查询下发版本 → 下载二进制 → 校验 SHA256 →
 拉取平台下发的运行配置 → 注册开机自启的系统服务（systemd / launchd / 计划任务）。
 
-**完整部署方案见: https://strix.az01.cc.cd** —— 含容量规划、反向代理、备份恢复、升级回滚与排障手册。
+**完整部署方案见 [DEPLOY.md](DEPLOY.md)；图文步骤见独立教程站 <https://strix.az01.cc.cd>。** —— 含容量规划、反向代理、备份恢复、升级回滚与排障手册。
 
 > 各平台的**可执行部署脚本**在 [`deploy/`](deploy/) 目录：`deploy/linux`、`deploy/windows`、`deploy/macos`、`deploy/docker`。
 > 图文部署教程（选型 / 产物与架构 / 四平台步骤 / 兼容矩阵 / 排障）作为**独立静态站点**单独维护，不在本仓库内：
