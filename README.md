@@ -44,7 +44,10 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 - **部署即用**：支持 Docker Compose / 1Panel / 宝塔面板 / docker / 二进制直接运行，全中文 UI
 
 ### 演示站 ###
-## https://www.az01.site/#/dashboard        账号ops     密码：123456
+## https://www.az01.site/#/dashboard       
+
+## 账号ops     密码：123456
+
 ## 版本更新（1.1.1 → 1.2.2）
 
 | 版本 | 重点 |
