@@ -405,7 +405,27 @@ func (s *Server) handleTokenItem(w http.ResponseWriter, r *http.Request) {
 /* ---------------- 系统设置与界面定制 ---------------- */
 
 // publicSettingKeys 无需登录即可读取的界面定制项。
-var publicSettingKeys = []string{"systemName", "logoData", "hideFooter", "footerText", "alertSound"}
+var publicSettingKeys = []string{"systemName", "logoData", "hideFooter", "footerText", "alertSound", "screenTitle"}
+
+// screenTitleDefault 系统名称也未设置时的兜底标题。
+const screenTitleDefault = "Strix 运维监控中心"
+
+// screenTitleOf 计算大屏标题。
+//
+// 取值优先级：显式配置的 screenTitle > 「系统名称 + 运维监控中心」> 兜底常量。
+// 这样默认安装的表现与旧版写死的「Strix 运维监控中心」完全一致，
+// 而只改「系统名称」的用户也不必再去改一次大屏标题。
+//
+// /api/settings/public 与 /api/screen 都走这里，避免前后端各兜底一遍、结果对不上。
+func screenTitleOf(settings map[string]string) string {
+	if t := strings.TrimSpace(settings["screenTitle"]); t != "" {
+		return t
+	}
+	if name := strings.TrimSpace(settings["systemName"]); name != "" {
+		return name + " 运维监控中心"
+	}
+	return screenTitleDefault
+}
 
 func (s *Server) handlePublicSettings(w http.ResponseWriter, r *http.Request) {
 	all, err := s.store.Settings()
@@ -420,6 +440,7 @@ func (s *Server) handlePublicSettings(w http.ResponseWriter, r *http.Request) {
 	if out["systemName"] == "" {
 		out["systemName"] = "Strix"
 	}
+	out["screenTitle"] = screenTitleOf(all)
 	writeJSON(w, out)
 }
 

@@ -60,12 +60,24 @@ body {
   letter-spacing: 5px;
   font-weight: 700;
   white-space: nowrap;
+  /* 标题现在由用户在「界面定制」里自己填，可能比默认名长很多。
+     两侧还要放数据状态、时钟、模板选择，所以这里必须能被压缩，
+     超长时省略而不是把头部挤到换行（大屏投屏不接受布局跳动）。
+     完整名称看 h1 的 title 提示。 */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
   text-shadow: 0 0 20px rgba(34, 211, 238, .5);
   background: linear-gradient(180deg, #ffffff, #7dd3fc);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* 两侧不参与收缩，避免时钟、模板下拉被标题挤变形 */
+.screen-head .side { flex: 0 0 auto; }
 
 .screen-head .side { display: flex; align-items: center; gap: 10px; min-width: 260px; }
 .screen-head .side.right { justify-content: flex-end; }

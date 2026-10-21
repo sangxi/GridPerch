@@ -3440,13 +3440,19 @@ async function renderSettings() {
     const tab = $('.tabs button.active').dataset.tab;
     let body = '';
     if (tab === 'brand') {
+      const autoTitle = (val('systemName', 'Strix') || 'Strix') + ' 运维监控中心';
       body = `<div class="form-grid">
         <label>系统名称<input id="sName" value="${esc(val('systemName', 'Strix'))}"></label>
         <label>自定义 Logo（上传图片）<input type="file" id="sLogo" accept="image/*"></label>
         <label class="full">Logo 预览<div id="logoPreview" style="margin-top:6px">${cfg.logoData ? `<img src="${esc(cfg.logoData)}" style="height:36px">` : '<span class="mono">未设置</span>'}</div></label>
+        <label class="full">大屏标题
+          <input id="sScreenTitle" maxlength="32" value="${esc(val('screenTitle'))}" placeholder="留空则自动使用「${esc(autoTitle)}」">
+        </label>
         <label class="full"><input type="checkbox" id="sHideFooter" ${val('hideFooter') === 'true' ? 'checked' : ''}> 隐藏页底版权内容</label>
         <label class="full">页底自定义文字<input id="sFooter" value="${esc(val('footerText'))}"></label>
-      </div>`;
+      </div>
+      <div class="seg-note">大屏标题作用于「可视化大屏」页顶部的名称（浏览器标签页标题同步变化）。
+        留空时跟随「系统名称」自动生成，改系统名称即可整体换名；想单独起名就在这里填。</div>`;
     } else if (tab === 'agent') {
       body = `<div class="hint-box">
         这些是<strong>平台统一下发</strong>给采集端的运行配置。采集端启动后自动拉取，
@@ -3587,6 +3593,7 @@ async function renderSettings() {
     const tab = $('.tabs button.active').dataset.tab;
     if (tab === 'brand') {
       set('systemName', $('#sName')); set('hideFooter', $('#sHideFooter')); set('footerText', $('#sFooter'));
+      set('screenTitle', $('#sScreenTitle'));
       if (window.__logo) patch.logoData = window.__logo;
     } else if (tab === 'agent') {
       patch.agentInterval = $('#agInterval').value.trim();

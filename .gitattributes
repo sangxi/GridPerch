@@ -9,3 +9,24 @@ SHA256SUMS.txt text eol=lf
 *.sh text eol=lf
 *.service text eol=lf
 *.env.example text eol=lf
+
+# 源码与内嵌资源也强制 LF。
+# 仓库里 core.autocrlf=true 时，`* text=auto` 会让 Windows 工作区把检出过的文件
+# 转成 CRLF（索引仍然是 LF），于是：
+#   ① `gofmt -l` 会点名一长串其实没改过的文件，干扰「格式化三连」自检；
+#   ② 前端资源是 go:embed 进二进制的，CRLF 版会和 LF 版产生不同的产物哈希。
+# 这里逐类锁死，改完两边一致。
+*.go text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Dockerfile 没有扩展名，`* text=auto` 管不到。
+# 一旦被检出成 CRLF，`RUN xxx \` 的续行符后面会多一个 \r，构建直接报
+# 「unable to process line continuation」。
+Dockerfile* text eol=lf
+docker-compose*.yml text eol=lf

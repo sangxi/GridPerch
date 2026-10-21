@@ -199,6 +199,10 @@ type ScreenPayload struct {
 	ConnTotal    int     `json:"connTotal"`
 	TotalProcess int     `json:"totalProcess"`
 	SystemName   string  `json:"systemName"`
+	// Title 大屏标题，来自系统设置「界面定制」里的大屏标题。
+	// 未设置时由 screenTitleOf 计算成「系统名称 + 运维监控中心」，
+	// 前端不再自己拼文案，改一处就够。
+	Title string `json:"title"`
 	// Trends 全主机平均资源趋势，供大屏折线图
 	Trends map[string][]store.TrendPoint `json:"trends"`
 	// Units 各趋势曲线的单位
@@ -336,11 +340,15 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 	if n, perr := s.store.TotalProcess(); perr == nil {
 		payload.TotalProcess = n
 	}
-	// 系统名称取用户自定义，未设置时用默认品牌名
+	// 系统名称与大屏标题取用户自定义，未设置时用默认品牌名
 	if settings, serr := s.store.Settings(); serr == nil {
 		if name := strings.TrimSpace(settings["systemName"]); name != "" {
 			payload.SystemName = name
 		}
+		payload.Title = screenTitleOf(settings)
+	} else {
+		// 设置读取失败不该让整块大屏没有标题，退回兜底名
+		payload.Title = screenTitleDefault
 	}
 	writeJSON(w, payload)
 }

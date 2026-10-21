@@ -47,6 +47,24 @@ async function api(url) {
   return res.json();
 }
 
+/* ---------- 大屏标题 ---------- */
+
+// 标题以前写死在 screen.html 里，用户没法改成自己单位的名字。
+// 现在由后端算好（系统设置 →「界面定制」→ 大屏标题，留空则「系统名称 + 运维监控中心」），
+// 前端只负责套用：页顶 h1 与浏览器标签页标题一起改。
+const DEFAULT_TITLE = 'Strix 运维监控中心';
+
+function applyTitle(t) {
+  const title = String(t == null ? '' : t).trim() || DEFAULT_TITLE;
+  const h = document.querySelector('.screen-head h1');
+  if (h) {
+    if (h.textContent !== title) h.textContent = title;
+    // 名字过长时头部会省略号截断，悬停/无障碍朗读仍能看到全称
+    if (h.getAttribute('title') !== title) h.setAttribute('title', title);
+  }
+  if (document.title !== title) document.title = title;
+}
+
 /* ---------- 格式化 ---------- */
 
 function fmt(v, digits) {
@@ -960,6 +978,8 @@ function render() {
 async function refresh() {
   try {
     payload = await api('/api/screen?minutes=' + minutes);
+    // 后台改了标题，最迟下一次刷新（10 秒内）就反映到大屏上，不用重开
+    applyTitle(payload.title);
     const net = el('netState');
     net.textContent = '数据连接正常';
     net.className = 'tag-pill';
@@ -1065,6 +1085,11 @@ const fromPath = currentFromPath();
 if (fromPath && LAYOUTS[fromPath]) layout = fromPath;
 el('layoutPicker').value = String(layout);
 el('windowLabel').textContent = windowLabelText();
+
+// 先用公开设置里的标题占位，避免自定义过名称的大屏先闪一下默认名
+api('/api/settings/public')
+  .then(cfg => applyTitle(cfg && cfg.screenTitle))
+  .catch(() => { /* 拿不到就沿用 HTML 里的默认名，不影响大屏出图 */ });
 
 refresh();
 setInterval(refresh, REFRESH_MS);
