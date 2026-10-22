@@ -8,8 +8,10 @@
 // 不必先解析 JSON，也就不会因为编码或字段顺序的差异产生歧义。
 //
 // 本文件只实现「验」，没有「签」：
-//   - STRIX2- 用 Ed25519 公钥验签。公钥只能验、不能签，所以即使二进制被逆向，
+//   - GRIDPERCH2- 用 Ed25519 公钥验签。公钥只能验、不能签，所以即使二进制被逆向，
 //     也伪造不出授权码。
+//   - STRIX2- / OPSM2- 是同一种 Ed25519 结构的历史前缀（品牌沿革 GridPerch ← Strix ←
+//     OpsMonitor），换了前缀不影响验签结果，存量授权码继续有效。
 //   - OPSM1- / OPSM- / WGC- 用 HMAC-SHA256 对称密钥验签，只为兼容存量授权码而保留。
 package license
 
@@ -28,9 +30,13 @@ import (
 // 授权码前缀。这里只做识别，不产生新码。
 const (
 	// PrefixV2 现行格式，Ed25519 签名，由授权中心签发。
-	PrefixV2 = "STRIX2-"
-	// prefixLegacyV2 更名前的现行前缀，同样是 Ed25519 签名，只读兼容存量授权码。
-	// 授权中心改成签发 STRIX2- 之后，老用户手里的 OPSM2- 码仍然能验，不必换码。
+	PrefixV2 = "GRIDPERCH2-"
+	// prefixLegacyStrixV2 更名前一代（Strix）的现行前缀，同样是 Ed25519 签名，
+	// 只读兼容存量授权码。签名对象是前缀之后的那段 base64url，与前缀无关，
+	// 所以换前缀不影响验签：授权中心改成签发 GRIDPERCH2- 之后，
+	// 客户手里已经签发的 STRIX2- 码照旧能用，不必换码。
+	prefixLegacyStrixV2 = "STRIX2-"
+	// prefixLegacyV2 更早一代（OpsMonitor）的现行前缀，同样是 Ed25519 签名，只读兼容。
 	prefixLegacyV2 = "OPSM2-"
 	// PrefixV1 旧格式，HMAC-SHA256 签名。
 	PrefixV1 = "OPSM1-"
@@ -39,6 +45,10 @@ const (
 	// prefixLegacyV0 本工程最早的前缀（更名前的初版），同样按 HMAC 校验。
 	prefixLegacyV0 = "OPSM-"
 )
+
+// ed25519Prefixes 所有按 Ed25519 验签的前缀，顺序为「现行 → 历史」。
+// 验签逻辑与前缀无关（签名对象是前缀之后的载荷），差别只在识别与展示。
+var ed25519Prefixes = []string{PrefixV2, prefixLegacyStrixV2, prefixLegacyV2}
 
 // ErrNotSignedByUs 授权码不是本平台签发的。
 var ErrNotSignedByUs = errors.New("授权码签名校验失败，可能不是本平台签发或已被篡改")
@@ -114,7 +124,7 @@ func (v Verifier) Fingerprint() string { return Fingerprint(v.pub) }
 // Format 返回授权码的格式标识：ed25519 / hmac / unknown，供状态与日志展示。
 func (v Verifier) Format(raw string) string {
 	switch codePrefix(raw) {
-	case PrefixV2, prefixLegacyV2:
+	case PrefixV2, prefixLegacyStrixV2, prefixLegacyV2:
 		return "ed25519"
 	case PrefixV1, prefixLegacy, prefixLegacyV0:
 		return "hmac"
@@ -130,7 +140,7 @@ func (v Verifier) Verify(raw string) (*License, error) {
 		return nil, errors.New("授权码为空")
 	}
 	switch codePrefix(code) {
-	case PrefixV2, prefixLegacyV2:
+	case PrefixV2, prefixLegacyStrixV2, prefixLegacyV2:
 		return v.verifyEd25519(code)
 	case PrefixV1, prefixLegacy, prefixLegacyV0:
 		if len(v.legacy) == 0 {
@@ -177,7 +187,8 @@ func (v Verifier) verifyHMAC(code string) (*License, error) {
 // codePrefix 返回授权码前缀；无法识别时返回空串。
 func codePrefix(code string) string {
 	code = compact(code)
-	for _, p := range []string{PrefixV2, prefixLegacyV2, PrefixV1, prefixLegacy, prefixLegacyV0} {
+	all := append(append([]string{}, ed25519Prefixes...), PrefixV1, prefixLegacy, prefixLegacyV0)
+	for _, p := range all {
 		if strings.HasPrefix(code, p) {
 			return p
 		}

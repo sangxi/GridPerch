@@ -19,9 +19,9 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # 仅本次�
 
 脚本会自动：
 
-1. 把 `strix-server.exe` 装到 `C:\Strix\`（自动从脚本上级目录找二进制）
-2. 生成 `C:\Strix\start-server.cmd`，把端口、密钥、账号写进去
-3. 注册**开机自启计划任务** `strix`（SYSTEM 权限、失败自动重启 3 次）
+1. 把 `gridperch-server.exe` 装到 `C:\GridPerch\`（自动从脚本上级目录找二进制）
+2. 生成 `C:\GridPerch\start-server.cmd`，把端口、密钥、账号写进去
+3. 注册**开机自启计划任务** `gridperch`（SYSTEM 权限、失败自动重启 3 次）
 4. 放行防火墙端口
 5. 打印**只显示一次**的控制台账号与通信密钥
 
@@ -32,8 +32,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # 仅本次�
 ```powershell
 .\install.ps1 -Addr :8000                          # 换端口
 .\install.ps1 -Token '你的密钥' -AdminPass '你的密码'   # 指定密钥与密码
-.\install.ps1 -Prefix 'D:\Strix'              # 换安装目录
-.\install.ps1 -File D:\tmp\strix-server-windows-amd64.exe
+.\install.ps1 -Prefix 'D:\GridPerch'              # 换安装目录
+.\install.ps1 -File D:\tmp\gridperch-server-windows-amd64.exe
 .\install.ps1 -NoFirewall                          # 不动防火墙
 .\install.ps1 -Uninstall                           # 卸载（保留数据）
 .\uninstall.ps1 -Purge                             # 卸载并删除数据
@@ -43,69 +43,69 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # 仅本次�
 
 | 路径 | 用途 |
 |---|---|
-| `C:\Strix\strix-server.exe` | 主程序（自动更新会替换，旧版存为 `.bak`） |
-| `C:\Strix\start-server.cmd` | 启动脚本（配置在这里，权限受限） |
-| `C:\Strix\data\strix.db` | SQLite 数据库（备份拷这个目录） |
-| `C:\Strix\logs\server.log` | 程序输出日志 |
-| `C:\Strix\releases\` | 采集端发布物缓存 |
+| `C:\GridPerch\gridperch-server.exe` | 主程序（自动更新会替换，旧版存为 `.bak`） |
+| `C:\GridPerch\start-server.cmd` | 启动脚本（配置在这里，权限受限） |
+| `C:\GridPerch\data\gridperch.db` | SQLite 数据库（备份拷这个目录） |
+| `C:\GridPerch\logs\server.log` | 程序输出日志 |
+| `C:\GridPerch\releases\` | 采集端发布物缓存 |
 
 ## 日常运维
 
 ```powershell
 # 状态
-Get-ScheduledTask -TaskName strix | Select-Object State
-Get-Process strix-server -ErrorAction SilentlyContinue
+Get-ScheduledTask -TaskName gridperch | Select-Object State
+Get-Process gridperch-server -ErrorAction SilentlyContinue
 
 # 看日志（跟随输出）
-Get-Content C:\Strix\logs\server.log -Tail 40 -Wait
+Get-Content C:\GridPerch\logs\server.log -Tail 40 -Wait
 
 # 重启
-Stop-ScheduledTask -TaskName strix; Start-ScheduledTask -TaskName strix
+Stop-ScheduledTask -TaskName gridperch; Start-ScheduledTask -TaskName gridperch
 
 # 开机自启开关
-Disable-ScheduledTask -TaskName strix
-Enable-ScheduledTask  -TaskName strix
+Disable-ScheduledTask -TaskName gridperch
+Enable-ScheduledTask  -TaskName gridperch
 ```
 
 ## 手工部署（不用脚本）
 
 ```powershell
-New-Item -ItemType Directory -Force C:\Strix\data, C:\Strix\logs
-Copy-Item strix-server-windows-amd64.exe C:\Strix\strix-server.exe
+New-Item -ItemType Directory -Force C:\GridPerch\data, C:\GridPerch\logs
+Copy-Item gridperch-server-windows-amd64.exe C:\GridPerch\gridperch-server.exe
 
 # 前台试跑，确认能起来（Ctrl+C 退出）
-C:\Strix\strix-server.exe -addr :9999 -db C:\Strix\data\strix.db -token 你的密钥
+C:\GridPerch\gridperch-server.exe -addr :9999 -db C:\GridPerch\data\gridperch.db -token 你的密钥
 
 # 注册开机自启
-$action  = New-ScheduledTaskAction -Execute 'C:\Strix\strix-server.exe' `
-  -Argument '-addr :9999 -db C:\Strix\data\strix.db -token 你的密钥' `
-  -WorkingDirectory 'C:\Strix'
+$action  = New-ScheduledTaskAction -Execute 'C:\GridPerch\gridperch-server.exe' `
+  -Argument '-addr :9999 -db C:\GridPerch\data\gridperch.db -token 你的密钥' `
+  -WorkingDirectory 'C:\GridPerch'
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-Register-ScheduledTask -TaskName strix -Action $action -Trigger $trigger -Principal $principal -Force
+Register-ScheduledTask -TaskName gridperch -Action $action -Trigger $trigger -Principal $principal -Force
 
 # 放行防火墙
-New-NetFirewallRule -DisplayName 'Strix' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9999
+New-NetFirewallRule -DisplayName 'GridPerch' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9999
 ```
 
 ## 升级
 
-升级只需替换 `C:\Strix\strix-server.exe` 这一个二进制（前端已编译在内）。替换后重启计划任务使新版本生效：
+升级只需替换 `C:\GridPerch\gridperch-server.exe` 这一个二进制（前端已编译在内）。替换后重启计划任务使新版本生效：
 
 ```powershell
-Stop-ScheduledTask -TaskName strix; Start-ScheduledTask -TaskName strix
+Stop-ScheduledTask -TaskName gridperch; Start-ScheduledTask -TaskName gridperch
 ```
 
 ## 排障
 
 | 现象 | 处理 |
 |---|---|
-| 计划任务显示「已就绪」但没有进程 | 看 `C:\Strix\logs\server.log`；常见是端口被占或数据目录无权限 |
+| 计划任务显示「已就绪」但没有进程 | 看 `C:\GridPerch\logs\server.log`；常见是端口被占或数据目录无权限 |
 | 无法执行脚本，提示脚本被禁用 | 用上面那句 `Set-ExecutionPolicy -Scope Process Bypass`，或 `powershell -ExecutionPolicy Bypass -File .\install.ps1` |
 | 本机能开、别的机器打不开 | 防火墙规则没生效，或安全组/上层设备未放行 |
 | 日志乱码 | 用 `Get-Content -Encoding Default` 读取，或直接用记事本打开 |
 | 启动日志指纹不是 `278D-4852-7191-E7CE` | 二进制不是本版本产物 |
-| 采集端连不上 | 检查 `-token` 是否与监控端 `STRIX_TOKEN` 一致，以及 9999 是否可达 |
+| 采集端连不上 | 检查 `-token` 是否与监控端 `GRIDPERCH_TOKEN` 一致，以及 9999 是否可达 |
 
 ---
 
@@ -138,16 +138,16 @@ Windows 7 / 8 / 8.1 与 Server 2008 R2 / 2012 / 2012 R2。落到代码上是两�
 快速判断手上这个 exe 属于哪一类（在**开发机**上对二进制执行）：
 
 ```bash
-grep -ac bcryptprimitives  strix-agent-windows-amd64.exe        # >0 → 正式版，跑不了旧系统
-grep -ac SystemFunction036 strix-agent-windows-amd64-win7.exe   # >0 → 兼容版，旧系统可用
+grep -ac bcryptprimitives  gridperch-agent-windows-amd64.exe        # >0 → 正式版，跑不了旧系统
+grep -ac SystemFunction036 gridperch-agent-windows-amd64-win7.exe   # >0 → 兼容版，旧系统可用
 ```
 
 ## 两套产物从哪来
 
 | 产物 | 构建命令 | 文件名 |
 |---|---|---|
-| 正式版 | `./build.sh all` | `dist/strix-agent-windows-amd64.exe` |
-| 旧系统兼容版 | `./build-win7.sh` | `dist/strix-agent-windows-amd64-win7.exe` |
+| 正式版 | `./build.sh all` | `dist/gridperch-agent-windows-amd64.exe` |
+| 旧系统兼容版 | `./build-win7.sh` | `dist/gridperch-agent-windows-amd64-win7.exe` |
 
 兼容版用 Go 1.20.14 + 裁剪过的 `go120.mod` 单独构建（采集端不依赖 sqlite/mysql，
 所以能绕开「这两个库要求 go 1.21」的限制）。构建时注入了
@@ -198,8 +198,8 @@ grep -ac SystemFunction036 strix-agent-windows-amd64-win7.exe   # >0 → 兼容�
 平台给的一键命令在上面必然失败，改用系统自带的 `schtasks.exe`：
 
 ```cmd
-:: 1) 先验证二进制能在本机跑起来（应打印 strix-agent 1.2.3 (windows/amd64) …）
-C:\Strix\strix-agent-windows-amd64-win7.exe -version
+:: 1) 先验证二进制能在本机跑起来（应打印 gridperch-agent 1.2.3 (windows/amd64) …）
+C:\GridPerch\gridperch-agent-windows-amd64-win7.exe -version
 
 :: 2) 把本目录的 start-agent.cmd 与 exe 放在同一目录，用记事本改开头那 4 项
 ::    （平台地址 / 密钥MD5 / 主机名 / 上报间隔）—— 其余参数已在脚本里固化
@@ -208,12 +208,12 @@ C:\Strix\strix-agent-windows-amd64-win7.exe -version
 ::    「采集端启动：版本 1.2.3 …」，以及「已上报 CPU …」，即已连上平台
 
 :: 4) 注册开机自启（管理员 cmd，末尾 log 参数让输出写进 agent.log）
-schtasks /create /tn strix-agent /tr "C:\Strix\start-agent.cmd log" /sc onstart /ru SYSTEM /rl HIGHEST /f
-schtasks /run /tn strix-agent
+schtasks /create /tn gridperch-agent /tr "C:\GridPerch\start-agent.cmd log" /sc onstart /ru SYSTEM /rl HIGHEST /f
+schtasks /run /tn gridperch-agent
 
 :: 5) 查看状态与日志
-schtasks /query /tn strix-agent
-type C:\Strix\agent.log
+schtasks /query /tn gridperch-agent
+type C:\GridPerch\agent.log
 ```
 
 `密钥MD5` 就是平台「添加主机」页面生成命令里的 `wgToken` 值（= 监控端 `token` 的 MD5）。
@@ -228,14 +228,14 @@ type C:\Strix\agent.log
 再让目标机替换：
 
 ```bash
-./build-win7.sh          # 产物：dist/strix-agent-windows-amd64-win7.exe
+./build-win7.sh          # 产物：dist/gridperch-agent-windows-amd64-win7.exe
 ```
 
 ```cmd
 :: 在旧系统上手工替换
-schtasks /end /tn strix-agent
+schtasks /end /tn gridperch-agent
 :: 覆盖 exe 之后再启动
-schtasks /run /tn strix-agent
+schtasks /run /tn gridperch-agent
 ```
 
 Windows 8.1 / Server 2012 R2 上如果当初用的是一键命令安装的，平台发布新兼容版后
@@ -246,7 +246,7 @@ Windows 8.1 / Server 2012 R2 上如果当初用的是一键命令安装的，平
 | 现象 | 处理 |
 |---|---|
 | 双击闪退、无任何输出 | 系统兼容问题，换兼容版（`-win7.exe`） |
-| `-version` 正常但平台看不到主机 | 看 `C:\Strix\agent.log`；多半是 `-server` 写成 `127.0.0.1`，或平台 IP/端口不可达 |
+| `-version` 正常但平台看不到主机 | 看 `C:\GridPerch\agent.log`；多半是 `-server` 写成 `127.0.0.1`，或平台 IP/端口不可达 |
 | 一键安装报「尚未发布…旧系统兼容版」 | 平台「版本发布」里没有勾选兼容版上传，按上文补一次 |
 | 稳定运行后突然又闪退 | 用 `-version` 看版本；若变成了没有 `-win7` 后缀的正式版，说明是被旧平台换掉的（1.2.2 及更早的行为），部署 1.2.3+ 后不再发生 |
 | 不确定手上的 exe 是哪个构建 | `-version` 看构建时间；或 `grep -ac bcryptprimitives`，结果为 0 才是兼容版 |

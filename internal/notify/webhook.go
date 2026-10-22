@@ -63,7 +63,7 @@ func WebhookKinds() []WebhookKindInfo {
 		{
 			Key: KindCustom, Name: "通用 Webhook（自定义 JSON）",
 			URLHint:    "https://your-gateway.example.com/alert",
-			SecretHint: "按需填写，会作为 X-Strix-Secret 请求头发送（同时兼容旧头 X-Opsm-Secret）",
+			SecretHint: "按需填写，会作为 X-GridPerch-Secret 请求头发送（同时兼容旧头 X-Opsm-Secret）",
 		},
 	}
 }
@@ -107,7 +107,7 @@ const timeLayout = "2006-01-02 15:04:05"
 func alertMarkdown(prefix string, alerts []Alert) (title, text string) {
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
-		prefix = "[Strix]"
+		prefix = "[GridPerch]"
 	}
 	title = fmt.Sprintf("%s 检测到 %d 条新告警", prefix, len(alerts))
 
@@ -163,8 +163,8 @@ func SendWebhook(cfg WebhookConfig, alerts []Alert) error {
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	if cfg.Secret != "" {
 		// 新旧两个头都发：X-Opsm-Secret 是更名前就有的名字，现网接收端可能已经按它
-		// 校验了，单独改名会让这些接收端全部失败；X-Strix-Secret 供新接入方使用。
-		req.Header.Set("X-Strix-Secret", cfg.Secret)
+		// 校验了，单独改名会让这些接收端全部失败；X-GridPerch-Secret 供新接入方使用。
+		req.Header.Set("X-GridPerch-Secret", cfg.Secret)
 		req.Header.Set("X-Opsm-Secret", cfg.Secret)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -258,7 +258,7 @@ func buildWebhookRequest(cfg WebhookConfig, alerts []Alert) (string, map[string]
 			"text":    plainText(cfg.Prefix, alerts),
 			"count":   len(alerts),
 			"alerts":  items,
-			"source":  "Strix",
+			"source":  "GridPerch",
 			"time":    now.Format(timeLayout),
 		}, nil
 	}

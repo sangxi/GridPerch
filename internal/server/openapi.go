@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/gridperch/internal/store"
 )
 
 // openAPI 校验开放接口凭证后放行，凭证权限需覆盖接口要求的 perm。

@@ -15,11 +15,11 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/sangxi/strix/internal/config"
-	"github.com/sangxi/strix/internal/license"
-	"github.com/sangxi/strix/internal/model"
-	"github.com/sangxi/strix/internal/store"
-	"github.com/sangxi/strix/internal/version"
+	"github.com/sangxi/gridperch/internal/config"
+	"github.com/sangxi/gridperch/internal/license"
+	"github.com/sangxi/gridperch/internal/model"
+	"github.com/sangxi/gridperch/internal/store"
+	"github.com/sangxi/gridperch/internal/version"
 )
 
 /* ================ 一、版本发布 ================ */
@@ -148,7 +148,7 @@ func (s *Server) uploadRelease(w http.ResponseWriter, r *http.Request) {
 	if goos == "windows" {
 		ext = ".exe"
 	}
-	name := fmt.Sprintf("strix-agent-%s-%s", goos, goarch)
+	name := fmt.Sprintf("gridperch-agent-%s-%s", goos, goarch)
 	if variant != "" {
 		name += "-" + variant // 与正式版放在同一版本目录里，文件名必须能区分
 	}
@@ -465,7 +465,7 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 func sanitizeAgentName(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
-		v = "strix-host"
+		v = "gridperch-host"
 	}
 	var b strings.Builder
 	for _, c := range v {
@@ -490,7 +490,7 @@ func sanitizeAgentName(v string) string {
 // 脚本里嵌的是通信口令的 MD5，不是明文 token：目标主机的命令行历史与
 // systemd 单元文件都不会出现明文口令。
 const installSH = `#!/usr/bin/env bash
-# Strix 采集端一键安装：直接从平台拉取二进制并注册为系统服务。
+# GridPerch 采集端一键安装：直接从平台拉取二进制并注册为系统服务。
 # 本脚本由服务端动态生成，请勿手工修改。
 set -euo pipefail
 
@@ -532,7 +532,7 @@ if ! fetch "$SERVER/" >/dev/null 2>&1; then
   echo "  2) 服务端启动参数 -addr 是否为 :9999（只绑 127.0.0.1 时，其他机器访问不到）；" >&2
   echo "  3) 本机到服务端 9999 端口是否被防火墙拦截；" >&2
   echo "  4) 命令里的地址是否是本机能访问到的地址——生成命令时可能带上服务端本机的 127.0.0.1，或云主机的内网 IP（10.x / 192.168.x），这些别的机器都连不上；" >&2
-  echo "     云主机请在服务端设置 -public-url http://公网IP:9999（或 STRIX_PUBLIC_URL）后重新生成命令。" >&2
+  echo "     云主机请在服务端设置 -public-url http://公网IP:9999（或 GRIDPERCH_PUBLIC_URL）后重新生成命令。" >&2
   exit 1
 fi
 
@@ -553,7 +553,7 @@ echo "    最新版本 $VERSION"
 
 echo "==> 从平台下载采集端"
 INSTALL_DIR=/usr/local/bin
-BIN="$INSTALL_DIR/strix-agent"
+BIN="$INSTALL_DIR/gridperch-agent"
 TMP=$(mktemp)
 download "$SERVER/agent/download?os=$GOOS&arch=$GOARCH&wgToken=$TOKEN_HASH" "$TMP"
 
@@ -587,13 +587,13 @@ ARGS="-server $SERVER -token-hash $TOKEN_HASH -name $HOST_NAME"
 
 if [ "$GOOS" = "darwin" ]; then
   echo "==> 注册 launchd 后台服务"
-  PLIST=/Library/LaunchDaemons/strix-agent.plist
+  PLIST=/Library/LaunchDaemons/gridperch-agent.plist
   sudo tee "$PLIST" >/dev/null <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>strix-agent</string>
+  <key>Label</key><string>gridperch-agent</string>
   <key>ProgramArguments</key>
   <array>
     <string>$BIN</string><string>-server</string><string>$SERVER</string>
@@ -602,22 +602,22 @@ if [ "$GOOS" = "darwin" ]; then
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/var/log/strix-agent.log</string>
-  <key>StandardErrorPath</key><string>/var/log/strix-agent.log</string>
+  <key>StandardOutPath</key><string>/var/log/gridperch-agent.log</string>
+  <key>StandardErrorPath</key><string>/var/log/gridperch-agent.log</string>
 </dict>
 </plist>
 EOF
   sudo launchctl unload "$PLIST" 2>/dev/null || true
   sudo launchctl load "$PLIST"
-  echo "==> 完成，查看日志：tail -f /var/log/strix-agent.log"
+  echo "==> 完成，查看日志：tail -f /var/log/gridperch-agent.log"
   exit 0
 fi
 
 if command -v systemctl >/dev/null 2>&1; then
   echo "==> 注册 systemd 服务"
-  sudo tee /etc/systemd/system/strix-agent.service >/dev/null <<EOF
+  sudo tee /etc/systemd/system/gridperch-agent.service >/dev/null <<EOF
 [Unit]
-Description=Strix 采集端
+Description=GridPerch 采集端
 After=network-online.target
 Wants=network-online.target
 
@@ -631,19 +631,19 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
   sudo systemctl daemon-reload
-  sudo systemctl enable --now strix-agent
+  sudo systemctl enable --now gridperch-agent
   sleep 2
-  systemctl status strix-agent --no-pager || true
-  echo "==> 完成。日志：journalctl -u strix-agent -f"
+  systemctl status gridperch-agent --no-pager || true
+  echo "==> 完成。日志：journalctl -u gridperch-agent -f"
 else
   echo "==> 未检测到 systemd，改用 nohup 常驻"
-  sudo nohup "$BIN" $ARGS >/var/log/strix-agent.log 2>&1 &
-  echo "==> 已后台启动，日志：/var/log/strix-agent.log"
+  sudo nohup "$BIN" $ARGS >/var/log/gridperch-agent.log 2>&1 &
+  echo "==> 已后台启动，日志：/var/log/gridperch-agent.log"
 fi
 `
 
 // installPS1 Windows 一键安装脚本。
-const installPS1 = `# Strix 采集端一键安装（Windows PowerShell）
+const installPS1 = `# GridPerch 采集端一键安装（Windows PowerShell）
 # 直接从平台拉取二进制并注册为开机自启任务。
 # 本脚本由服务端动态生成，请勿手工修改。
 $ErrorActionPreference = 'Stop'
@@ -651,12 +651,12 @@ $ErrorActionPreference = 'Stop'
 $Server     = '%s'
 $TokenHash  = '%s'
 $HostName   = '%s'
-$InstallDir = 'C:\Strix'
-$Exe        = Join-Path $InstallDir 'strix-agent.exe'
+$InstallDir = 'C:\GridPerch'
+$Exe        = Join-Path $InstallDir 'gridperch-agent.exe'
 
 Write-Host '==> 检测系统环境与权限'
 
-# 注册计划任务、写入 C:\Strix 都要求管理员权限；提前拦住，免得后面报晦涩的 HRESULT
+# 注册计划任务、写入 C:\GridPerch 都要求管理员权限；提前拦住，免得后面报晦涩的 HRESULT
 $wp = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $wp.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
   Write-Host '需要管理员权限。请右键「Windows PowerShell」选择「以管理员身份运行」，再重新执行本命令。' -ForegroundColor Red
@@ -698,9 +698,9 @@ try {
     Write-Host "无法连接平台 $Server，请依次检查：" -ForegroundColor Red
     Write-Host '  1) 服务端是否已经启动；'
     Write-Host '  2) 服务端启动参数 -addr 是否为 :9999（只绑 127.0.0.1 时，其他机器访问不到）；'
-    Write-Host '  3) 本机到服务端 9999 端口是否被防火墙拦截（服务端可用 netsh advfirewall firewall add rule name=Strix dir=in action=allow protocol=TCP localport=9999 放行）；'
+    Write-Host '  3) 本机到服务端 9999 端口是否被防火墙拦截（服务端可用 netsh advfirewall firewall add rule name=GridPerch dir=in action=allow protocol=TCP localport=9999 放行）；'
     Write-Host '  4) 命令里的地址是否是本机能访问到的地址——生成命令时可能带上服务端本机的 127.0.0.1，或云主机的内网 IP（10.x / 192.168.x），这些别的机器都连不上；'
-    Write-Host '     云主机请在服务端设置 -public-url http://公网IP:9999（或 STRIX_PUBLIC_URL）后重新生成命令。'
+    Write-Host '     云主机请在服务端设置 -public-url http://公网IP:9999（或 GRIDPERCH_PUBLIC_URL）后重新生成命令。'
     Write-Host "  原始错误：$($_.Exception.Message)"
     throw '安装中止：无法连接平台。'
   }
@@ -728,7 +728,7 @@ Write-Host "    最新版本 $($meta.version)"
 
 Write-Host '==> 从平台下载采集端'
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
-$tmp = Join-Path $InstallDir '.strix-agent.download'
+$tmp = Join-Path $InstallDir '.gridperch-agent.download'
 Invoke-WebRequest -UseBasicParsing -Uri "$Server/agent/download?os=windows&arch=$Goarch&wgToken=$TokenHash$Legacy" -OutFile $tmp -TimeoutSec 300
 
 if ($meta.sha256) {
@@ -739,7 +739,7 @@ if ($meta.sha256) {
   }
 }
 # 正在运行的旧进程无法直接覆盖，先停掉并等文件句柄释放再替换
-Get-Process strix-agent -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process gridperch-agent -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500
 Move-Item $tmp $Exe -Force
 Write-Host "    已安装到 $Exe"
@@ -761,19 +761,19 @@ $trigger   = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
 # ExecutionTimeLimit 置 0 表示不限时：计划任务默认执行满 72 小时会被强杀，常驻进程必须放开
 $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
-$splat = @{ TaskName = 'strix-agent'; Action = $action; Trigger = $trigger; Principal = $principal
-            Settings = $settings; Description = 'Strix 采集端'; Force = $true }
+$splat = @{ TaskName = 'gridperch-agent'; Action = $action; Trigger = $trigger; Principal = $principal
+            Settings = $settings; Description = 'GridPerch 采集端'; Force = $true }
 Register-ScheduledTask @splat | Out-Null
-Start-ScheduledTask -TaskName 'strix-agent'
+Start-ScheduledTask -TaskName 'gridperch-agent'
 Start-Sleep -Seconds 2
-$task = Get-ScheduledTask -TaskName 'strix-agent'
+$task = Get-ScheduledTask -TaskName 'gridperch-agent'
 Write-Host "    计划任务状态：$($task.State)"
 Write-Host ''
-Write-Host '==> 安装完成。采集端已注册为开机自启任务 strix-agent。'
+Write-Host '==> 安装完成。采集端已注册为开机自启任务 gridperch-agent。'
 Write-Host '    数据请到控制台「主机监控」查看。'
-Write-Host '    手动重启：Start-ScheduledTask -TaskName strix-agent'
-Write-Host '    查看状态：Get-ScheduledTask -TaskName strix-agent | Select-Object State'
-Write-Host '    卸载任务：Unregister-ScheduledTask -TaskName strix-agent -Confirm:$false'
+Write-Host '    手动重启：Start-ScheduledTask -TaskName gridperch-agent'
+Write-Host '    查看状态：Get-ScheduledTask -TaskName gridperch-agent | Select-Object State'
+Write-Host '    卸载任务：Unregister-ScheduledTask -TaskName gridperch-agent -Confirm:$false'
 `
 
 /* ================ 四、授权管理 ================ */

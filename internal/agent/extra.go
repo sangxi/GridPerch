@@ -21,11 +21,11 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 
-	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/gridperch/internal/model"
 )
 
 // baselinePath 保存文件指纹的本地基线文件。
-const baselineFile = "strix-file-baseline.json"
+const baselineFile = "gridperch-file-baseline.json"
 
 // runCommand 跨平台执行一条 shell 命令并返回退出码与输出。
 func runCommand(cmd string, timeout time.Duration) (int, string, error) {

@@ -1,10 +1,10 @@
-# Strix 部署方案
+# GridPerch 部署方案
 
-> 适用版本：v1.2.3+（构建时间 2026-10-20T17:51:46）· 项目地址：<https://github.com/sangxi/Strix>
+> 适用版本：v1.2.3+（构建时间 2026-10-20T17:51:46）· 项目地址：<https://github.com/sangxi/GridPerch>
 > 授权中心：默认授权中心（地址已内置在程序里，无需手工配置）
-> 图文步骤：<https://strix.az01.cc.cd>（备用 <https://opsmonitor-docs.pages.dev>）
+> 图文步骤：<https://gridperch.az01.cc.cd>（备用 <https://opsmonitor-docs.pages.dev>）
 
-本文是 Strix 从零到上线的完整部署方案，覆盖架构选型、部署拓扑、文件清单、
+本文是 GridPerch 从零到上线的完整部署方案，覆盖架构选型、部署拓扑、文件清单、
 容量规划、授权通信、上线检查、升级回滚与排障。控制台内置同一份教程（访问 `/docs`），
 本文更侧重方案决策与生产实践。
 
@@ -26,14 +26,14 @@
       每 5 分钟     │           │ POST /api/v1/report
       GET /api/v1/check           ▼
                     ┌─────────────────────────┐
-   浏览器 ──HTTPS──►│  strix-server      │◄───── 只读，不接受公网入站
+   浏览器 ──HTTPS──►│  gridperch-server      │◄───── 只读，不接受公网入站
                     │  （监控端 / 平台）        │
                     └───────────┬─────────────┘
           POST /agent/minTask   │   分发采集端发布物（本地 releases/）
           GET  /agent/version   │   GET /agent/download
           GET  /agent/tasks     ▼
                     ┌─────────────────────────┐
-                    │  strix-agent       │────► 目标主机（无需公网）
+                    │  gridperch-agent       │────► 目标主机（无需公网）
                     │  （采集端，内网/公网皆可） │
                     └─────────────────────────┘
 ```
@@ -74,16 +74,16 @@
 >
 > 重启交接窗口与 systemd `RestartSec`、容器重启的 TIME_WAIT 由「启动时端口被占用自动重试最多 20 秒」兜住。
 > 若希望只替换文件、不自动重启（例如想自己挑时间重启），把 `-hub-restart` 设成 `off`
-> （`STRIX_HUB_RESTART=off`）：就位后不重启，等人工重启再生效。
+> （`GRIDPERCH_HUB_RESTART=off`）：就位后不重启，等人工重启再生效。
 
 > **附：1.1.1 / 1.1.2 / 1.1.3 / 1.1.4 / 1.1.5 能力演进**
-> - **1.1.1**：采集端发布物改为**按平台逐个补拉**（覆盖 linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64 五个平台），修复「Linux 服务端装不上 Windows 采集端 / 目标主机报『授权系统尚未发布该平台』」（授权系统 `/api/v1/check` 按请求 os/arch 返回，所以必须按平台逐个查）；其它平台的补拉改到**后台执行**，避免「立即检查更新」被网关超时（HTTP 524）拖死，也不会并发重复下载。授权端下载接口只认 `?token=` 查询串鉴权（平台下载时自动带令牌）。新增启动告警：若 `-public-url` / `STRIX_PUBLIC_URL` 配成了回环/内网/CGNAT 地址，启动日志会打警告——云主机（网卡只有内网 IP）上生成的采集端安装命令会写死这个地址，目标主机必然「无法连接平台」。
+> - **1.1.1**：采集端发布物改为**按平台逐个补拉**（覆盖 linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64 五个平台），修复「Linux 服务端装不上 Windows 采集端 / 目标主机报『授权系统尚未发布该平台』」（授权系统 `/api/v1/check` 按请求 os/arch 返回，所以必须按平台逐个查）；其它平台的补拉改到**后台执行**，避免「立即检查更新」被网关超时（HTTP 524）拖死，也不会并发重复下载。授权端下载接口只认 `?token=` 查询串鉴权（平台下载时自动带令牌）。新增启动告警：若 `-public-url` / `GRIDPERCH_PUBLIC_URL` 配成了回环/内网/CGNAT 地址，启动日志会打警告——云主机（网卡只有内网 IP）上生成的采集端安装命令会写死这个地址，目标主机必然「无法连接平台」。
 > - **1.1.2**：控制台**登录失败会明确提示原因**（「用户名或密码错误」「账号已停用」）；内嵌前端资源与页面统一 `Cache-Control: no-cache`，升级二进制后浏览器/反向代理不会再用旧前端（建议升级后 Ctrl+F5 一次）。
 > - **1.1.3**：平台自升级后**自动重启生效**（见上方）；新增 `-hub-restart`；启动时端口被占用会**自动重试最多 20 秒**。
 > - **1.1.4**：控制台「在线升级」「授权购买」页**不再展示授权中心域名**、也没有跳转到授权站的按钮（授权站遭 DDoS 期间降低暴露面），保留机器码与同步状态；前端加 `SHOW_HUB_URL` 开关，需要排障时改回 `true` 重新构建即恢复显示。
 > - **1.1.5**：修复「一键安装脚本把中文主机名清成一串 `-`」——`sanitizeAgentName()` 改为放行任意语言的字母/数字/组合符号（中文、日文等均可正常作主机名），元字符仍一律替换为 `-`，注入面不变；顺带修掉按字节截断会把汉字劈成半个的乱码隐患（改为按字符截断）。新增**主机重命名**与**删除主机**（主机列表行内按钮，限管理员）：改名会级联迁移指标、告警、系统事件、目录归属、采集端配置、监控项「作用主机」与资产关联，并登记「旧名 → 新名」映射，**仍在用旧名上报的采集端会自动归位，无需重装**；删除会连同历史数据一并清理（采集端若仍在运行会被重新发现）。
-> - **1.2.0**：**品牌更名为 Strix**（原 OpsMonitor）。二进制 `strix-*`、目录 `/opt/strix`、环境变量 `STRIX_*`、
->   授权码前缀 `STRIX2-`、服务 `strix.service`、用户 `strix`、默认库 `strix.db`。旧标识全兼容：`OPSM_*`
+> - **1.2.0**：**品牌更名为 GridPerch**（原 OpsMonitor）。二进制 `gridperch-*`、目录 `/opt/gridperch`、环境变量 `GRIDPERCH_*`、
+>   授权码前缀 `GRIDPERCH2-`、服务 `gridperch.service`、用户 `gridperch`、默认库 `gridperch.db`。旧标识全兼容：`OPSM_*`
 >   环境变量回落、`OPSM2-`/`OPSM1-`/`WGC-` 存量授权码仍验、同级目录下的 `opsmonitor.db` 自动沿用
 >   （启动日志会打印「沿用更名前的数据库文件」）。**机器码与设备密钥的历史盐值永久冻结**，老授权不需要重签。
 >   老部署换一个二进制并重启即可，无需迁移数据。
@@ -101,7 +101,7 @@
 >   502/503/504 归因为**网关错误**并给出四处排查点，不再误报「`-hub` 地址可能写错」；`-hub` 误填
 >   `/api/v1/check` 之类后缀会被自动削掉。
 > - **1.2.4**：**大屏名称可自定义** —— 大屏页顶标题不再写死，改为「系统设置 → 界面定制 → 大屏标题」。
->   留空时自动取「系统名称 + 运维监控中心」（默认仍是「Strix 运维监控中心」），
+>   留空时自动取「系统名称 + 运维监控中心」（默认仍是「GridPerch 运维监控中心」），
 >   改完一个刷新周期内生效、不用重开投屏页；超长标题按省略号截断，不会挤坏两侧控件。
 
 ---
@@ -114,7 +114,7 @@
 | User-Agent | 响应 |
 | --- | --- |
 | `Go-http-client/1.1` | 403 Cloudflare 挑战页 |
-| `strix-server/1.1.5` | 403 Cloudflare 挑战页 |
+| `gridperch-server/1.1.5` | 403 Cloudflare 挑战页 |
 | 完整浏览器 UA | 403 Cloudflare 挑战页 |
 
 这意味着**只要授权中心前面挂着开启 Bot 防护的 Cloudflare，监控端就拉不到任何东西**——
@@ -134,7 +134,7 @@
 
 ```
 规则 2（放行平台客户端）:
-  条件:  (URI Path starts_with "/api/") AND (User-Agent contains "strix-server")
+  条件:  (URI Path starts_with "/api/") AND (User-Agent contains "gridperch-server")
   操作:  Allow
 ```
 
@@ -150,7 +150,7 @@
 **方案 D：完全离线**
 
 ```bash
-strix-server -hub ""        # 或省略 -hub
+gridperch-server -hub ""        # 或省略 -hub
 ```
 
 关闭与授权中心的全部通信，采集端安装与升级改走**控制台上传发布物**，
@@ -188,7 +188,7 @@ strix-server -hub ""        # 或省略 -hub
   日志并显示在控制台上，等于把凭证主动交出去。
 - 需要轮换令牌时：在授权中心侧改 `-token`，同时更新
   `tools/gen-hubtoken.js` 里的输入重新生成 `internal/config/hubtoken.go` 并重新构建；
-  或者临时用 `-hub-token` / `STRIX_HUB_TOKEN` 覆盖（两者优先级高于内置值）。
+  或者临时用 `-hub-token` / `GRIDPERCH_HUB_TOKEN` 覆盖（两者优先级高于内置值）。
 
 ### 快速自测
 
@@ -219,7 +219,7 @@ curl -sS https://<你的授权中心地址>/healthz     # 期望 {"ok":true,...}
 | # | 事项 | 做错的后果 |
 | --- | --- | --- |
 | 1 | `data` 目录必须挂载/备份 | 容器重建后历史指标、告警、资产、账号**全部丢失** |
-| 2 | `STRIX_PUBLIC_URL` 必须是**其他主机能访问到的地址** | 生成的安装命令拿到目标主机执行必然失败 |
+| 2 | `GRIDPERCH_PUBLIC_URL` 必须是**其他主机能访问到的地址** | 生成的安装命令拿到目标主机执行必然失败 |
 | 3 | 采集端发布物按「系统 + 架构」**分别登记** | `linux/amd64` 有发布物 ≠ `linux/arm64` 能装 |
 | 4 | `-token` 两端必须一致 | 主机列表永远为空，且日志只显示「token 校验失败」 |
 | 5 | 首次部署立即改默认密码与密钥 | 任何人拿到地址即可登录并读取通信密钥 |
@@ -232,7 +232,7 @@ curl -sS https://<你的授权中心地址>/healthz     # 期望 {"ok":true,...}
 
 ```
                     ┌──────────────────────────────────────┐
-                    │      Strix Server（单实例）       │
+                    │      GridPerch Server（单实例）       │
    浏览器 ◄─HTTPS──►│  控制台 + 大屏 + 教程 + REST API      │
                     │  主动探针调度器（ICMP/TCP/SNMP/DB…）  │
                     │  告警判定 + 邮件/机器人推送            │
@@ -246,7 +246,7 @@ curl -sS https://<你的授权中心地址>/healthz     # 期望 {"ok":true,...}
                                  │ HTTP 9999
         ┌────────────────┬───────┴───────┬────────────────┐
         ▼                ▼               ▼                ▼
-   strix-agent  strix-agent  strix-agent  ...
+   gridperch-agent  gridperch-agent  gridperch-agent  ...
    (Linux/systemd)   (Windows/计划任务)  (macOS/launchd)
 ```
 
@@ -288,16 +288,16 @@ curl -sS https://<你的授权中心地址>/healthz     # 期望 {"ok":true,...}
 ### 3.0 先选对产物：平台 × 架构
 
 一个版本共 **11 个产物**：监控端（server）与采集端（agent）各 5 个平台组合，外加 1 个 Windows 旧系统兼容版。
-命名规则 `strix-<角色>-<系统>-<架构>[.exe]`。
+命名规则 `gridperch-<角色>-<系统>-<架构>[.exe]`。
 
 | 系统 | 架构 | 监控端 | 采集端 | 说明 |
 | --- | --- | --- | --- | --- |
-| Linux | amd64 | `strix-server-linux-amd64` | `strix-agent-linux-amd64` | 绝大多数云主机 / 虚拟机 |
-| Linux | arm64 | `strix-server-linux-arm64` | `strix-agent-linux-arm64` | 鲲鹏 920 / 飞腾 / 倚天 710 / 树莓派 64 位 |
-| macOS | amd64 | `strix-server-darwin-amd64` | `strix-agent-darwin-amd64` | Intel 芯片 |
-| macOS | arm64 | `strix-server-darwin-arm64` | `strix-agent-darwin-arm64` | Apple M1/M2/M3/M4 |
-| Windows | amd64 | `strix-server-windows-amd64.exe` | `strix-agent-windows-amd64.exe` | Win10/11、Server 2016+ |
-| Windows | amd64（旧系统） | — | `strix-agent-windows-amd64-win7.exe` | Win7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 |
+| Linux | amd64 | `gridperch-server-linux-amd64` | `gridperch-agent-linux-amd64` | 绝大多数云主机 / 虚拟机 |
+| Linux | arm64 | `gridperch-server-linux-arm64` | `gridperch-agent-linux-arm64` | 鲲鹏 920 / 飞腾 / 倚天 710 / 树莓派 64 位 |
+| macOS | amd64 | `gridperch-server-darwin-amd64` | `gridperch-agent-darwin-amd64` | Intel 芯片 |
+| macOS | arm64 | `gridperch-server-darwin-arm64` | `gridperch-agent-darwin-arm64` | Apple M1/M2/M3/M4 |
+| Windows | amd64 | `gridperch-server-windows-amd64.exe` | `gridperch-agent-windows-amd64.exe` | Win10/11、Server 2016+ |
+| Windows | amd64（旧系统） | — | `gridperch-agent-windows-amd64-win7.exe` | Win7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 |
 
 **四条硬约束：**
 
@@ -320,7 +320,7 @@ uname -m                 # x86_64 -> amd64 ; aarch64/arm64 -> arm64
 # Windows PowerShell: $env:PROCESSOR_ARCHITECTURE   ->  AMD64
 
 sha256sum -c SHA256SUMS.txt                       # 11 个产物逐一校验
-./strix-server-linux-amd64 -version               # 自报 (linux/amd64)，与文件名不一致说明被改名错了
+./gridperch-server-linux-amd64 -version               # 自报 (linux/amd64)，与文件名不一致说明被改名错了
 ```
 
 ### 3.1 Docker Compose（推荐）
@@ -328,43 +328,43 @@ sha256sum -c SHA256SUMS.txt                       # 11 个产物逐一校验
 #### 3.1.1 目录准备
 
 ```bash
-mkdir -p /opt/strix/data
-mkdir -p /opt/strix/releases
+mkdir -p /opt/gridperch/data
+mkdir -p /opt/gridperch/releases
 mkdir -p /backup
-cd /opt/strix
+cd /opt/gridperch
 ```
 
 #### 3.1.2 编写 docker-compose.yml
 
 ```yaml
 services:
-  strix:
-    image: strix/strix:latest
-    container_name: strix
+  gridperch:
+    image: gridperch/gridperch:latest
+    container_name: gridperch
     restart: unless-stopped
     ports:
       - "9999:9999"
     volumes:
       # ① SQLite 数据库目录 —— 必须挂载，否则容器重建数据全丢
-      - ./data:/opt/strix/data
+      - ./data:/opt/gridperch/data
       # ② 采集端发布物缓存 —— 用于一键安装采集端，可选但强烈建议
-      - ./releases:/opt/strix/releases
+      - ./releases:/opt/gridperch/releases
       # ③ 时区 —— 不挂会导致容器内时间为 UTC，告警时间差 8 小时
       - /etc/localtime:/etc/localtime:ro
     environment:
       TZ: "Asia/Shanghai"
-      STRIX_ADDR: ":9999"
-      STRIX_DB: "/opt/strix/data/strix.db"
-      STRIX_TOKEN: "改成你自己的强密钥"
-      STRIX_ADMIN_USER: "admin"
-      STRIX_ADMIN_PASS: "改成强密码"
+      GRIDPERCH_ADDR: ":9999"
+      GRIDPERCH_DB: "/opt/gridperch/data/gridperch.db"
+      GRIDPERCH_TOKEN: "改成你自己的强密钥"
+      GRIDPERCH_ADMIN_USER: "admin"
+      GRIDPERCH_ADMIN_PASS: "改成强密码"
       # 对外可达地址：安装脚本与采集端升级下载都靠它拼绝对地址
-      STRIX_PUBLIC_URL: "http://192.168.40.111:9999"
-      STRIX_RETENTION: "30"
-      STRIX_OFFLINE_SEC: "180"
-      STRIX_CPU_ALERT: "90"
-      STRIX_MEM_ALERT: "90"
-      STRIX_DISK_ALERT: "90"
+      GRIDPERCH_PUBLIC_URL: "http://192.168.40.111:9999"
+      GRIDPERCH_RETENTION: "30"
+      GRIDPERCH_OFFLINE_SEC: "180"
+      GRIDPERCH_CPU_ALERT: "90"
+      GRIDPERCH_MEM_ALERT: "90"
+      GRIDPERCH_DISK_ALERT: "90"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9999/"]
       interval: 30s
@@ -388,7 +388,7 @@ docker compose logs -f --tail=100
 看到以下日志即启动成功：
 
 ```
-服务端启动：监听 :9999，数据库 /opt/strix/data/strix.db，数据保留 30 天
+服务端启动：监听 :9999，数据库 /opt/gridperch/data/gridperch.db，数据保留 30 天
 控制台访问地址：http://192.168.40.111:9999
 ```
 
@@ -399,16 +399,16 @@ docker compose logs -f --tail=100
 | 步骤 | 操作 |
 | --- | --- |
 | 1 | 「应用商店」安装 **Docker** |
-| 2 | 「容器」→「创建容器」，名称 `strix`，镜像 `strix/strix:latest` |
+| 2 | 「容器」→「创建容器」，名称 `gridperch`，镜像 `gridperch/gridperch:latest` |
 | 3 | 重启策略选 **始终重启** |
 | 4 | 端口映射：主机 `9999` → 容器 `9999` |
-| 5 | 文件夹：新建 `/opt/strix/data` |
-| 6 | 挂载：`/opt/strix/data` → `/opt/strix/data`（读写） |
+| 5 | 文件夹：新建 `/opt/gridperch/data` |
+| 6 | 挂载：`/opt/gridperch/data` → `/opt/gridperch/data`（读写） |
 | 7 | 环境变量：按 3.1.2 的表格逐条填写 |
 | 8 | 防火墙与云安全组放行 9999/TCP |
 | 9 | （可选）「网站」→ 反向代理到 `http://127.0.0.1:9999` |
 
-> 配了反向代理后，务必把 `STRIX_PUBLIC_URL` 改成 `https://你的域名`。
+> 配了反向代理后，务必把 `GRIDPERCH_PUBLIC_URL` 改成 `https://你的域名`。
 
 ### 3.3 宝塔面板
 
@@ -416,7 +416,7 @@ docker compose logs -f --tail=100
 | --- | --- |
 | 1 | 「软件商店」安装 **Docker 管理器** |
 | 2 | 「Docker」→「容器管理」→「添加容器」，填镜像与端口映射 |
-| 3 | 目录挂载 `/opt/strix/data` → `/opt/strix/data` |
+| 3 | 目录挂载 `/opt/gridperch/data` → `/opt/gridperch/data` |
 | 4 | 配置环境变量（同上） |
 | 5 | 「网站」→ 添加站点 → 反向代理到 `http://127.0.0.1:9999` |
 | 6 | 「安全」→ 放行端口 `9999` |
@@ -424,43 +424,43 @@ docker compose logs -f --tail=100
 ### 3.4 Linux 二进制 + systemd
 
 ```bash
-mkdir -p /opt/strix/data && cd /opt/strix
+mkdir -p /opt/gridperch/data && cd /opt/gridperch
 
 # 从 GitHub Releases 下载（按实际系统与架构选一个）
-curl -fLo strix-server https://github.com/sangxi/strix/releases/latest/download/strix-server-linux-amd64
-chmod +x strix-server
-./strix-server -version
+curl -fLo gridperch-server https://github.com/sangxi/gridperch/releases/latest/download/gridperch-server-linux-amd64
+chmod +x gridperch-server
+./gridperch-server -version
 ```
 
 注册服务（**密钥以环境文件方式存放更安全**）：
 
 ```bash
-sudo mkdir -p /etc/strix
-sudo tee /etc/strix/strix.env >/dev/null <<'EOF'
-STRIX_ADDR=:9999
-STRIX_DB=/opt/strix/data/strix.db
-STRIX_TOKEN=改成强密钥
-STRIX_ADMIN_USER=admin
-STRIX_ADMIN_PASS=改成强密码
-STRIX_PUBLIC_URL=http://192.168.40.111:9999
-STRIX_RETENTION=30
+sudo mkdir -p /etc/gridperch
+sudo tee /etc/gridperch/gridperch.env >/dev/null <<'EOF'
+GRIDPERCH_ADDR=:9999
+GRIDPERCH_DB=/opt/gridperch/data/gridperch.db
+GRIDPERCH_TOKEN=改成强密钥
+GRIDPERCH_ADMIN_USER=admin
+GRIDPERCH_ADMIN_PASS=改成强密码
+GRIDPERCH_PUBLIC_URL=http://192.168.40.111:9999
+GRIDPERCH_RETENTION=30
 EOF
-sudo chmod 600 /etc/strix/strix.env
+sudo chmod 600 /etc/gridperch/gridperch.env
 
-sudo tee /etc/systemd/system/strix.service >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/gridperch.service >/dev/null <<'EOF'
 [Unit]
-Description=Strix 运维监控服务端
-Documentation=https://github.com/sangxi/strix
+Description=GridPerch 运维监控服务端
+Documentation=https://github.com/sangxi/gridperch
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=strix
-Group=strix
-WorkingDirectory=/opt/strix
-EnvironmentFile=/etc/strix/strix.env
-ExecStart=/opt/strix/strix-server
+User=gridperch
+Group=gridperch
+WorkingDirectory=/opt/gridperch
+EnvironmentFile=/etc/gridperch/gridperch.env
+ExecStart=/opt/gridperch/gridperch-server
 Restart=always
 RestartSec=5
 # 加固：只允许写数据目录
@@ -468,42 +468,42 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/opt/strix/data /opt/strix/releases
+ReadWritePaths=/opt/gridperch/data /opt/gridperch/releases
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # 创建专用低权限用户
-sudo useradd -r -s /sbin/nologin strix 2>/dev/null || true
-sudo chown -R strix:strix /opt/strix
+sudo useradd -r -s /sbin/nologin gridperch 2>/dev/null || true
+sudo chown -R gridperch:gridperch /opt/gridperch
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now strix
-sudo systemctl status strix --no-pager
+sudo systemctl enable --now gridperch
+sudo systemctl status gridperch --no-pager
 ```
 
 ### 3.5 Windows
 
 ```powershell
-# 解压到 C:\Strix
-cd C:\Strix
-New-Item -ItemType Directory -Force C:\Strix\data | Out-Null
+# 解压到 C:\GridPerch
+cd C:\GridPerch
+New-Item -ItemType Directory -Force C:\GridPerch\data | Out-Null
 
 # 前台试跑
-.\strix-server.exe -addr :9999 -db C:\Strix\data\strix.db -token 你的密钥
+.\gridperch-server.exe -addr :9999 -db C:\GridPerch\data\gridperch.db -token 你的密钥
 
 # 注册开机自启（管理员 PowerShell）
-$action  = New-ScheduledTaskAction -Execute 'C:\Strix\strix-server.exe' `
-  -Argument '-addr :9999 -db C:\Strix\data\strix.db -token 你的密钥'
+$action  = New-ScheduledTaskAction -Execute 'C:\GridPerch\gridperch-server.exe' `
+  -Argument '-addr :9999 -db C:\GridPerch\data\gridperch.db -token 你的密钥'
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-Register-ScheduledTask -TaskName 'strix' -Action $action -Trigger $trigger `
+Register-ScheduledTask -TaskName 'gridperch' -Action $action -Trigger $trigger `
   -Principal $principal -Force
-Start-ScheduledTask -TaskName 'strix'
+Start-ScheduledTask -TaskName 'gridperch'
 
 # 放行防火墙
-netsh advfirewall firewall add rule name="Strix" dir=in action=allow protocol=TCP localport=9999
+netsh advfirewall firewall add rule name="GridPerch" dir=in action=allow protocol=TCP localport=9999
 ```
 
 ---
@@ -513,37 +513,37 @@ netsh advfirewall firewall add rule name="Strix" dir=in action=allow protocol=TC
 ### 4.1 目录结构
 
 ```
-/opt/strix/
-├── strix-server              # 服务端二进制（容器内由镜像自带）
-├── strix-agent               # 采集端二进制（仅手工部署采集端时需要）
+/opt/gridperch/
+├── gridperch-server              # 服务端二进制（容器内由镜像自带）
+├── gridperch-agent               # 采集端二进制（仅手工部署采集端时需要）
 ├── data/                          # ★ 必须持久化
-│   ├── strix.db              #   SQLite 主库
-│   ├── strix.db-wal          #   WAL 日志（与主库同目录，不可单独移动）
-│   └── strix.db-shm          #   共享内存索引
+│   ├── gridperch.db              #   SQLite 主库
+│   ├── gridperch.db-wal          #   WAL 日志（与主库同目录，不可单独移动）
+│   └── gridperch.db-shm          #   共享内存索引
 ├── releases/                      # 采集端发布物缓存
-│   └── strix-agent-linux-amd64
-└── strix-file-baseline.json  # 文件防篡改基线（在采集端本机，不在服务端）
+│   └── gridperch-agent-linux-amd64
+└── gridperch-file-baseline.json  # 文件防篡改基线（在采集端本机，不在服务端）
 ```
 
 ### 4.2 挂载对照表
 
 | 宿主机路径 | 容器内路径 | 读写 | 必需性 | 不挂的后果 |
 | --- | --- | --- | --- | --- |
-| `/opt/strix/data` | `/opt/strix/data` | 读写 | **必需** | 容器重建后历史指标、告警、资产、账号全部丢失 |
-| `/opt/strix/releases` | `/opt/strix/releases` | 读写 | 可选 | 一键安装采集端提示「尚未发布 xx/xx 的采集端版本」 |
+| `/opt/gridperch/data` | `/opt/gridperch/data` | 读写 | **必需** | 容器重建后历史指标、告警、资产、账号全部丢失 |
+| `/opt/gridperch/releases` | `/opt/gridperch/releases` | 读写 | 可选 | 一键安装采集端提示「尚未发布 xx/xx 的采集端版本」 |
 | `/etc/localtime` | `/etc/localtime` | 只读 | 建议 | 容器内时区为 UTC，告警时间差 8 小时 |
-| `/opt/strix/strix-file-baseline.json` | — | 读写 | 仅采集端 | 采集端重启后文件防篡改基线丢失，首次运行重建 |
+| `/opt/gridperch/gridperch-file-baseline.json` | — | 读写 | 仅采集端 | 采集端重启后文件防篡改基线丢失，首次运行重建 |
 
 ### 4.3 权限参考
 
 | 文件 | 属主 | 权限 |
 | --- | --- | --- |
-| `strix-server` | root | 755 |
-| `strix-agent` | root | 755 |
+| `gridperch-server` | root | 755 |
+| `gridperch-agent` | root | 755 |
 | `data/` | 运行用户 | 750 |
-| `data/strix.db` | 运行用户 | 640 |
+| `data/gridperch.db` | 运行用户 | 640 |
 | `releases/` | 运行用户 | 755 |
-| `/etc/strix/strix.env` | root | **600** |
+| `/etc/gridperch/gridperch.env` | root | **600** |
 | systemd unit | root | 644 |
 
 ---
@@ -598,9 +598,9 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://192.168.40.111:999
 
 ```yaml
 services:
-  strix-agent:
-    image: strix/strix-agent:latest
-    container_name: strix-agent
+  gridperch-agent:
+    image: gridperch/gridperch-agent:latest
+    container_name: gridperch-agent
     restart: unless-stopped
     pid: host
     network_mode: host
@@ -625,52 +625,52 @@ services:
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `-addr` | `STRIX_ADDR` | `:9999` | HTTP 监听地址 |
-| `-db` | `STRIX_DB` | `./data/strix.db` | SQLite 文件路径 |
-| `-token` | `STRIX_TOKEN` | `strix` | 采集端通信密钥，两端必须一致 |
-| `-user` | `STRIX_ADMIN_USER` | `admin` | 控制台用户名（仅首次启动生效） |
-| `-pass` | `STRIX_ADMIN_PASS` | `strix` | 控制台密码（仅首次启动生效） |
-| `-retention` | `STRIX_RETENTION` | `30` | 历史数据保留天数，0 表示永久 |
-| `-purge` | `STRIX_PURGE_INTERVAL` | `3600` | 历史清理间隔（秒） |
-| `-offline` | `STRIX_OFFLINE_SEC` | `180` | 超过该秒数未上报判定离线 |
-| `-cpu-alert` | `STRIX_CPU_ALERT` | `90` | CPU 告警阈值（%） |
-| `-mem-alert` | `STRIX_MEM_ALERT` | `90` | 内存告警阈值（%） |
-| `-disk-alert` | `STRIX_DISK_ALERT` | `90` | 磁盘告警阈值（%） |
-| `-load-alert` | `STRIX_LOAD_ALERT` | `10` | 系统负载告警阈值 |
-| `-alert-cooldown` | `STRIX_ALERT_COOLDOWN_MIN` | `10` | 同类告警去重冷却（分钟） |
-| `-login-alert` | `STRIX_LOGIN_ALERT` | `true` | 主机登录用户变化时生成提醒 |
-| `-probe-workers` | `STRIX_PROBE_WORKERS` | `64` | 服务端主动探测并发度 |
-| `-read-conns` | `STRIX_READ_CONNS` | `8` | SQLite 读连接池大小 |
-| `-write-queue` | `STRIX_WRITE_QUEUE` | `8192` | 上报写队列容量 |
-| `-release-dir` | `STRIX_RELEASE_DIR` | 数据库同级 `releases/` | 采集端发布包目录 |
-| `-public-url` | `STRIX_PUBLIC_URL` | 自动反推 | 对外访问地址 |
-| `-license-secret` | `STRIX_LICENSE_SECRET` | `strix-license` | **旧格式**（`WGC-`/`OPSM1-`/`OPSM-`，HMAC）授权码的校验密钥；新格式（`STRIX2-`）用内置 Ed25519 公钥校验，与本参数无关。线上已导入旧码则**不要删**，删了会回落到社区版 |
-| `-license` | `STRIX_LICENSE_KEY` | 空 | 授权码（新格式 `STRIX2-`）手动指定的另一种途径；一般留空由平台自动从授权中心拉取并写入数据库 |
-| `-license-machine` | `STRIX_LICENSE_MACHINE` | 空 | 机器码钉死值（如 `C317-6E8B-BAE5-A8A6`）；多网卡/容器场景用此固定机器码，避免换网卡/重建容器导致授权失效 |
-| `-free-hosts` | `STRIX_LICENSE_FREE_HOSTS` | `10` | 未授权时允许接入的主机数 |
-| `-free-users` | `STRIX_LICENSE_FREE_USERS` | `3` | 未授权时允许创建的账号数 |
-| `-hub` | `STRIX_HUB` | 默认已内置授权中心地址；留空 `-hub ""` = 完全离线 | 授权中心地址；留空则完全离线 |
-| `-hub-token` | `STRIX_HUB_TOKEN` | 留空用内置令牌 | 授权中心拉取令牌。默认用程序内置令牌，无需配置；仅当改用自建授权中心时才需覆盖。优先级：`-hub-token` > `STRIX_HUB_TOKEN` > 内置 |
-| `-hub-interval` | `STRIX_HUB_INTERVAL_MIN` | `5` | 代拉间隔（分钟） |
-| `-hub-auto-update` | `STRIX_HUB_AUTO_UPDATE` | `download` | 服务端自更新：`download` 自动下载并就位（默认，就位后自动重启生效）/ `check` 只提示不下载 / `off` 关闭 |
-| `-hub-restart` | `STRIX_HUB_RESTART` | `auto` | 自升级就位后的重启策略：`auto` 自动重启生效（默认）/ `off` 只替换文件不重启，需人工重启 |
-| `-hub-ua` | `STRIX_HUB_UA` | 空 | 访问授权中心的 User-Agent，被网关按 UA 拦截时可覆盖 |
+| `-addr` | `GRIDPERCH_ADDR` | `:9999` | HTTP 监听地址 |
+| `-db` | `GRIDPERCH_DB` | `./data/gridperch.db` | SQLite 文件路径 |
+| `-token` | `GRIDPERCH_TOKEN` | `gridperch` | 采集端通信密钥，两端必须一致 |
+| `-user` | `GRIDPERCH_ADMIN_USER` | `admin` | 控制台用户名（仅首次启动生效） |
+| `-pass` | `GRIDPERCH_ADMIN_PASS` | `gridperch` | 控制台密码（仅首次启动生效） |
+| `-retention` | `GRIDPERCH_RETENTION` | `30` | 历史数据保留天数，0 表示永久 |
+| `-purge` | `GRIDPERCH_PURGE_INTERVAL` | `3600` | 历史清理间隔（秒） |
+| `-offline` | `GRIDPERCH_OFFLINE_SEC` | `180` | 超过该秒数未上报判定离线 |
+| `-cpu-alert` | `GRIDPERCH_CPU_ALERT` | `90` | CPU 告警阈值（%） |
+| `-mem-alert` | `GRIDPERCH_MEM_ALERT` | `90` | 内存告警阈值（%） |
+| `-disk-alert` | `GRIDPERCH_DISK_ALERT` | `90` | 磁盘告警阈值（%） |
+| `-load-alert` | `GRIDPERCH_LOAD_ALERT` | `10` | 系统负载告警阈值 |
+| `-alert-cooldown` | `GRIDPERCH_ALERT_COOLDOWN_MIN` | `10` | 同类告警去重冷却（分钟） |
+| `-login-alert` | `GRIDPERCH_LOGIN_ALERT` | `true` | 主机登录用户变化时生成提醒 |
+| `-probe-workers` | `GRIDPERCH_PROBE_WORKERS` | `64` | 服务端主动探测并发度 |
+| `-read-conns` | `GRIDPERCH_READ_CONNS` | `8` | SQLite 读连接池大小 |
+| `-write-queue` | `GRIDPERCH_WRITE_QUEUE` | `8192` | 上报写队列容量 |
+| `-release-dir` | `GRIDPERCH_RELEASE_DIR` | 数据库同级 `releases/` | 采集端发布包目录 |
+| `-public-url` | `GRIDPERCH_PUBLIC_URL` | 自动反推 | 对外访问地址 |
+| `-license-secret` | `GRIDPERCH_LICENSE_SECRET` | `gridperch-license` | **旧格式**（`WGC-`/`OPSM1-`/`OPSM-`，HMAC）授权码的校验密钥；新格式（`GRIDPERCH2-`）用内置 Ed25519 公钥校验，与本参数无关。线上已导入旧码则**不要删**，删了会回落到社区版 |
+| `-license` | `GRIDPERCH_LICENSE_KEY` | 空 | 授权码（新格式 `GRIDPERCH2-`）手动指定的另一种途径；一般留空由平台自动从授权中心拉取并写入数据库 |
+| `-license-machine` | `GRIDPERCH_LICENSE_MACHINE` | 空 | 机器码钉死值（如 `C317-6E8B-BAE5-A8A6`）；多网卡/容器场景用此固定机器码，避免换网卡/重建容器导致授权失效 |
+| `-free-hosts` | `GRIDPERCH_LICENSE_FREE_HOSTS` | `10` | 未授权时允许接入的主机数 |
+| `-free-users` | `GRIDPERCH_LICENSE_FREE_USERS` | `3` | 未授权时允许创建的账号数 |
+| `-hub` | `GRIDPERCH_HUB` | 默认已内置授权中心地址；留空 `-hub ""` = 完全离线 | 授权中心地址；留空则完全离线 |
+| `-hub-token` | `GRIDPERCH_HUB_TOKEN` | 留空用内置令牌 | 授权中心拉取令牌。默认用程序内置令牌，无需配置；仅当改用自建授权中心时才需覆盖。优先级：`-hub-token` > `GRIDPERCH_HUB_TOKEN` > 内置 |
+| `-hub-interval` | `GRIDPERCH_HUB_INTERVAL_MIN` | `5` | 代拉间隔（分钟） |
+| `-hub-auto-update` | `GRIDPERCH_HUB_AUTO_UPDATE` | `download` | 服务端自更新：`download` 自动下载并就位（默认，就位后自动重启生效）/ `check` 只提示不下载 / `off` 关闭 |
+| `-hub-restart` | `GRIDPERCH_HUB_RESTART` | `auto` | 自升级就位后的重启策略：`auto` 自动重启生效（默认）/ `off` 只替换文件不重启，需人工重启 |
+| `-hub-ua` | `GRIDPERCH_HUB_UA` | 空 | 访问授权中心的 User-Agent，被网关按 UA 拦截时可覆盖 |
 | `-version` | - | - | 打印版本号后退出 |
 
 ### 6.2 采集端
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `-server` | `STRIX_SERVER` | `http://127.0.0.1:9999` | 服务端地址 |
-| `-token` | `STRIX_TOKEN` | `strix` | 通信密钥，与服务端一致 |
+| `-server` | `GRIDPERCH_SERVER` | `http://127.0.0.1:9999` | 服务端地址 |
+| `-token` | `GRIDPERCH_TOKEN` | `gridperch` | 通信密钥，与服务端一致 |
 | `-token-hash` | - | 空 | 通信密钥的 MD5，与 `-token` 二选一 |
-| `-name` | `STRIX_HOSTNAME` | 本机主机名 | 平台显示名称 |
-| `-remote-config` | `STRIX_REMOTE_CONFIG` | `auto` | `auto` 接受平台下发 / `off` 只用本地参数 |
-| `-interval` | `STRIX_INTERVAL` | `60` | 上报间隔（秒）**平台下发时被覆盖** |
-| `-update` | `STRIX_UPDATE` | `auto` | `auto` / `check` / `off` **平台下发时被覆盖** |
-| `-update-interval` | `STRIX_UPDATE_INTERVAL_MIN` | `30` | 版本检查间隔（分钟）**平台下发时被覆盖** |
-| `-allow-command` | `STRIX_ALLOW_COMMAND` | `true` | 是否执行下发指令**平台下发时被覆盖** |
-| `-install-dir` | `STRIX_INSTALL_DIR` | 可执行文件目录 | 升级时替换二进制的目标目录 |
+| `-name` | `GRIDPERCH_HOSTNAME` | 本机主机名 | 平台显示名称 |
+| `-remote-config` | `GRIDPERCH_REMOTE_CONFIG` | `auto` | `auto` 接受平台下发 / `off` 只用本地参数 |
+| `-interval` | `GRIDPERCH_INTERVAL` | `60` | 上报间隔（秒）**平台下发时被覆盖** |
+| `-update` | `GRIDPERCH_UPDATE` | `auto` | `auto` / `check` / `off` **平台下发时被覆盖** |
+| `-update-interval` | `GRIDPERCH_UPDATE_INTERVAL_MIN` | `30` | 版本检查间隔（分钟）**平台下发时被覆盖** |
+| `-allow-command` | `GRIDPERCH_ALLOW_COMMAND` | `true` | 是否执行下发指令**平台下发时被覆盖** |
+| `-install-dir` | `GRIDPERCH_INSTALL_DIR` | 可执行文件目录 | 升级时替换二进制的目标目录 |
 | `-version` | - | - | 打印版本号后退出 |
 
 ---
@@ -685,8 +685,8 @@ services:
 - [ ] 浏览器能打开控制台并登录成功
 - [ ] 用**非本机地址**在另一台机器上能访问（验证未绑回环）
 - [ ] 防火墙 / 云安全组已放行 9999/TCP
-- [ ] `data` 目录已挂载且可写（`docker exec strix ls -la /opt/strix/data`）
-- [ ] 容器内时区正确（`docker exec strix date` 与本机一致）
+- [ ] `data` 目录已挂载且可写（`docker exec gridperch ls -la /opt/gridperch/data`）
+- [ ] 容器内时区正确（`docker exec gridperch date` 与本机一致）
 - [ ] **默认密码与通信密钥已修改**
 
 ### 7.2 采集端
@@ -720,45 +720,45 @@ services:
 **方式一：停机冷备（最可靠）**
 
 ```bash
-docker compose stop strix
-tar czf /backup/strix-$(date +%F).tar.gz -C /opt/strix data
-docker compose start strix
+docker compose stop gridperch
+tar czf /backup/gridperch-$(date +%F).tar.gz -C /opt/gridperch data
+docker compose start gridperch
 ```
 
 **方式二：在线热备（不停服）**
 
 ```bash
-sqlite3 /opt/strix/data/strix.db \
-  ".backup '/opt/strix/strix-$(date +%F).db'"
+sqlite3 /opt/gridperch/data/gridperch.db \
+  ".backup '/opt/gridperch/gridperch-$(date +%F).db'"
 ```
 
-> 直接 `cp` 正在写入的 `strix.db` 可能拿到不一致快照。
+> 直接 `cp` 正在写入的 `gridperch.db` 可能拿到不一致快照。
 > WAL 模式下要连`db-wal`、`db-shm` 一起复制，或用上面的 `.backup` 命令。
 
 **方式三：备份到远端**
 
 ```bash
-rclone copy /backup/strix-*.tar.gz remote:bucket/strix/
+rclone copy /backup/gridperch-*.tar.gz remote:bucket/gridperch/
 ```
 
 ### 8.2 定时备份
 
 ```bash
 # 每天 03:17 冷备一次，保留 14 天
-17 3 * * * cd /opt/strix && \
-  docker compose stop strix && \
-  tar czf /backup/strix-$(date +\%F).tar.gz data && \
-  docker compose start strix && \
-  find /backup -name 'strix-*.tar.gz' -mtime +14 -delete
+17 3 * * * cd /opt/gridperch && \
+  docker compose stop gridperch && \
+  tar czf /backup/gridperch-$(date +\%F).tar.gz data && \
+  docker compose start gridperch && \
+  find /backup -name 'gridperch-*.tar.gz' -mtime +14 -delete
 ```
 
 ### 8.3 恢复
 
 ```bash
-docker compose stop strix
-tar xzf /backup/strix-2026-10-11.tar.gz -C /opt/strix
-chown -R strix:strix /opt/strix/data
-docker compose start strix
+docker compose stop gridperch
+tar xzf /backup/gridperch-2026-10-11.tar.gz -C /opt/gridperch
+chown -R gridperch:gridperch /opt/gridperch/data
+docker compose start gridperch
 ```
 
 ### 8.4 恢复演练
@@ -774,28 +774,28 @@ docker compose start strix
 
 ```bash
 # 备份
-cd /opt/strix && tar czf /backup/pre-upgrade-$(date +%F).tar.gz data
+cd /opt/gridperch && tar czf /backup/pre-upgrade-$(date +%F).tar.gz data
 
 # Docker
 docker compose pull && docker compose up -d
 docker compose logs -f --tail=50
 
 # 二进制
-sudo systemctl stop strix
-sudo cp strix-server strix-server.bak
-sudo cp 新版/strix-server /opt/strix/strix-server
-sudo systemctl start strix
+sudo systemctl stop gridperch
+sudo cp gridperch-server gridperch-server.bak
+sudo cp 新版/gridperch-server /opt/gridperch/gridperch-server
+sudo systemctl start gridperch
 ```
 
 > **自 1.1.3 起，自动升级会自行重启生效**，无需手工 `systemctl restart`。若是**手工替换二进制**升级（例如离线环境），务必按下面步骤操作，尤其是第 2 步：
 >
-> 1. 备份旧二进制：`sudo cp /opt/strix/strix-server /opt/strix/strix-server.bak`
-> 2. **`sudo rm -f /opt/strix/.strix-server.pending`** —— 不清掉的话，启动时的确认逻辑会认为上次升级未生效，从而回滚到 `.bak`，表现为「换了又变回旧版」
-> 3. 替换二进制并 `sudo chmod +x /opt/strix/strix-server`
-> 4. `sudo systemctl restart strix`
-> 5. `/opt/strix/strix-server -version` 校验版本
+> 1. 备份旧二进制：`sudo cp /opt/gridperch/gridperch-server /opt/gridperch/gridperch-server.bak`
+> 2. **`sudo rm -f /opt/gridperch/.gridperch-server.pending`** —— 不清掉的话，启动时的确认逻辑会认为上次升级未生效，从而回滚到 `.bak`，表现为「换了又变回旧版」
+> 3. 替换二进制并 `sudo chmod +x /opt/gridperch/gridperch-server`
+> 4. `sudo systemctl restart gridperch`
+> 5. `/opt/gridperch/gridperch-server -version` 校验版本
 >
-> 说明：`.strix-server.pending` 内容为「已就位待确认的新版本号」；新进程启动时若发现它与当前版本一致就清掉并记「已升级生效」，不一致则回滚 `.bak`。前端通过 `//go:embed all:web` 编译进二进制，**升级只需替换那一个二进制文件**，不需要单独更新 `.js` / `.go` 文件。自 1.1.2 起内嵌前端统一 `Cache-Control: no-cache`，升级后建议浏览器 Ctrl+F5 一次。
+> 说明：`.gridperch-server.pending` 内容为「已就位待确认的新版本号」；新进程启动时若发现它与当前版本一致就清掉并记「已升级生效」，不一致则回滚 `.bak`。前端通过 `//go:embed all:web` 编译进二进制，**升级只需替换那一个二进制文件**，不需要单独更新 `.js` / `.go` 文件。自 1.1.2 起内嵌前端统一 `Cache-Control: no-cache`，升级后建议浏览器 Ctrl+F5 一次。
 
 数据库结构变更由程序在启动时自动执行（新增表与列都是幂等的），**不需要手动执行 SQL**。
 
@@ -826,8 +826,8 @@ sudo systemctl start strix
 | 默认密码 | 首次部署立即改 `-pass`，并删除默认弱口令痕迹 |
 | 通信密钥 | 改 `-token` 为高强度随机串；接入命令只用 MD5 指纹 |
 | 网络暴露 | 9999 不暴露公网；跨网段走内网或 VPN |
-| HTTPS | 反向代理启用 TLS，同时设置 `STRIX_PUBLIC_URL=https://…` |
-| 密钥文件 | `/etc/strix/strix.env` 权限 600 |
+| HTTPS | 反向代理启用 TLS，同时设置 `GRIDPERCH_PUBLIC_URL=https://…` |
+| 密钥文件 | `/etc/gridperch/gridperch.env` 权限 600 |
 | 账号权限 | 日常运维用 `operator`，只读用 `viewer`，不要共用 admin |
 | 审计 | 定期查看「审计日志」，覆盖登录、指令下发、配置变更 |
 | 开放接口 | `/openapi/v1/*` 用独立 Token，不复用控制台密码 |
@@ -849,7 +849,7 @@ sudo systemctl start strix
 | `Start-ScheduledTask: 找不到指定的文件` | 安装脚本没执行成功 | 先解决脚本本身的报错 |
 | Linux 提示未找到 curl | 精简镜像缺工具 | `yum install -y curl` 或 `apt-get install -y curl` |
 | Linux 提示不支持的平台 / 架构 | 平台不是 linux/darwin，或架构不是 amd64/arm64 | 检查目标系统 |
-| **重启后数据全丢** | `data` 目录没挂载 | 按挂载清单挂上 `/opt/strix/data` |
+| **重启后数据全丢** | `data` 目录没挂载 | 按挂载清单挂上 `/opt/gridperch/data` |
 | 告警时间差 8 小时 | 容器时区是 UTC | 设 `TZ=Asia/Shanghai` 并挂载 `/etc/localtime` |
 
 ### 11.2 数据类
@@ -869,10 +869,10 @@ sudo systemctl start strix
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
 | 同步返回 **403 + `Just a moment...`** | Cloudflare 人机校验拦下了程序客户端 | 见第〇章，四种方案任选；这是最常见的一种 |
-| 同步返回 401 且提示 `拉取令牌不正确` | 授权中心当前配置的令牌与平台发出的不一致 | 授权中心的令牌已改为编译内置，核对两侧内置值是否一致；或临时用 `-hub-token` / `STRIX_HUB_TOKEN` 覆盖 |
+| 同步返回 401 且提示 `拉取令牌不正确` | 授权中心当前配置的令牌与平台发出的不一致 | 授权中心的令牌已改为编译内置，核对两侧内置值是否一致；或临时用 `-hub-token` / `GRIDPERCH_HUB_TOKEN` 覆盖 |
 | 同步返回 HTML 而非 JSON | `-hub` 指向了网页而不是接口 | 地址应为默认授权中心地址（程序内置），**不要**带 `/api/v1/check` |
 | 一直「尚未为本机签发授权」 | 授权中心还没给本机机器码签发 | 拿控制台「授权购买」页显示的机器码，去授权中心后台签发 |
-| 授权导入后校验失败（提示签名校验失败） | 公钥抄错，或旧格式密钥不一致 | 新格式（`STRIX2-`）看启动日志的「授权验签公钥指纹」是否与授权中心一致，不一致就抄错公钥了；旧格式（`WGC-`/`OPSM1-`/`OPSM-`）才需要两端 `-license-secret` 一致 |
+| 授权导入后校验失败（提示签名校验失败） | 公钥抄错，或旧格式密钥不一致 | 新格式（`GRIDPERCH2-`）看启动日志的「授权验签公钥指纹」是否与授权中心一致，不一致就抄错公钥了；旧格式（`WGC-`/`OPSM1-`/`OPSM-`）才需要两端 `-license-secret` 一致 |
 | 主机数超限被拒接入 | 授权档位主机数已用满 | 换更高档位授权；存量主机不受影响 |
 | 日志反复刷「授权系统同步失败」 | 授权中心不可达 | 已自动退避（1→2→4→…分钟，上限 30 分钟），不用管 |
 | 检测到新版本但不升级 | `-hub-auto-update` 设成了 `check` 或 `off` | 改回 `download`，或在控制台手动点「拉取并升级」 |
@@ -893,22 +893,22 @@ curl -sS "https://<你的授权中心地址>/api/v1/check?os=linux&arch=amd64&to
 
 ```bash
 # 1. 服务端日志
-docker compose logs --tail=200 strix
-journalctl -u strix -n 200
+docker compose logs --tail=200 gridperch
+journalctl -u gridperch -n 200
 
 # 2. 采集端日志（Linux）
-journalctl -u strix-agent -n 200
+journalctl -u gridperch-agent -n 200
 # Windows
-Get-ScheduledTaskInfo -TaskName strix-agent | Select-Object LastRunTime, LastTaskResult
+Get-ScheduledTaskInfo -TaskName gridperch-agent | Select-Object LastRunTime, LastTaskResult
 
 # 3. 连通性自测（在目标主机执行）
 curl http://服务端IP:9999/
 
 # 4. 数据库完整性
-sqlite3 /opt/strix/data/strix.db "PRAGMA integrity_check;"
+sqlite3 /opt/gridperch/data/gridperch.db "PRAGMA integrity_check;"
 
 # 5. 磁盘占用
-du -sh /opt/strix/data/*
+du -sh /opt/gridperch/data/*
 ```
 
 再看控制台的**「操作审计」**确认配置改动是否生效。
@@ -945,12 +945,12 @@ A：不会。数据库结构变更都是幂等的（`CREATE TABLE IF NOT EXISTS`
 生产环境建议按下面的目录组织，便于备份与迁移：
 
 ```
-/opt/strix/     应用与数据
-  ├── strix-server
+/opt/gridperch/     应用与数据
+  ├── gridperch-server
   ├── data/
   └── releases/
-/etc/strix/     配置与密钥（root-only）
-  └── strix.env
-/var/log/strix/ 日志（systemd journal 或文件）
+/etc/gridperch/     配置与密钥（root-only）
+  └── gridperch.env
+/var/log/gridperch/ 日志（systemd journal 或文件）
 /backup/             备份归档
 ```

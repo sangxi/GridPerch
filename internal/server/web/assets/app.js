@@ -1,4 +1,4 @@
-/* Strix 控制台：全部功能页面的渲染与交互，零第三方依赖。 */
+/* GridPerch 控制台：全部功能页面的渲染与交互，零第三方依赖。 */
 'use strict';
 
 const COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed'];
@@ -273,10 +273,10 @@ async function loadPublicSettings() {
     state.public = await get('/api/settings/public');
   } catch (e) { state.public = {}; }
   const p = state.public || {};
-  const name = p.systemName || 'Strix';
+  const name = p.systemName || 'GridPerch';
   $('#systemName').textContent = name;
   $('#loginTitle').textContent = name;
-  document.title = p.systemName ? p.systemName + ' 运维监控' : 'Strix 运维监控';
+  document.title = p.systemName ? p.systemName + ' 运维监控' : 'GridPerch 运维监控';
   if (p.logoData) {
     const img = $('#brandLogo');
     img.src = p.logoData;
@@ -994,7 +994,7 @@ function copyText(text) {
 }
 
 /* ================= 添加主机（采集端接入） ================= */
-// 采集端产物名由 build.sh 决定：strix-agent-<goos>-<goarch>[.exe]
+// 采集端产物名由 build.sh 决定：gridperch-agent-<goos>-<goarch>[.exe]
 const AGENT_OS = [
   {
     key: 'linux', label: 'Linux', goos: 'linux', exe: '', binDir: '/usr/local/bin',
@@ -1005,7 +1005,7 @@ const AGENT_OS = [
     note: '适配 macOS 11 及以上；Intel 机器选 AMD64，Apple 芯片（M 系列）选 ARM64',
   },
   {
-    key: 'windows', label: 'Windows', goos: 'windows', exe: '.exe', binDir: 'C:\\Strix',
+    key: 'windows', label: 'Windows', goos: 'windows', exe: '.exe', binDir: 'C:\\GridPerch',
     note: '适配 Windows 7 / Server 2008 R2 及以上，注册服务需以管理员身份运行 PowerShell',
   },
 ];
@@ -1066,7 +1066,7 @@ function renderAddrWarn() {
     请把上方「服务端地址」改成<strong>目标主机能访问到的地址</strong>（同一内网填内网 IP；公网填
     <code>http://公网IP:9999</code> 或域名）。
     想一劳永逸：给服务端设置 <code>-public-url http://可达地址:9999</code>（或环境变量
-    <code>STRIX_PUBLIC_URL</code>），之后生成的命令都按它来；反向代理场景还需透传
+    <code>GRIDPERCH_PUBLIC_URL</code>），之后生成的命令都按它来；反向代理场景还需透传
     <code>Host</code> / <code>X-Forwarded-Host</code>。
   </div>`;
 }
@@ -1180,12 +1180,12 @@ async function renderOnboard() {
       </label>
       <label class="full">通信密钥（token，两端必须一致）
         <span class="dev-pick" style="margin-top:5px">
-          <input id="obToken" value="${esc(p.token)}" placeholder="strix">
+          <input id="obToken" value="${esc(p.token)}" placeholder="gridperch">
           <button class="btn small" type="button" id="obCopyToken">复制</button>
         </span>
       </label>
     </div>
-    <div class="seg-note">密钥取自服务端启动参数 <code>-token</code>（默认 <code>strix</code>，部署后请立即修改）。
+    <div class="seg-note">密钥取自服务端启动参数 <code>-token</code>（默认 <code>gridperch</code>，部署后请立即修改）。
       页面生成的命令里只会带上它的 <strong>MD5 指纹</strong>（<code>-token-hash</code>），
       目标主机的命令行历史与 systemd 单元文件里都不会留下口令明文。只读账号无权查看该密钥。</div>
     <div class="seg-note">上报间隔、执行指令开关、跳过磁盘、更新策略等运行配置<strong>不由命令携带</strong>，
@@ -1207,7 +1207,7 @@ async function renderOnboard() {
       <div><span class="k">改配置</span>到「系统设置 → 采集端配置」调整，采集端在刷新周期内自动应用；也可在「主机监控」里对单台主机单独覆盖。想固定用本地参数启动可加 <code>-remote-config off</code>。</div>
       <div><span class="k">自动升级</span>采集端按平台配置的检查间隔向平台查询版本，发现新版本会自行下载校验、替换二进制并重启，全程无需登录目标主机。可在「采集端配置」里改成只提示不升级，或关闭检查。</div>
       <div><span class="k">离线判定</span>默认超过 180 秒未上报标记为离线，可用服务端 <code>-offline</code> 参数调整。</div>
-      <div><span class="k">不需要了</span>Linux/macOS：<code>systemctl disable --now strix-agent</code>（macOS：<code>launchctl unload</code>）；Windows：删除计划任务 <code>strix-agent</code>。主机记录会保留，历史数据按服务端保留天数自动清理。</div>
+      <div><span class="k">不需要了</span>Linux/macOS：<code>systemctl disable --now gridperch-agent</code>（macOS：<code>launchctl unload</code>）；Windows：删除计划任务 <code>gridperch-agent</code>。主机记录会保留，历史数据按服务端保留天数自动清理。</div>
     </div>
   </div>`);
 
@@ -1289,16 +1289,16 @@ function onboardCmds(p) {
       cmdBlock('ob-a1', '一键安装（管理员 PowerShell）', '下载平台上的采集端、校验完整性、拉取配置并注册开机自启',
         `Invoke-Expression (Invoke-WebRequest -UseBasicParsing '${server}/install.ps1?${q}').Content`),
       cmdBlock('ob-a2', '分步执行（想先看脚本内容时用）', '先把脚本存到磁盘、确认无误再执行；命令里不含任何变量，复制粘贴不会被破坏',
-        `New-Item -ItemType Directory -Force C:\\Strix | Out-Null\n` +
-        `Invoke-WebRequest -UseBasicParsing '${server}/install.ps1?${q}' -OutFile C:\\Strix\\strix-install.ps1\n` +
-        `powershell -ExecutionPolicy Bypass -File C:\\Strix\\strix-install.ps1`),
+        `New-Item -ItemType Directory -Force C:\\GridPerch | Out-Null\n` +
+        `Invoke-WebRequest -UseBasicParsing '${server}/install.ps1?${q}' -OutFile C:\\GridPerch\\gridperch-install.ps1\n` +
+        `powershell -ExecutionPolicy Bypass -File C:\\GridPerch\\gridperch-install.ps1`),
       cmdBlock('ob-a3', '确认已接入 / 后续操作', '在目标主机上验证能查到版本与平台下发的配置',
         `Invoke-RestMethod '${server}/agent/version?os=windows&arch=${p.arch}&wgToken=${esc(hash)}&current=0.0.0' | Format-List\n` +
         `Invoke-RestMethod '${server}/agent/config?wgToken=${esc(hash)}&hostname=${esc(name)}' | Format-List\n\n` +
         `# 手动重启采集端：\n` +
-        `Start-ScheduledTask -TaskName strix-agent\n\n` +
+        `Start-ScheduledTask -TaskName gridperch-agent\n\n` +
         `# 查看计划任务状态（应为 Running）：\n` +
-        `Get-ScheduledTask -TaskName strix-agent | Select-Object State`),
+        `Get-ScheduledTask -TaskName gridperch-agent | Select-Object State`),
     ].join('');
   }
 
@@ -1317,15 +1317,15 @@ function onboardCmds(p) {
       `#         跳过磁盘、更新策略；采集端在刷新周期内自动应用，不用重启。\n` +
       `# 单台主机想用不同配置：「主机监控」主机行最右侧的滑块图标（采集端配置）。\n\n` +
       (os.key === 'darwin'
-        ? `# 卸载：\nsudo launchctl unload /Library/LaunchDaemons/strix-agent.plist\nsudo rm -f /Library/LaunchDaemons/strix-agent.plist /usr/local/bin/strix-agent`
-        : `# 卸载：\nsudo systemctl disable --now strix-agent\nsudo rm -f /etc/systemd/system/strix-agent.service /usr/local/bin/strix-agent`)),
+        ? `# 卸载：\nsudo launchctl unload /Library/LaunchDaemons/gridperch-agent.plist\nsudo rm -f /Library/LaunchDaemons/gridperch-agent.plist /usr/local/bin/gridperch-agent`
+        : `# 卸载：\nsudo systemctl disable --now gridperch-agent\nsudo rm -f /etc/systemd/system/gridperch-agent.service /usr/local/bin/gridperch-agent`)),
   ].join('');
 }
 
 // manualCmds 手动部署路径：仍然从平台下载，但不自动注册服务，适合不方便跑脚本的场景。
 function manualCmds(os, p, c) {
   const { name, server, hash } = c;
-  const home = `${os.binDir}/strix-agent${os.exe}`;
+  const home = `${os.binDir}/gridperch-agent${os.exe}`;
   const args = `-server ${server} -token-hash ${hash} -name ${name}`;
   const dl = `${server}/agent/download?os=${os.goos}&arch=${p.arch}&wgToken=${esc(hash)}`;
 
@@ -1333,30 +1333,30 @@ function manualCmds(os, p, c) {
     return [
       cmdBlock('ob-m1', '从平台下载程序', '在管理员 PowerShell 中执行',
         `New-Item -ItemType Directory -Force ${os.binDir} | Out-Null\n` +
-        `Invoke-WebRequest '${dl}' -OutFile '${os.binDir}\\strix-agent.exe'`),
+        `Invoke-WebRequest '${dl}' -OutFile '${os.binDir}\\gridperch-agent.exe'`),
       cmdBlock('ob-m2', '前台试运行', '确认能连通服务端后再注册为服务',
-        `${os.binDir}\\strix-agent.exe ${args}\n\n` +
+        `${os.binDir}\\gridperch-agent.exe ${args}\n\n` +
         `# 看到「已上报 CPU ...」即接入成功，控制台出现该主机后按 Ctrl+C 停止`),
       cmdBlock('ob-m3', '注册开机自启', '开机自启、异常自动拉起（需管理员权限）',
         `$a = "${args}"\n` +
-        `$action = New-ScheduledTaskAction -Execute '${os.binDir}\\strix-agent.exe' -Argument $a\n` +
+        `$action = New-ScheduledTaskAction -Execute '${os.binDir}\\gridperch-agent.exe' -Argument $a\n` +
         `$trigger = New-ScheduledTaskTrigger -AtStartup\n` +
         `$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest\n` +
-        `Register-ScheduledTask -TaskName strix-agent -Action $action -Trigger $trigger -Principal $principal -Force\n` +
-        `Start-ScheduledTask -TaskName strix-agent\n\n` +
-        `# 卸载：Unregister-ScheduledTask -TaskName strix-agent -Confirm:$false`),
+        `Register-ScheduledTask -TaskName gridperch-agent -Action $action -Trigger $trigger -Principal $principal -Force\n` +
+        `Start-ScheduledTask -TaskName gridperch-agent\n\n` +
+        `# 卸载：Unregister-ScheduledTask -TaskName gridperch-agent -Confirm:$false`),
     ].join('');
   }
 
   const svc = os.key === 'darwin'
     ? cmdBlock('ob-m3', '注册为后台服务（launchd）', '开机自启、退出后自动拉起',
-      `sudo install -m 0755 /tmp/strix-agent ${home}\n\n` +
-      `sudo tee /Library/LaunchDaemons/strix-agent.plist >/dev/null <<'EOF'\n` +
+      `sudo install -m 0755 /tmp/gridperch-agent ${home}\n\n` +
+      `sudo tee /Library/LaunchDaemons/gridperch-agent.plist >/dev/null <<'EOF'\n` +
       `<?xml version="1.0" encoding="UTF-8"?>\n` +
       `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n` +
       `<plist version="1.0">\n` +
       `<dict>\n` +
-      `  <key>Label</key><string>strix-agent</string>\n` +
+      `  <key>Label</key><string>gridperch-agent</string>\n` +
       `  <key>ProgramArguments</key>\n` +
       `  <array>\n` +
       `    <string>${home}</string>\n` +
@@ -1369,13 +1369,13 @@ function manualCmds(os, p, c) {
       `</dict>\n` +
       `</plist>\n` +
       `EOF\n\n` +
-      `sudo chown root:wheel /Library/LaunchDaemons/strix-agent.plist\n` +
-      `sudo launchctl load -w /Library/LaunchDaemons/strix-agent.plist`)
+      `sudo chown root:wheel /Library/LaunchDaemons/gridperch-agent.plist\n` +
+      `sudo launchctl load -w /Library/LaunchDaemons/gridperch-agent.plist`)
     : cmdBlock('ob-m3', '注册为系统服务（systemd）', '开机自启、异常自动拉起',
-      `sudo install -m 0755 /tmp/strix-agent ${home}\n\n` +
-      `sudo tee /etc/systemd/system/strix-agent.service >/dev/null <<'EOF'\n` +
+      `sudo install -m 0755 /tmp/gridperch-agent ${home}\n\n` +
+      `sudo tee /etc/systemd/system/gridperch-agent.service >/dev/null <<'EOF'\n` +
       `[Unit]\n` +
-      `Description=Strix 采集端\n` +
+      `Description=GridPerch 采集端\n` +
       `After=network-online.target\n` +
       `Wants=network-online.target\n\n` +
       `[Service]\n` +
@@ -1387,17 +1387,17 @@ function manualCmds(os, p, c) {
       `WantedBy=multi-user.target\n` +
       `EOF\n\n` +
       `sudo systemctl daemon-reload\n` +
-      `sudo systemctl enable --now strix-agent\n` +
-      `systemctl status strix-agent --no-pager\n\n` +
+      `sudo systemctl enable --now gridperch-agent\n` +
+      `systemctl status gridperch-agent --no-pager\n\n` +
       `# 无 systemd 的发行版（Alpine、容器等）改用：\n` +
-      `# nohup ${home} ${args} >/var/log/strix-agent.log 2>&1 &`);
+      `# nohup ${home} ${args} >/var/log/gridperch-agent.log 2>&1 &`);
 
   return [
     cmdBlock('ob-m1', '从平台下载程序', '目标主机直接向平台取二进制，不需要 scp 拷贝',
-      `curl -fsSL "${dl}" -o /tmp/strix-agent\n` +
-      `chmod +x /tmp/strix-agent`),
+      `curl -fsSL "${dl}" -o /tmp/gridperch-agent\n` +
+      `chmod +x /tmp/gridperch-agent`),
     cmdBlock('ob-m2', '前台试运行', '确认能连通服务端后再转为常驻',
-      `/tmp/strix-agent ${args}\n\n` +
+      `/tmp/gridperch-agent ${args}\n\n` +
       `# 看到「已上报 CPU ...」即接入成功，控制台出现该主机后按 Ctrl+C 停止`),
     svc,
   ].join('');
@@ -1485,7 +1485,7 @@ async function renderUpgrade() {
   const tokenSrc = hub.tokenSource === 'builtin'
     ? '内置（随程序分发，界面与日志均不回显）'
     : hub.tokenSource === 'custom'
-      ? '自定义（-hub-token 或 STRIX_HUB_TOKEN）'
+      ? '自定义（-hub-token 或 GRIDPERCH_HUB_TOKEN）'
       : '未设置';
 
   html += panel('授权系统连接', `<div class="panel-body">
@@ -1823,7 +1823,7 @@ async function renderLicenseBuy() {
   html += panel('手动导入授权码', `<div class="panel-body">
     <div class="form-grid">
       <label class="full">授权码（粘贴完整内容，可含换行）
-        <textarea id="licKey" rows="3" placeholder="STRIX2-xxxxxxxx.xxxxxxxx"></textarea>
+        <textarea id="licKey" rows="3" placeholder="GRIDPERCH2-xxxxxxxx.xxxxxxxx"></textarea>
       </label>
     </div>
     <div class="toolbar" style="margin-top:12px">
@@ -2662,7 +2662,7 @@ function openOutputModal(c) {
 
 /* ================= 工具箱 ================= */
 // 两类工具，界面上用标签区分「在哪里执行」：
-//   [服务端探测] 由 Strix 服务端直接发包，与目标主机操作系统无关；
+//   [服务端探测] 由 GridPerch 服务端直接发包，与目标主机操作系统无关；
 //   [主机本地执行] 指令下发到目标主机采集端在本地运行，受操作系统限制（按主机上报的系统过滤）。
 const TOOL_OS_CN = { linux: 'Linux', windows: 'Windows', darwin: 'macOS', freebsd: 'FreeBSD' };
 
@@ -2741,7 +2741,7 @@ async function renderTools() {
   const sorted = hosts.slice().sort((a, b) => String(a.hostname).localeCompare(String(b.hostname)));
   let html = `<div class="hint-box">
     工具箱把诊断能力分成两类，每张卡片都标了<strong>在哪里执行</strong>：
-    <span class="tag">[服务端探测]</span> 由 Strix 服务端直接发包，<strong>与目标主机操作系统无关</strong>；
+    <span class="tag">[服务端探测]</span> 由 GridPerch 服务端直接发包，<strong>与目标主机操作系统无关</strong>；
     <span class="tag">[主机本地执行]</span> 把命令下发到目标主机采集端在本地运行，<strong>受操作系统限制</strong>，
     已按主机上报的系统自动过滤。
   </div>`;
@@ -2995,7 +2995,7 @@ function openAssetEditor(asset) {
         <label>使用部门<input id="fDepartment" value="${esc(a.department || '')}"></label>
         <label>购入日期<input id="fBuyDate" value="${esc(a.buyDate || '')}" placeholder="2026-01-01"></label>
         <label>维保到期<input id="fExpireDate" value="${esc(a.expireDate || '')}" placeholder="2029-01-01"></label>
-        <label>关联监控主机<input id="fBind" value="${esc(a.monitorBind || '')}" placeholder="填写 strix-agent 的主机名"></label>
+        <label>关联监控主机<input id="fBind" value="${esc(a.monitorBind || '')}" placeholder="填写 gridperch-agent 的主机名"></label>
         <label class="full">备注<textarea id="fRemark" rows="2">${esc(a.remark || '')}</textarea></label>
       </div>
     </div>
@@ -3440,9 +3440,9 @@ async function renderSettings() {
     const tab = $('.tabs button.active').dataset.tab;
     let body = '';
     if (tab === 'brand') {
-      const autoTitle = (val('systemName', 'Strix') || 'Strix') + ' 运维监控中心';
+      const autoTitle = (val('systemName', 'GridPerch') || 'GridPerch') + ' 运维监控中心';
       body = `<div class="form-grid">
-        <label>系统名称<input id="sName" value="${esc(val('systemName', 'Strix'))}"></label>
+        <label>系统名称<input id="sName" value="${esc(val('systemName', 'GridPerch'))}"></label>
         <label>自定义 Logo（上传图片）<input type="file" id="sLogo" accept="image/*"></label>
         <label class="full">Logo 预览<div id="logoPreview" style="margin-top:6px">${cfg.logoData ? `<img src="${esc(cfg.logoData)}" style="height:36px">` : '<span class="mono">未设置</span>'}</div></label>
         <label class="full">大屏标题
@@ -3484,7 +3484,7 @@ async function renderSettings() {
       <div id="agOverrideBox"></div>`;
     } else if (tab === 'alert') {
       body = `<div class="form-grid">
-        <label>告警标题前缀<input id="sPrefix" value="${esc(val('alertPrefix', '[Strix]'))}" placeholder="[Strix]"></label>
+        <label>告警标题前缀<input id="sPrefix" value="${esc(val('alertPrefix', '[GridPerch]'))}" placeholder="[GridPerch]"></label>
         <label>邮件告警签名<input id="sSign" value="${esc(val('alertSignature'))}" placeholder="例如：运维值班中心"></label>
         <label>告警提示音<select id="sSound">
           ${[['off', '关闭'], ['soft', '轻柔'], ['normal', '标准'], ['urgent', '紧急']].map((s) => `<option value="${s[0]}" ${val('alertSound', 'off') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}

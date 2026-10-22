@@ -15,16 +15,16 @@ OUT=${OUT:-bin}
 VERSION=$(grep -m1 'var Version = ' internal/version/version.go | sed -E 's/.*"([^"]+)".*/\1/')
 # 用不含空格的 ISO 时间，避免 -ldflags 被空格拆开
 BUILD_TIME=$(date '+%Y-%m-%dT%H:%M:%S')
-LDFLAGS="-s -w -X github.com/sangxi/strix/internal/version.BuildTime=${BUILD_TIME}"
+LDFLAGS="-s -w -X github.com/sangxi/gridperch/internal/version.BuildTime=${BUILD_TIME}"
 echo "版本 ${VERSION}，构建时间 ${BUILD_TIME}"
 
 build_one() {
   local goos=$1 goarch=$2 ext=$3 out=$4
   echo "构建 ${goos}/${goarch} -> ${out}/"
   GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
-    go build -trimpath -ldflags "$LDFLAGS" -o "${out}/strix-server-${goos}-${goarch}${ext}" ./cmd/strix-server
+    go build -trimpath -ldflags "$LDFLAGS" -o "${out}/gridperch-server-${goos}-${goarch}${ext}" ./cmd/gridperch-server
   GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
-    go build -trimpath -ldflags "$LDFLAGS" -o "${out}/strix-agent-${goos}-${goarch}${ext}" ./cmd/strix-agent
+    go build -trimpath -ldflags "$LDFLAGS" -o "${out}/gridperch-agent-${goos}-${goarch}${ext}" ./cmd/gridperch-agent
 }
 
 # 按目录里现存的产物重算校验和。
@@ -36,9 +36,9 @@ write_sums() {
   local out=$1
   [[ -d "$out" ]] || return 0
   if command -v sha256sum >/dev/null 2>&1; then
-    ( cd "$out" && sha256sum strix-* > SHA256SUMS.txt )
+    ( cd "$out" && sha256sum gridperch-* > SHA256SUMS.txt )
   elif command -v shasum >/dev/null 2>&1; then
-    ( cd "$out" && shasum -a 256 strix-* > SHA256SUMS.txt )
+    ( cd "$out" && shasum -a 256 gridperch-* > SHA256SUMS.txt )
   else
     echo "警告：找不到 sha256sum / shasum，跳过校验和生成" >&2
     return 0
@@ -63,13 +63,13 @@ if [[ "${1:-}" == "all" ]]; then
 fi
 
 mkdir -p "$OUT"
-# Windows 上必须带 .exe 后缀，否则控制台/计划任务按 strix-server.exe 调用会命中旧二进制
+# Windows 上必须带 .exe 后缀，否则控制台/计划任务按 gridperch-server.exe 调用会命中旧二进制
 HOST_OS=$(go env GOOS)
 HOST_EXT=""
 if [[ "$HOST_OS" == "windows" ]]; then HOST_EXT=".exe"; fi
 GOOS="$HOST_OS" GOARCH=$(go env GOARCH) CGO_ENABLED=0 \
-  go build -trimpath -ldflags "$LDFLAGS" -o "${OUT}/strix-server${HOST_EXT}" ./cmd/strix-server
+  go build -trimpath -ldflags "$LDFLAGS" -o "${OUT}/gridperch-server${HOST_EXT}" ./cmd/gridperch-server
 GOOS="$HOST_OS" GOARCH=$(go env GOARCH) CGO_ENABLED=0 \
-  go build -trimpath -ldflags "$LDFLAGS" -o "${OUT}/strix-agent${HOST_EXT}" ./cmd/strix-agent
-echo "构建完成：${OUT}/strix-server${HOST_EXT} ${OUT}/strix-agent${HOST_EXT}"
+  go build -trimpath -ldflags "$LDFLAGS" -o "${OUT}/gridperch-agent${HOST_EXT}" ./cmd/gridperch-agent
+echo "构建完成：${OUT}/gridperch-server${HOST_EXT} ${OUT}/gridperch-agent${HOST_EXT}"
 echo "版本 ${VERSION}（${BUILD_TIME}）"

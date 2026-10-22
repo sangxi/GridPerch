@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sangxi/strix/internal/model"
-	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/gridperch/internal/model"
+	"github.com/sangxi/gridperch/internal/store"
 )
 
 // checkAgentToken 校验 agent 侧请求的 token（GET 用查询参数，POST 用报文体）。
@@ -273,7 +273,7 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		},
 		TypeCount:  typeCount,
 		Units:      map[string]string{},
-		SystemName: "Strix",
+		SystemName: "GridPerch",
 	}
 
 	// 逐主机运行时指标：磁盘 / 网络 / IO / 温度 / 连接数的汇总都从这里算

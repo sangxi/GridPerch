@@ -30,7 +30,7 @@
 # 平台只回兼容版 —— 否则自动升级会把它换成正式版，换完就起不来。
 #
 # ── 用法 ────────────────────────────────────────────────────────────────
-#   ./build-win7.sh                     # 输出 dist/strix-agent-windows-amd64-win7.exe
+#   ./build-win7.sh                     # 输出 dist/gridperch-agent-windows-amd64-win7.exe
 #   OUT=/tmp/x ./build-win7.sh          # 指定输出目录
 #   GO120=/path/to/go ./build-win7.sh   # 指定 Go 1.20 工具链
 set -euo pipefail
@@ -58,7 +58,7 @@ VERSION=$(grep -m1 'var Version = ' internal/version/version.go | sed -E 's/.*"(
 BUILD_TIME=$(date '+%Y-%m-%dT%H:%M:%S')
 # LegacyWindows=1 是这份产物的「身份」：采集端启动后会带上 legacy=1 查版本，
 # 平台因此只回兼容版，不会被自动升级换成跑不起来的正式版。
-LDFLAGS="-s -w -X github.com/sangxi/strix/internal/version.BuildTime=${BUILD_TIME} -X github.com/sangxi/strix/internal/version.LegacyWindows=1"
+LDFLAGS="-s -w -X github.com/sangxi/gridperch/internal/version.BuildTime=${BUILD_TIME} -X github.com/sangxi/gridperch/internal/version.LegacyWindows=1"
 OUT=${OUT:-dist}
 SUFFIX=${SUFFIX:-win7}
 
@@ -66,22 +66,22 @@ mkdir -p "$OUT"
 echo "工具链  $VER"
 echo "版本    ${VERSION}（构建时间 ${BUILD_TIME}）"
 echo "modfile go120.mod（go 1.20）"
-echo "产物    ${OUT}/strix-agent-windows-amd64-${SUFFIX}.exe"
+echo "产物    ${OUT}/gridperch-agent-windows-amd64-${SUFFIX}.exe"
 
 GOOS=windows GOARCH=amd64 "$GO120" build -modfile=go120.mod -mod=mod -trimpath \
   -ldflags "$LDFLAGS" \
-  -o "${OUT}/strix-agent-windows-amd64-${SUFFIX}.exe" ./cmd/strix-agent
+  -o "${OUT}/gridperch-agent-windows-amd64-${SUFFIX}.exe" ./cmd/gridperch-agent
 
 # 重算校验和：这时 dist/ 里通常还有 build.sh all 的 10 个正式产物，
 # 一并纳入，否则发出去的 SHA256SUMS.txt 会漏掉兼容版这一条。
 if command -v sha256sum >/dev/null 2>&1; then
-  ( cd "$OUT" && sha256sum strix-* > SHA256SUMS.txt )
+  ( cd "$OUT" && sha256sum gridperch-* > SHA256SUMS.txt )
   echo "校验和 ${OUT}/SHA256SUMS.txt（$(wc -l < "${OUT}/SHA256SUMS.txt" | tr -d ' ') 条）"
 elif command -v shasum >/dev/null 2>&1; then
-  ( cd "$OUT" && shasum -a 256 strix-* > SHA256SUMS.txt )
+  ( cd "$OUT" && shasum -a 256 gridperch-* > SHA256SUMS.txt )
   echo "校验和 ${OUT}/SHA256SUMS.txt（$(wc -l < "${OUT}/SHA256SUMS.txt" | tr -d ' ') 条）"
 fi
 
 echo
 echo "完成。自检："
-echo "  ./${OUT}/strix-agent-windows-amd64-${SUFFIX}.exe -version"
+echo "  ./${OUT}/gridperch-agent-windows-amd64-${SUFFIX}.exe -version"

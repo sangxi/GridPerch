@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/go-ping/ping"
-	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/gridperch/internal/model"
 	psdisk "github.com/shirou/gopsutil/v3/disk"
 	psprocess "github.com/shirou/gopsutil/v3/process"
 )

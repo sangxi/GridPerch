@@ -1,12 +1,12 @@
-# Strix
+# GridPerch
 
 **开箱即用的轻量级分布式运维监控系统** —— 极简部署、自动化运行、零模板零脚本。
 
-Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<https://github.com/sangxi/strix>
+Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<https://github.com/sangxi/gridperch>
 
 ```
 ┌──────────────┐   POST /agent/minTask   ┌───────────────┐     ┌──────────┐
-│ strix-agent  │────────────────────────►│ strix-server  │────►│ SQLite   │
+│ gridperch-agent  │────────────────────────►│ gridperch-server  │────►│ SQLite   │
 │ 采集端 / 探针 │   JSON + MD5(token) 鉴权 │ 服务端 + 控制台 │     │ 单文件库 │
 └──────────────┘◄────────────────────────└───────────────┘◄────└──────────┘
                    GET /agent/tasks
@@ -16,7 +16,7 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 **授权系统**拉取（内网离线环境用 `-hub=` 关闭）。
 ### 重要信息
 
-> 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / strix`。
+> 浏览器打开 `http://<服务器IP>:9999`，默认账号 `admin / gridperch`。
 
 ## 界面预览
 
@@ -52,18 +52,18 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 
 | 版本 | 重点 |
 | --- | --- |
-| 1.2.4 | **大屏名称可自定义**：大屏页顶标题不再写死，改为「系统设置 → 界面定制 → 大屏标题」。留空时自动用「系统名称 + 运维监控中心」（默认安装仍是「Strix 运维监控中心」，与旧版表现一致），只改系统名称也能整体换名；改完最迟一个刷新周期（10 秒）生效，**不用重开投屏页面**，浏览器标签页标题同步变化；标题过长按省略号截断并可悬停看全称，不会挤坏两侧的时钟与模板下拉。标题由后端统一计算（`/api/settings/public` 与 `/api/screen` 共用同一规则），大屏未登录即可先取到，避免首屏闪一下默认名 |
+| 1.2.4 | **大屏名称可自定义**：大屏页顶标题不再写死，改为「系统设置 → 界面定制 → 大屏标题」。留空时自动用「系统名称 + 运维监控中心」（默认安装仍是「GridPerch 运维监控中心」，与旧版表现一致），只改系统名称也能整体换名；改完最迟一个刷新周期（10 秒）生效，**不用重开投屏页面**，浏览器标签页标题同步变化；标题过长按省略号截断并可悬停看全称，不会挤坏两侧的时钟与模板下拉。标题由后端统一计算（`/api/settings/public` 与 `/api/screen` 共用同一规则），大屏未登录即可先取到，避免首屏闪一下默认名 |
 | 1.2.3 | **旧系统兼容 + 同步诊断**：Windows 采集端拆成「正式版 / 旧系统兼容版」两套产物，同一版本号并存（库表加 `variant`，唯一键改为四列，老库自动补列并重建索引）。兼容版由 Go 1.20 构建，覆盖 Win7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 —— 这些系统跑不了 Go 1.21+ 的产物；兼容版注入 `version.LegacyWindows`，查版本与自升级都带 `legacy=1`，平台只回兼容版，**不再需要 `-remote-config off -update off`**；安装脚本按 `[Environment]::OSVersion` 自动分流。「版本发布」页新增**本地上传 / 兼容版**面板（离线模式下也可用）。授权同步报错按「网关 → 鉴权 → 路由 → 兜底」分层归因：502/503/504 不再误报成「-hub 地址写错」，并带出实际请求 URL、响应页面标题与 `Server` 头；`-hub` 误填成 `https://域名/api/v1/check` 会被自动削正 |
 | 1.1.1 | 采集端发布物按 5 个平台（linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64）逐个补拉，修复「Linux 服务端装不上 Windows 采集端 / 授权系统尚未发布该平台」；补拉在后台执行，避免「立即检查更新」被网关超时（HTTP 524）拖死；`-public-url` 配成回环/内网/CGNAT 地址时启动告警 |
 | 1.1.2 | 控制台登录失败明确提示原因（用户名或密码错误 / 账号已停用）；内嵌前端资源统一 `Cache-Control: no-cache`，升级二进制后浏览器/反向代理不会再用旧前端 |
-| 1.1.3 | 平台自升级后自动重启生效（systemd `Restart=always` / Docker Compose `restart: unless-stopped` / 手工 `nohup` 自拉起，启动失败自动回滚 `.bak`）；新增 `-hub-restart` / `STRIX_HUB_RESTART` |
+| 1.1.3 | 平台自升级后自动重启生效（systemd `Restart=always` / Docker Compose `restart: unless-stopped` / 手工 `nohup` 自拉起，启动失败自动回滚 `.bak`）；新增 `-hub-restart` / `GRIDPERCH_HUB_RESTART` |
 | 1.1.4 | 控制台「在线升级」「授权购买」页不再展示授权中心域名，也去掉了跳转到授权站的按钮（授权站遭 DDoS 期间降低暴露面），保留机器码与同步状态；前端加 `SHOW_HUB_URL` 开关，排障时可改回显示 |
 | 1.1.5 | 修复一键安装脚本把中文主机名清成一串 `-`（现在中/日文等都能正常作主机名，元字符仍被替换，注入面不变）；新增**主机重命名**与**删除主机**（主机列表行内按钮，限管理员），改名级联迁移全部历史数据并登记旧名→新名映射，**旧名仍在上报的采集端自动归位、无需重装** |
-| 1.2.0 | **品牌更名为 Strix**（原 OpsMonitor 同名项目过多）。二进制、目录、部署路径、环境变量前缀、授权码前缀统一改为 `strix` / `STRIX_` / `STRIX2-`；同时保留旧标识兼容：`OPSM_*` 环境变量自动回落、`OPSM2-`／`OPSM1-`／`WGC-` 存量授权码继续有效、旧 `opsmonitor.db` 自动沿用、机器码与设备密钥的历史盐值不变。老部署换二进制即可，无需重新授权或迁移数据 |
+| 1.2.0 | **品牌更名为 GridPerch**（原 OpsMonitor 同名项目过多）。二进制、目录、部署路径、环境变量前缀、授权码前缀统一改为 `gridperch` / `GRIDPERCH_` / `GRIDPERCH2-`；同时保留旧标识兼容：`OPSM_*` 环境变量自动回落、`OPSM2-`／`OPSM1-`／`WGC-` 存量授权码继续有效、旧 `opsmonitor.db` 自动沿用、机器码与设备密钥的历史盐值不变。老部署换二进制即可，无需重新授权或迁移数据 |
 | 1.2.1 | **告警闭环**：告警可**认领 / 释放**（记录认领人与时间，重复认领会提示是谁在处理）、可写**处理备注**；新增**告警静默规则**（按主机 + 监控项 + 级别 + 时间段匹配，静默期内告警照常入库留痕但**不发邮件、不推机器人**）；**未认领催办**：告警超过设定分钟数仍无人认领，再推一轮带「未认领催办」前缀的通知（设置里填 `0` 关闭）。告警中心顶部新增未恢复 / 待认领 / 处理中 / 静默生效中四张指标卡，导出 CSV/Excel 一并带出认领人与备注 |
 | 1.2.2 | **全站界面收束**：主机、监控项、指令、资产、设备账号、巡检、成员、凭证、Webhook 等表格的操作列由「一排文字按钮」改为**图标按钮**（27×27，悬停有底色变化与中文提示），操作列宽度从 200~300px 降到 120~160px，把空间让给内容列；告警中心「主机登录提醒」为空时不再渲染整块白色面板，改为一条虚线提示条；仪表盘 6 张指标卡在常见屏宽下排满一行，不再折出半行空白；表格时间列统一 `tabular-nums`，侧栏当前项加主色竖条 |
 
-当前版本 **1.2.4**。版本沿革：官方 1.0.3 → 二开 1.1.0 → 1.1.1 → 1.1.2 → 1.1.3 → 1.1.4 → 1.1.5 → 1.1.6 → 1.1.7 → 1.2.0（更名 Strix）→ 1.2.1（告警闭环）→ 1.2.2（界面收束）→ 1.2.3（旧系统兼容 + 同步诊断）→ **1.2.4（大屏名称可自定义）**。
+当前版本 **1.2.4**。版本沿革：官方 1.0.3 → 二开 1.1.0 → 1.1.1 → 1.1.2 → 1.1.3 → 1.1.4 → 1.1.5 → 1.1.6 → 1.1.7 → 1.2.0（更名 GridPerch）→ 1.2.1（告警闭环）→ 1.2.2（界面收束）→ 1.2.3（旧系统兼容 + 同步诊断）→ **1.2.4（大屏名称可自定义）**。
 
 ## 监控能力
 
@@ -114,34 +114,34 @@ Server 端 + Agent 端协同工作，可监控数千台主机。项目地址：<
 
 ## 快速开始
 
-完整部署方案见 [DEPLOY.md](DEPLOY.md)；图文步骤见独立教程站 <https://strix.az01.cc.cd>。
+完整部署方案见 [DEPLOY.md](DEPLOY.md)；图文步骤见独立教程站 <https://gridperch.az01.cc.cd>。
 
 ### 第 0 步：选对产物（平台 × 架构）
 
 一个版本共 **11 个产物**：2 个角色 × 5 个平台组合 + 1 个 Windows 旧系统兼容版。
-命名规则 `strix-<角色>-<系统>-<架构>[.exe]`，产物在 `dist/`（发布包为 `release/<版本>/`）。
+命名规则 `gridperch-<角色>-<系统>-<架构>[.exe]`，产物在 `dist/`（发布包为 `release/<版本>/`）。
 
 | 系统 | 架构 | 监控端 server | 采集端 agent |
 | --- | --- | --- | --- |
-| Linux | amd64 | `strix-server-linux-amd64` | `strix-agent-linux-amd64` |
-| Linux | arm64（鲲鹏 / 飞腾 / 倚天 / 树莓派 64 位） | `strix-server-linux-arm64` | `strix-agent-linux-arm64` |
-| macOS | amd64（Intel） | `strix-server-darwin-amd64` | `strix-agent-darwin-amd64` |
-| macOS | arm64（Apple M 系列） | `strix-server-darwin-arm64` | `strix-agent-darwin-arm64` |
-| Windows | amd64 | `strix-server-windows-amd64.exe` | `strix-agent-windows-amd64.exe` |
-| Windows | amd64（Win7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 专用） | — | `strix-agent-windows-amd64-win7.exe` |
+| Linux | amd64 | `gridperch-server-linux-amd64` | `gridperch-agent-linux-amd64` |
+| Linux | arm64（鲲鹏 / 飞腾 / 倚天 / 树莓派 64 位） | `gridperch-server-linux-arm64` | `gridperch-agent-linux-arm64` |
+| macOS | amd64（Intel） | `gridperch-server-darwin-amd64` | `gridperch-agent-darwin-amd64` |
+| macOS | arm64（Apple M 系列） | `gridperch-server-darwin-arm64` | `gridperch-agent-darwin-arm64` |
+| Windows | amd64 | `gridperch-server-windows-amd64.exe` | `gridperch-agent-windows-amd64.exe` |
+| Windows | amd64（Win7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 专用） | — | `gridperch-agent-windows-amd64-win7.exe` |
 
 - **只提供 64 位**：没有 386 / armv7 产物，32 位系统会报 `Exec format error`，请换 64 位系统
 - **Windows 只有 amd64**：Windows on ARM 只能靠 x64 模拟层跑标准版，生产不建议
 - **Linux 不看发行版**：产物是纯静态链接（无 `PT_INTERP`、不依赖 glibc/musl），Debian / CentOS 7 / Rocky / openEuler / 麒麟 / 统信 / Alpine 通用
 - **旧系统（Win7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2）**：工具链本身要求 Windows 10 / Server 2016 起，正式版在这些系统上**启动即退出且不留日志**，必须用 `-win7.exe` 兼容版（Go 1.20 构建）。1.2.3 起兼容版会自报身份（`legacy=1`），安装脚本按系统版本自动选、自动升级也只会拿到兼容版，**不再需要 `-remote-config off -update off`**（1.2.2 及更早仍需）
 - 自查：`uname -m` → `x86_64` 对应 amd64、`aarch64` 对应 arm64；Windows 看 `$env:PROCESSOR_ARCHITECTURE` = `AMD64`
-- 校验：`sha256sum -c SHA256SUMS.txt`，再跑 `./strix-server-linux-amd64 -version` 确认自报架构与文件名一致
+- 校验：`sha256sum -c SHA256SUMS.txt`，再跑 `./gridperch-server-linux-amd64 -version` 确认自报架构与文件名一致
 
 ### 方式一：Docker Compose（最快）
 
 ```bash
 cd deploy/docker
-cp .env.example .env                 # 至少改 STRIX_ADMIN_PASS / STRIX_TOKEN / STRIX_LICENSE_MACHINE
+cp .env.example .env                 # 至少改 GRIDPERCH_ADMIN_PASS / GRIDPERCH_TOKEN / GRIDPERCH_LICENSE_MACHINE
 docker compose up -d                 # 镜像架构跟随宿主机：amd64 / arm64 都支持
 docker compose logs -f --tail=100
 ```
@@ -163,17 +163,17 @@ sudo ./deploy/macos/install.sh
 ```
 
 脚本会校验传入的二进制确实是本平台可执行文件、用其自报的 `-version` 覆盖脚本里的版本号、
-创建低权限用户/目录、写入 `/etc/strix/strix.env`（0600）、注册开机自启、放行端口，
+创建低权限用户/目录、写入 `/etc/gridperch/gridperch.env`（0600）、注册开机自启、放行端口，
 最后打印**只显示一次**的控制台账号与通信密钥。
 
 ### 方式三：直接跑二进制
 
 ```bash
 ./build.sh all            # 交叉编译 linux/darwin/windows × amd64/arm64，产物在 dist/
-./bin/strix-server -addr :9999 -db ./data/strix.db -token strix -public-url http://<服务器IP>:9999
+./bin/gridperch-server -addr :9999 -db ./data/gridperch.db -token gridperch -public-url http://<服务器IP>:9999
 ```
 
-> ⚠️ `-db` 默认是**相对当前工作目录**的 `./data/strix.db`，在别的目录裸跑会新建一个空库（现象「数据没了」）。
+> ⚠️ `-db` 默认是**相对当前工作目录**的 `./data/gridperch.db`，在别的目录裸跑会新建一个空库（现象「数据没了」）。
 > 更名前的老库 `opsmonitor.db` 会被自动识别沿用（启动日志会提示）。
 
 ### 接入采集端
@@ -193,71 +193,71 @@ Invoke-Expression (Invoke-WebRequest -UseBasicParsing "http://<服务器IP>:9999
 脚本自动完成：识别系统与架构 → 查询下发版本 → 下载二进制 → 校验 SHA256 →
 拉取平台下发的运行配置 → 注册开机自启的系统服务（systemd / launchd / 计划任务）。
 
-**完整部署方案见 [DEPLOY.md](DEPLOY.md)；图文步骤见独立教程站 <https://strix.az01.cc.cd>。** —— 含容量规划、反向代理、备份恢复、升级回滚与排障手册。
+**完整部署方案见 [DEPLOY.md](DEPLOY.md)；图文步骤见独立教程站 <https://gridperch.az01.cc.cd>。** —— 含容量规划、反向代理、备份恢复、升级回滚与排障手册。
 
 > 各平台的**可执行部署脚本**在 [`deploy/`](deploy/) 目录：`deploy/linux`、`deploy/windows`、`deploy/macos`、`deploy/docker`。
 > 图文部署教程（选型 / 产物与架构 / 四平台步骤 / 兼容矩阵 / 排障）作为**独立静态站点**单独维护，不在本仓库内：
-> <https://strix.az01.cc.cd>（备用地址 <https://opsmonitor-docs.pages.dev>）
+> <https://gridperch.az01.cc.cd>（备用地址 <https://opsmonitor-docs.pages.dev>）
 
 ## 配置项摘要
 
-### 服务端 `strix-server`
+### 服务端 `gridperch-server`
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `-addr` | `STRIX_ADDR` | `:9999` | HTTP 监听地址 |
-| `-db` | `STRIX_DB` | `./data/strix.db` | SQLite 文件路径 |
-| `-token` | `STRIX_TOKEN` | `strix` | 采集端通信密钥，两端必须一致 |
-| `-user` / `-pass` | `STRIX_ADMIN_USER` / `STRIX_ADMIN_PASS` | `admin` / `strix` | 控制台账号（仅首次启动生效） |
-| `-retention` | `STRIX_RETENTION` | `30` | 历史数据保留天数，0 表示永久 |
-| `-public-url` | `STRIX_PUBLIC_URL` | 自动反推 | 对外访问地址，反向代理下务必显式指定 |
-| `-offline` | `STRIX_OFFLINE_SEC` | `180` | 超过该秒数未上报判定离线 |
-| `-cpu-alert` / `-mem-alert` / `-disk-alert` | `STRIX_CPU_ALERT` 等 | `90` | 告警阈值（%） |
-| `-load-alert` | `STRIX_LOAD_ALERT` | `10` | 系统负载告警阈值 |
-| `-alert-cooldown` | `STRIX_ALERT_COOLDOWN_MIN` | `10` | 同类告警去重冷却（分钟） |
-| `-release-dir` | `STRIX_RELEASE_DIR` | 空 | 采集端发布物缓存目录（默认由程序内部决定） |
-| `-login-alert` | `STRIX_LOGIN_ALERT` | `true` | 控制台登录失败是否推送告警 |
-| `-read-conns` | `STRIX_READ_CONNS` | `8` | SQLite 读连接数 |
-| `-write-queue` | `STRIX_WRITE_QUEUE` | `8192` | SQLite 写队列长度 |
-| `-probe-workers` | `STRIX_PROBE_WORKERS` | `64` | 服务端探针并发数 |
-| `-purge` | `STRIX_PURGE_INTERVAL` | `3600` | 历史数据清理间隔（秒） |
-| `-license-secret` | `STRIX_LICENSE_SECRET` | 空 | 旧格式授权码（HMAC）校验密钥，存量旧码换完后即可去掉 |
-| `-license` | `STRIX_LICENSE_KEY` | 空 | 手工导入的授权码 |
-| `-license-machine` | `STRIX_LICENSE_MACHINE` | 空 | 机器码（Docker 等环境需固定，否则授权失效） |
-| `-free-hosts` | `STRIX_LICENSE_FREE_HOSTS` | `10` | 免费档主机数上限 |
-| `-free-users` | `STRIX_LICENSE_FREE_USERS` | `3` | 免费档控制台账号数上限 |
-| `-hub` | `STRIX_HUB` | 默认已内置授权中心地址；留空=完全离线 | 授权系统地址，不配则纯离线单机模式 |
-| `-hub-token` | `STRIX_HUB_TOKEN` | 留空用内置令牌 | 访问授权系统的令牌 |
-| `-hub-interval` | `STRIX_HUB_INTERVAL_MIN` | `5` 分钟 | 向授权系统轮询间隔（分钟） |
-| `-hub-auto-update` | `STRIX_HUB_AUTO_UPDATE` | `download` | 平台自升级策略：`download` 自动下载并就位 / `check` 只提示不下载 / `off` 关闭 |
-| `-hub-restart` | `STRIX_HUB_RESTART` | `auto` | 自升级后是否自动重启生效：`auto` 自动重启 / `off` 只替换文件不重启（需人工重启） |
-| `-hub-ua` | `STRIX_HUB_UA` | 空 | 访问授权系统时的自定义 User-Agent |
+| `-addr` | `GRIDPERCH_ADDR` | `:9999` | HTTP 监听地址 |
+| `-db` | `GRIDPERCH_DB` | `./data/gridperch.db` | SQLite 文件路径 |
+| `-token` | `GRIDPERCH_TOKEN` | `gridperch` | 采集端通信密钥，两端必须一致 |
+| `-user` / `-pass` | `GRIDPERCH_ADMIN_USER` / `GRIDPERCH_ADMIN_PASS` | `admin` / `gridperch` | 控制台账号（仅首次启动生效） |
+| `-retention` | `GRIDPERCH_RETENTION` | `30` | 历史数据保留天数，0 表示永久 |
+| `-public-url` | `GRIDPERCH_PUBLIC_URL` | 自动反推 | 对外访问地址，反向代理下务必显式指定 |
+| `-offline` | `GRIDPERCH_OFFLINE_SEC` | `180` | 超过该秒数未上报判定离线 |
+| `-cpu-alert` / `-mem-alert` / `-disk-alert` | `GRIDPERCH_CPU_ALERT` 等 | `90` | 告警阈值（%） |
+| `-load-alert` | `GRIDPERCH_LOAD_ALERT` | `10` | 系统负载告警阈值 |
+| `-alert-cooldown` | `GRIDPERCH_ALERT_COOLDOWN_MIN` | `10` | 同类告警去重冷却（分钟） |
+| `-release-dir` | `GRIDPERCH_RELEASE_DIR` | 空 | 采集端发布物缓存目录（默认由程序内部决定） |
+| `-login-alert` | `GRIDPERCH_LOGIN_ALERT` | `true` | 控制台登录失败是否推送告警 |
+| `-read-conns` | `GRIDPERCH_READ_CONNS` | `8` | SQLite 读连接数 |
+| `-write-queue` | `GRIDPERCH_WRITE_QUEUE` | `8192` | SQLite 写队列长度 |
+| `-probe-workers` | `GRIDPERCH_PROBE_WORKERS` | `64` | 服务端探针并发数 |
+| `-purge` | `GRIDPERCH_PURGE_INTERVAL` | `3600` | 历史数据清理间隔（秒） |
+| `-license-secret` | `GRIDPERCH_LICENSE_SECRET` | 空 | 旧格式授权码（HMAC）校验密钥，存量旧码换完后即可去掉 |
+| `-license` | `GRIDPERCH_LICENSE_KEY` | 空 | 手工导入的授权码 |
+| `-license-machine` | `GRIDPERCH_LICENSE_MACHINE` | 空 | 机器码（Docker 等环境需固定，否则授权失效） |
+| `-free-hosts` | `GRIDPERCH_LICENSE_FREE_HOSTS` | `10` | 免费档主机数上限 |
+| `-free-users` | `GRIDPERCH_LICENSE_FREE_USERS` | `3` | 免费档控制台账号数上限 |
+| `-hub` | `GRIDPERCH_HUB` | 默认已内置授权中心地址；留空=完全离线 | 授权系统地址，不配则纯离线单机模式 |
+| `-hub-token` | `GRIDPERCH_HUB_TOKEN` | 留空用内置令牌 | 访问授权系统的令牌 |
+| `-hub-interval` | `GRIDPERCH_HUB_INTERVAL_MIN` | `5` 分钟 | 向授权系统轮询间隔（分钟） |
+| `-hub-auto-update` | `GRIDPERCH_HUB_AUTO_UPDATE` | `download` | 平台自升级策略：`download` 自动下载并就位 / `check` 只提示不下载 / `off` 关闭 |
+| `-hub-restart` | `GRIDPERCH_HUB_RESTART` | `auto` | 自升级后是否自动重启生效：`auto` 自动重启 / `off` 只替换文件不重启（需人工重启） |
+| `-hub-ua` | `GRIDPERCH_HUB_UA` | 空 | 访问授权系统时的自定义 User-Agent |
 | `-version` | - | - | 打印版本后退出 |
 
 完整清单见 [DEPLOY.md](DEPLOY.md#六配置项完整清单)。
 
-### 采集端 `strix-agent`
+### 采集端 `gridperch-agent`
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `-server` | `STRIX_SERVER` | `http://127.0.0.1:9999` | 服务端地址 |
-| `-token` | `STRIX_TOKEN` | `strix` | 与服务端一致的通信密钥 |
+| `-server` | `GRIDPERCH_SERVER` | `http://127.0.0.1:9999` | 服务端地址 |
+| `-token` | `GRIDPERCH_TOKEN` | `gridperch` | 与服务端一致的通信密钥 |
 | `-token-hash` | - | 空 | 通信密钥的 MD5，与 `-token` 二选一 |
-| `-name` | `STRIX_HOSTNAME` | 本机主机名 | 平台显示名称 |
-| `-interval` | `STRIX_INTERVAL` | `60` | 上报间隔（秒），平台下发时被覆盖 |
-| `-update` | `STRIX_UPDATE` | `auto` | `auto` 自动升级 / `check` 只检查 / `off` 关闭 |
-| `-remote-config` | `STRIX_REMOTE_CONFIG` | `auto` | `auto` 接受平台下发 / `off` 只用本地参数 |
+| `-name` | `GRIDPERCH_HOSTNAME` | 本机主机名 | 平台显示名称 |
+| `-interval` | `GRIDPERCH_INTERVAL` | `60` | 上报间隔（秒），平台下发时被覆盖 |
+| `-update` | `GRIDPERCH_UPDATE` | `auto` | `auto` 自动升级 / `check` 只检查 / `off` 关闭 |
+| `-remote-config` | `GRIDPERCH_REMOTE_CONFIG` | `auto` | `auto` 接受平台下发 / `off` 只用本地参数 |
 
 > 带「平台下发时被覆盖」标记的参数只是本地兜底值。用 `-remote-config off` 可完全以本地参数为准。
 
 ## 目录结构
 
 ```
-Strix
+GridPerch
 ├── build.sh                     # 本平台 / 全平台交叉编译
 ├── release.sh                   # 交叉编译 + 上传到授权系统，一条命令完成版本发布
-├── cmd/strix-server        # 服务端（平台）入口
-├── cmd/strix-agent         # 采集端入口
+├── cmd/gridperch-server        # 服务端（平台）入口
+├── cmd/gridperch-agent         # 采集端入口
 ├── internal/config              # 命令行与环境变量配置
 ├── internal/version             # 版本号常量与版本比较
 ├── internal/license             # 授权码验签（Ed25519 + 旧格式 HMAC 兼容）、机器码、档位与配额
@@ -274,7 +274,7 @@ Strix
 
 ## 配套系统
 
-版本发布与授权签发是**另一套独立系统**（工程目录 `../strix-hub`），本工程不包含它的任何代码。
+版本发布与授权签发是**另一套独立系统**（工程目录 `../gridperch-hub`），本工程不包含它的任何代码。
 不配 `-hub` 就是**完全离线的单机模式**，功能不受影响；配了之后平台可从授权系统**代拉**最新版本与本机授权，
 内网平台与采集端都不需要访问公网。
 
@@ -286,7 +286,7 @@ Strix
 ## 安全建议
 
 1. **首次部署立即修改默认账号密码与通信密钥**（`-pass` / `-token`）
-2. 反向代理场景下启用 HTTPS，并显式配置 `-public-url` / `STRIX_PUBLIC_URL`
+2. 反向代理场景下启用 HTTPS，并显式配置 `-public-url` / `GRIDPERCH_PUBLIC_URL`
 3. 不要把 9999 端口暴露到公网；跨网段访问走内网或 VPN
 4. `/api/agent/install` 会返回通信密钥，仅管理员与运维可读，只读账号返回 403
 5. 定期通过控制台「审计日志」复核操作留痕

@@ -1,16 +1,16 @@
 [Unit]
-Description=Strix 运维监控服务端
-Documentation=https://github.com/sangxi/strix
+Description=GridPerch 运维监控服务端
+Documentation=https://github.com/sangxi/gridperch
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=strix
-Group=strix
-WorkingDirectory=/opt/strix
-EnvironmentFile=/etc/strix/strix.env
-ExecStart=/opt/strix/strix-server
+User=gridperch
+Group=gridperch
+WorkingDirectory=/opt/gridperch
+EnvironmentFile=/etc/gridperch/gridperch.env
+ExecStart=/opt/gridperch/gridperch-server
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
@@ -20,7 +20,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/opt/strix/data /opt/strix/releases
+ReadWritePaths=/opt/gridperch/data /opt/gridperch/releases
 
 [Install]
 WantedBy=multi-user.target

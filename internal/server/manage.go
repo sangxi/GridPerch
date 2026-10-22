@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sangxi/strix/internal/model"
-	"github.com/sangxi/strix/internal/notify"
-	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/gridperch/internal/model"
+	"github.com/sangxi/gridperch/internal/notify"
+	"github.com/sangxi/gridperch/internal/store"
 )
 
 /* ---------------- 菜单与角色 ---------------- */
@@ -408,12 +408,12 @@ func (s *Server) handleTokenItem(w http.ResponseWriter, r *http.Request) {
 var publicSettingKeys = []string{"systemName", "logoData", "hideFooter", "footerText", "alertSound", "screenTitle"}
 
 // screenTitleDefault 系统名称也未设置时的兜底标题。
-const screenTitleDefault = "Strix 运维监控中心"
+const screenTitleDefault = "GridPerch 运维监控中心"
 
 // screenTitleOf 计算大屏标题。
 //
 // 取值优先级：显式配置的 screenTitle > 「系统名称 + 运维监控中心」> 兜底常量。
-// 这样默认安装的表现与旧版写死的「Strix 运维监控中心」完全一致，
+// 这样默认安装的表现与旧版写死的「GridPerch 运维监控中心」完全一致，
 // 而只改「系统名称」的用户也不必再去改一次大屏标题。
 //
 // /api/settings/public 与 /api/screen 都走这里，避免前后端各兜底一遍、结果对不上。
@@ -438,7 +438,7 @@ func (s *Server) handlePublicSettings(w http.ResponseWriter, r *http.Request) {
 		out[k] = all[k]
 	}
 	if out["systemName"] == "" {
-		out["systemName"] = "Strix"
+		out["systemName"] = "GridPerch"
 	}
 	out["screenTitle"] = screenTitleOf(all)
 	writeJSON(w, out)
@@ -488,7 +488,7 @@ func (s *Server) handleTestMail(w http.ResponseWriter, r *http.Request) {
 	}
 	subject := cfg.Subject(notify.Alert{Hostname: "测试主机", Level: "info"})
 	alerts := []notify.Alert{{Hostname: "测试主机", Type: "info", Level: "info",
-		Content: "这是一封来自 Strix 的测试邮件，说明邮件告警通道配置正确。", CreateTime: timeNowString()}}
+		Content: "这是一封来自 GridPerch 的测试邮件，说明邮件告警通道配置正确。", CreateTime: timeNowString()}}
 	if err := notify.Send(cfg, alerts); err != nil {
 		s.store.AppendMailLog(model.MailLog{Kind: "test", Subject: subject, Recipients: cfg.To,
 			ItemCount: 1, Status: "fail", Error: err.Error()})

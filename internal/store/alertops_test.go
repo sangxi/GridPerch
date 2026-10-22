@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/gridperch/internal/model"
 )
 
 // seedAlert 插入一条告警并返回 ID。

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/gridperch/internal/model"
 )
 
 // monitorEventThrottle 同一监控项持续异常时的流水写入间隔。

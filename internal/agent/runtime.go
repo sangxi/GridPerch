@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/gridperch/internal/config"
 )
 
 // RemoteConfig 服务端下发的采集端运行配置。

@@ -458,7 +458,7 @@ func probeSSH(ctx context.Context, t Target, timeout time.Duration) Result {
 		return fail("", fmt.Sprintf("创建 SSH 会话失败: %v", err))
 	}
 	defer sess.Close()
-	cmd := t.Str("cmd", "echo strix-ok")
+	cmd := t.Str("cmd", "echo gridperch-ok")
 	out, err := sess.CombinedOutput(cmd)
 	cost := time.Since(start)
 	if err != nil {

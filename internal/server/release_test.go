@@ -18,8 +18,8 @@ func TestSanitizeAgentName(t *testing.T) {
 		{"中文保留（回归：曾被全部替换成 -）", "测试主机-中文", "测试主机-中文"},
 		{"日文保留", "日本語サーバ", "日本語サーバ"},
 		{"空白替换为 -", "我的服务器 web01", "我的服务器-web01"},
-		{"空值兜底", "", "strix-host"},
-		{"全空白兜底", "   ", "strix-host"},
+		{"空值兜底", "", "gridperch-host"},
+		{"全空白兜底", "   ", "gridperch-host"},
 		{"shell 元字符全部替换", `恶意;rm -rf /$x`, "恶意-rm--rf---x"},
 		{"引号与反引号替换", "a\"`b`", "a--b-"},
 		{"命令替换替换", "主机$(id)", "主机--id-"},
@@ -47,9 +47,9 @@ func TestInstallPS1Template(t *testing.T) {
 		"http://10.0.0.1:9999",
 		"abcdef",
 		"web-01",
-		"$Legacy",     // 旧系统分支必须留在脚本里
-		"&legacy=1",   // 下载与查版本都要带上
-		"strix-agent", // 计划任务名
+		"$Legacy",         // 旧系统分支必须留在脚本里
+		"&legacy=1",       // 下载与查版本都要带上
+		"gridperch-agent", // 计划任务名
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("安装脚本缺少 %q", want)

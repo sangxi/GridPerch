@@ -22,9 +22,9 @@
 // Go 工具链本身。所锁版本均声明 go <= 1.20，Go 1.20 才能加载。
 //
 // ── 用法 ────────────────────────────────────────────────────────────────
-// go build -modfile=go120.mod -mod=mod ./cmd/strix-agent
+// go build -modfile=go120.mod -mod=mod ./cmd/gridperch-agent
 // 或直接跑 ./build-win7.sh
-module github.com/sangxi/strix
+module github.com/sangxi/gridperch
 
 go 1.20
 

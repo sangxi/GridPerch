@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sangxi/strix/internal/config"
-	"github.com/sangxi/strix/internal/store"
-	"github.com/sangxi/strix/internal/version"
+	"github.com/sangxi/gridperch/internal/config"
+	"github.com/sangxi/gridperch/internal/store"
+	"github.com/sangxi/gridperch/internal/version"
 )
 
 // agentPlatform 是「添加主机」页做前置校验用的平台摘要。

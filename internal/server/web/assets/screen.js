@@ -1,4 +1,4 @@
-/* Strix 监控大屏：8 套模板，数据来自 /api/screen，图表由内嵌 ECharts 渲染。
+/* GridPerch 监控大屏：8 套模板，数据来自 /api/screen，图表由内嵌 ECharts 渲染。
  *
  * 设计约束：
  *  1. 零 CDN 依赖 —— ECharts 已内嵌为 /assets/echarts.min.js，内网离线可用；
@@ -20,7 +20,7 @@ const LAYOUTS = {
 };
 
 const LAYOUT_IDS = Object.keys(LAYOUTS).map(Number);
-const STORE_KEY = 'strix_screen_layout';
+const STORE_KEY = 'gridperch_screen_layout';
 
 let layout = Number(localStorage.getItem(STORE_KEY) || 1);
 let payload = null;
@@ -52,7 +52,7 @@ async function api(url) {
 // 标题以前写死在 screen.html 里，用户没法改成自己单位的名字。
 // 现在由后端算好（系统设置 →「界面定制」→ 大屏标题，留空则「系统名称 + 运维监控中心」），
 // 前端只负责套用：页顶 h1 与浏览器标签页标题一起改。
-const DEFAULT_TITLE = 'Strix 运维监控中心';
+const DEFAULT_TITLE = 'GridPerch 运维监控中心';
 
 function applyTitle(t) {
   const title = String(t == null ? '' : t).trim() || DEFAULT_TITLE;

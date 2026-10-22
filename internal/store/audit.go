@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/gridperch/internal/model"
 )
 
 /* ---------------- 操作审计 ---------------- */

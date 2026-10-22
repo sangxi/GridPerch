@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/gridperch/internal/store"
 )
 
 // resolveAgentHost 把采集端上报的主机名解析为平台当前使用的主机名。

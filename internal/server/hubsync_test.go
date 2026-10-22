@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/gridperch/internal/config"
 )
 
 // newHubResp 构造一个带请求上下文的响应，便于断言 describeHubStatus 的分类结果。

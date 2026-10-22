@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/strix/internal/model"
-	"github.com/sangxi/strix/internal/notify"
+	"github.com/sangxi/gridperch/internal/model"
+	"github.com/sangxi/gridperch/internal/notify"
 )
 
 // 告警催办（未认领升级）。

@@ -5,7 +5,7 @@ import "testing"
 // TestScreenTitleOf 大屏标题的取值优先级：
 // 显式配置 > 「系统名称 + 运维监控中心」> 兜底常量。
 //
-// 默认安装（系统名称为空或 Strix）必须仍然是「Strix 运维监控中心」——
+// 默认安装（系统名称为空或 GridPerch）必须仍然是「GridPerch 运维监控中心」——
 // 这条老行为被用户的大屏投屏地址直接引用，改了就是视觉回归。
 func TestScreenTitleOf(t *testing.T) {
 	cases := []struct {
@@ -13,10 +13,10 @@ func TestScreenTitleOf(t *testing.T) {
 		kv   map[string]string
 		want string
 	}{
-		{"空配置", map[string]string{}, "Strix 运维监控中心"},
-		{"nil 配置", nil, "Strix 运维监控中心"},
-		{"只有系统名称", map[string]string{"systemName": "Strix"}, "Strix 运维监控中心"},
-		{"系统名称带空格", map[string]string{"systemName": "  Strix  "}, "Strix 运维监控中心"},
+		{"空配置", map[string]string{}, "GridPerch 运维监控中心"},
+		{"nil 配置", nil, "GridPerch 运维监控中心"},
+		{"只有系统名称", map[string]string{"systemName": "GridPerch"}, "GridPerch 运维监控中心"},
+		{"系统名称带空格", map[string]string{"systemName": "  GridPerch  "}, "GridPerch 运维监控中心"},
 		{"自定义系统名称", map[string]string{"systemName": "某某科技"}, "某某科技 运维监控中心"},
 		{"显式标题优先", map[string]string{"systemName": "某某科技", "screenTitle": "机房 A 大屏"}, "机房 A 大屏"},
 		{"显式标题去空格", map[string]string{"screenTitle": "  机房 A 大屏  "}, "机房 A 大屏"},

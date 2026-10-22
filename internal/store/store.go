@@ -24,8 +24,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/sangxi/strix/internal/config"
-	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/gridperch/internal/config"
+	"github.com/sangxi/gridperch/internal/model"
 )
 
 const timeLayout = "2006-01-02 15:04:05"

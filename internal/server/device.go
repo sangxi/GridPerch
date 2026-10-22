@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/strix/internal/probe"
+	"github.com/sangxi/gridperch/internal/probe"
 )
 
 // TestDeviceAccount 使用保存的凭据对目标设备发起一次真实连通性检测。

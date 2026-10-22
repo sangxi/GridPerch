@@ -1,4 +1,4 @@
-module github.com/sangxi/strix
+module github.com/sangxi/gridperch
 
 go 1.23.9
 

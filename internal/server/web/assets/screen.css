@@ -1,4 +1,4 @@
-/* Strix 监控大屏：多套模板共用一份样式，数据来自 /api/screen，图表由 ECharts 渲染。 */
+/* GridPerch 监控大屏：多套模板共用一份样式，数据来自 /api/screen，图表由 ECharts 渲染。 */
 
 :root {
   --bg: #050d18;

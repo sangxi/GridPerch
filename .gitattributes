@@ -24,6 +24,10 @@ SHA256SUMS.txt text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.json text eol=lf
+# go.mod / go.sum 同样锁 LF：Windows 下被转成 CRLF 会让 `go mod tidy` 改写整个文件，
+# 也会把无关行尾抖动混进提交。
+*.mod text eol=lf
+*.sum text eol=lf
 
 # Dockerfile 没有扩展名，`* text=auto` 管不到。
 # 一旦被检出成 CRLF，`RUN xxx \` 的续行符后面会多一个 \r，构建直接报

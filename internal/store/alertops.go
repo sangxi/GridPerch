@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/gridperch/internal/model"
 )
 
 // 告警闭环相关存储：认领 / 释放 / 备注 / 静默规则。

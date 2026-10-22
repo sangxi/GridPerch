@@ -1,4 +1,4 @@
-# Strix 授权安全加固方案
+# GridPerch 授权安全加固方案
 
 > 目标：让「分档授权」真正成立，并把「凭证藏在客户端」的思路整体换成「服务端签名、客户端验签」。
 > 范围只涉及授权与发布链路，不动采集与监控功能。
@@ -19,7 +19,7 @@
 |---|---|---|
 | 签名/验签 | 新增 `internal/license/sign_ed25519.go` | `SignV2(l, priv)` / `ParseV2(code, pub)`，64 字节签名 |
 | 内置公钥 | 新增 `internal/config/licensekey.go` | 32 字节公钥，沿用 `hubtoken.go` 的混淆手法存放。**公钥泄露无害**，混淆只是防篡改 |
-| 格式分流 | `internal/license/license.go` | `OPSM1-` 走旧 HMAC，`STRIX2-` 走 Ed25519，双读过渡 |
+| 格式分流 | `internal/license/license.go` | `OPSM1-` 走旧 HMAC，`GRIDPERCH2-` 走 Ed25519，双读过渡 |
 | 收回签发权 | `internal/server/release.go` | `handleLicenseGenerate` 默认禁用；仅当显式配置了私钥（私有化发行场景）才可用 |
 | 密钥工具 | 新增 `tools/licensekey.js` | `keygen` 生成密钥对；`sign` 用私钥签发授权码 |
 
@@ -50,7 +50,7 @@
 ## 兼容与迁移
 
 - 旧 `OPSM1-` 授权码**继续有效**，双读一段时间后再下架
-- 新签发一律 `STRIX2-`；`/api/license/generate` 关闭后，签发统一回授权中心
+- 新签发一律 `GRIDPERCH2-`；`/api/license/generate` 关闭后，签发统一回授权中心
 - 已部署实例无需改配置即可升级（公钥内置，无需分发文件）
 
 ## 明确不做的事
@@ -68,8 +68,8 @@
 ## 验证清单（第 1 步）
 
 - [ ] 用旧 `OPSM1-` 授权码导入 → 正常识别
-- [ ] 用私钥签 `STRIX2-` 码 → 正常识别，档位与到期正确
-- [ ] 篡改 `STRIX2-` 载荷任一字节 → 验签失败，回落社区版
+- [ ] 用私钥签 `GRIDPERCH2-` 码 → 正常识别，档位与到期正确
+- [ ] 篡改 `GRIDPERCH2-` 载荷任一字节 → 验签失败，回落社区版
 - [ ] 用**另一对**密钥签发的码 → 验签失败
 - [ ] 未配置私钥时调 `POST /api/license/generate` → 被拒绝
 - [ ] 二进制里 `strings` 搜不到任何私钥

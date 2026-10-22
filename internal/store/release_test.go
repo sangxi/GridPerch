@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/gridperch/internal/config"
 )
 
 // TestReleaseVariant 同一版本、同一平台要能同时存正式版与旧系统兼容版。
@@ -20,9 +20,9 @@ func TestReleaseVariant(t *testing.T) {
 	defer st.Close()
 
 	modern := &Release{Version: "1.2.3", Goos: "windows", Goarch: "amd64",
-		Filename: "strix-agent-windows-amd64.exe", Path: "a"}
+		Filename: "gridperch-agent-windows-amd64.exe", Path: "a"}
 	legacy := &Release{Version: "1.2.3", Goos: "windows", Goarch: "amd64", Variant: VariantLegacy,
-		Filename: "strix-agent-windows-amd64-legacy.exe", Path: "b"}
+		Filename: "gridperch-agent-windows-amd64-legacy.exe", Path: "b"}
 	for _, r := range []*Release{modern, legacy} {
 		if err := st.AddRelease(r); err != nil {
 			t.Fatalf("写入 %s 失败: %v", r.Filename, err)
@@ -76,7 +76,7 @@ func TestReleaseVariantMigration(t *testing.T) {
 		t.Fatalf("建旧索引失败: %v", err)
 	}
 	if _, err := raw.Exec(`INSERT INTO release (id,version,goos,goarch,filename,path,is_latest,create_time)
-		VALUES ('old1','1.2.2','windows','amd64','strix-agent-windows-amd64.exe','x',1,'2026-10-01 00:00:00')`); err != nil {
+		VALUES ('old1','1.2.2','windows','amd64','gridperch-agent-windows-amd64.exe','x',1,'2026-10-01 00:00:00')`); err != nil {
 		t.Fatalf("写入旧记录失败: %v", err)
 	}
 	_ = raw.Close()

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/gridperch/internal/store"
 )
 
 // handleInspections 列出巡检报告或生成新报告。

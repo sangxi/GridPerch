@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sangxi/strix/internal/model"
-	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/gridperch/internal/model"
+	"github.com/sangxi/gridperch/internal/store"
 )
 
 /* ---------------- 操作审计 ---------------- */

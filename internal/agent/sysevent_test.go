@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangxi/strix/internal/model"
+	"github.com/sangxi/gridperch/internal/model"
 )
 
 // TestParsePSJSON 验证 PowerShell 输出能被正确解析成事件列表。

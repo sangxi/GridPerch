@@ -12,15 +12,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sangxi/strix/internal/config"
-	"github.com/sangxi/strix/internal/model"
-	"github.com/sangxi/strix/internal/version"
+	"github.com/sangxi/gridperch/internal/config"
+	"github.com/sangxi/gridperch/internal/model"
+	"github.com/sangxi/gridperch/internal/version"
 )
 
 // Run 启动采集循环：配置下发、指标上报、监控项检查、指令下发、自动更新五条通道并行。
 func Run(cfg *config.Agent) {
 	if cfg.PrintVersion {
-		fmt.Printf("strix-agent %s (%s/%s)", version.Version, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("gridperch-agent %s (%s/%s)", version.Version, runtime.GOOS, runtime.GOARCH)
 		// 兼容版必须自报身份：否则运维在目标机上分不清手上这个 exe 能不能跑旧系统，
 		// 只能靠 grep 二进制里有没有 SystemFunction036 去猜。
 		if version.LegacyWindows != "" {

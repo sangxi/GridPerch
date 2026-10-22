@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sangxi/strix/internal/config"
+	"github.com/sangxi/gridperch/internal/config"
 )
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	cfg := &config.Server{
-		DBPath:     filepath.Join(t.TempDir(), "strix-test.db"),
+		DBPath:     filepath.Join(t.TempDir(), "gridperch-test.db"),
 		Token:      "test-token",
 		AdminUser:  "admin",
 		AdminPass:  "admin",

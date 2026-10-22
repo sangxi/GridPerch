@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sangxi/strix/internal/config"
-	"github.com/sangxi/strix/internal/model"
-	"github.com/sangxi/strix/internal/probe"
-	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/gridperch/internal/config"
+	"github.com/sangxi/gridperch/internal/model"
+	"github.com/sangxi/gridperch/internal/probe"
+	"github.com/sangxi/gridperch/internal/store"
 )
 
 // Poller 周期性执行服务端监控项。

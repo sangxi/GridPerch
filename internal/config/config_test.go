@@ -6,28 +6,28 @@ import (
 	"testing"
 )
 
-// TestLegacyEnvFallback 品牌更名后环境变量前缀改为 STRIX_，
+// TestLegacyEnvFallback 品牌更名后环境变量前缀改为 GRIDPERCH_，
 // 但已部署机器上写的仍是 OPSM_*，必须能回落，否则老部署换二进制就全变默认值。
 func TestLegacyEnvFallback(t *testing.T) {
-	t.Setenv("STRIX_TEST_KEY", "")
+	t.Setenv("GRIDPERCH_TEST_KEY", "")
 	t.Setenv("OPSM_TEST_KEY", "old")
-	if got := env("STRIX_TEST_KEY", "def"); got != "old" {
+	if got := env("GRIDPERCH_TEST_KEY", "def"); got != "old" {
 		t.Fatalf("旧前缀变量应被回落使用，得到 %q", got)
 	}
-	t.Setenv("STRIX_TEST_KEY", "new")
-	if got := env("STRIX_TEST_KEY", "def"); got != "new" {
+	t.Setenv("GRIDPERCH_TEST_KEY", "new")
+	if got := env("GRIDPERCH_TEST_KEY", "def"); got != "new" {
 		t.Fatalf("新前缀应优先于旧前缀，得到 %q", got)
 	}
-	if got := env("STRIX_MISSING_KEY", "def"); got != "def" {
+	if got := env("GRIDPERCH_MISSING_KEY", "def"); got != "def" {
 		t.Fatalf("两者都不存在时应返回默认值，得到 %q", got)
 	}
 }
 
-// TestResolveLegacyDBPath 库文件默认名从 opsmonitor.db 改为 strix.db 后，
+// TestResolveLegacyDBPath 库文件默认名从 opsmonitor.db 改为 gridperch.db 后，
 // 老部署必须继续用到原来的库，否则会新建空库、看起来像数据全丢。
 func TestResolveLegacyDBPath(t *testing.T) {
 	dir := t.TempDir()
-	newPath := filepath.Join(dir, "strix.db")
+	newPath := filepath.Join(dir, "gridperch.db")
 	oldPath := filepath.Join(dir, "opsmonitor.db")
 
 	if p, ok := ResolveLegacyDBPath(newPath); ok || p != newPath {
@@ -50,11 +50,11 @@ func TestResolveLegacyDBPath(t *testing.T) {
 	}
 }
 
-// TestTokenOK 通信密钥默认值从 opsmonitor 改成 strix，
+// TestTokenOK 通信密钥默认值从 opsmonitor 改成 gridperch，
 // 过渡期内允许仍用旧默认值的采集端继续连上。
 func TestTokenOK(t *testing.T) {
-	c := &Server{Token: "strix", TokenLegacy: "opsmonitor"}
-	for _, got := range []string{"strix", MD5Token("strix")} {
+	c := &Server{Token: "gridperch", TokenLegacy: "opsmonitor"}
+	for _, got := range []string{"gridperch", MD5Token("gridperch")} {
 		if !c.TokenOK(got) {
 			t.Fatalf("应接受当前密钥 %q", got)
 		}

@@ -20,20 +20,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sangxi/strix/internal/config"
-	"github.com/sangxi/strix/internal/license"
-	"github.com/sangxi/strix/internal/model"
-	"github.com/sangxi/strix/internal/notify"
-	"github.com/sangxi/strix/internal/poller"
-	"github.com/sangxi/strix/internal/store"
-	"github.com/sangxi/strix/internal/version"
+	"github.com/sangxi/gridperch/internal/config"
+	"github.com/sangxi/gridperch/internal/license"
+	"github.com/sangxi/gridperch/internal/model"
+	"github.com/sangxi/gridperch/internal/notify"
+	"github.com/sangxi/gridperch/internal/poller"
+	"github.com/sangxi/gridperch/internal/store"
+	"github.com/sangxi/gridperch/internal/version"
 )
 
 //go:embed all:web
 var webFS embed.FS
 
 const (
-	sessionCookie = "strix_session"
+	sessionCookie = "gridperch_session"
 	sessionTTL    = 12 * time.Hour
 )
 
@@ -78,7 +78,9 @@ func New(cfg *config.Server, st *store.Store) *Server {
 			license.Fingerprint(pub), over)
 	}
 	// 新旧两个 HMAC 密钥都交给验签器：更名前签发的存量授权码用的是旧密钥。
-	s.licVer = license.NewVerifier(pub, cfg.LicenseSecret, cfg.LicenseSecretLegacy)
+	// 三代 HMAC 密钥一起交给验签器：GridPerch 现行密钥 + Strix / OpsMonitor 两代旧密钥，
+	// 存量授权码（OPSM1- / WGC- / OPSM-）无论哪一代签的都能继续验。
+	s.licVer = license.NewVerifier(pub, cfg.LicenseSecret, cfg.LicenseSecretGridPerch, cfg.LicenseSecretLegacy)
 	s.importStartupLicense()
 	return s
 }

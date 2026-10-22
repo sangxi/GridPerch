@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sangxi/strix/internal/store"
+	"github.com/sangxi/gridperch/internal/store"
 )
 
 /* ---------------- 采集端配置下发 ---------------- */

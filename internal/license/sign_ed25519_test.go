@@ -8,7 +8,7 @@ import (
 const (
 	vectorPub  = "4nUyt6dD+KTXifig8l7CBEZV6FtLJ7PlNS5Ex4nRi+s="
 	vectorFP   = "FD3F-93C6-3C9B-CF70"
-	vectorCode = "STRIX2-eyJrZXkiOiJPUFNNLTIwMjYwMTAxLVRFU1QiLCJjdXN0b21lciI6IuekuuS-i-enkeaKgOaciemZkOWFrOWPuCIsImVkaXRpb24iOiJwcm8iLCJtYXhIb3N0cyI6MjAwLCJtYXhVc2VycyI6MzAsImZlYXR1cmVzIjpbInNjcmVlbnMiLCJvcGVuYXBpIl0sImlzc3VlZEF0IjoiMjAyNi0wMS0wMSIsIm5vdEFmdGVyIjoiMjA5OS0xMi0zMSJ9.3n07f7Qtjes-Mek7CvV2g1eDp907Kb2C044lGa2pN7--Cwy_FoMrg4vFHnuQBi7fZji0LKth1Pb4wnBjLgyyCw"
+	vectorCode = "GRIDPERCH2-eyJrZXkiOiJPUFNNLTIwMjYwMTAxLVRFU1QiLCJjdXN0b21lciI6IuekuuS-i-enkeaKgOaciemZkOWFrOWPuCIsImVkaXRpb24iOiJwcm8iLCJtYXhIb3N0cyI6MjAwLCJtYXhVc2VycyI6MzAsImZlYXR1cmVzIjpbInNjcmVlbnMiLCJvcGVuYXBpIl0sImlzc3VlZEF0IjoiMjAyNi0wMS0wMSIsIm5vdEFmdGVyIjoiMjA5OS0xMi0zMSJ9.3n07f7Qtjes-Mek7CvV2g1eDp907Kb2C044lGa2pN7--Cwy_FoMrg4vFHnuQBi7fZji0LKth1Pb4wnBjLgyyCw"
 )
 
 func vectorVerifier(t *testing.T) Verifier {
@@ -85,7 +85,7 @@ func TestOldFormatStillReadable(t *testing.T) {
 	}
 }
 
-// TestRenamedPrefixStillReadable 品牌更名后签发前缀改为 STRIX2-，
+// TestRenamedPrefixStillReadable 品牌更名后签发前缀改为 GRIDPERCH2-，
 // 但客户手里已经签发出去的 OPSM2- 授权码必须继续有效，不能要求换码。
 func TestRenamedPrefixStillReadable(t *testing.T) {
 	v := vectorVerifier(t)

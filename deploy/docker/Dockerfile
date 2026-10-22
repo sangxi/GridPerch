@@ -1,11 +1,11 @@
 # ============================================================================
-#  Strix 监控端（server）镜像 · 直接从源码构建
+#  GridPerch 监控端（server）镜像 · 直接从源码构建
 # ----------------------------------------------------------------------------
 #  适合 GitHub 用户 / CI：不需要预先准备二进制。
 #
 #  docker build -f deploy/docker/Dockerfile \
 #    --build-arg VERSION=1.1.0 \
-#    -t strix/strix-server:1.1.0 .
+#    -t gridperch/gridperch-server:1.1.0 .
 #
 #  运行时数据目录挂到 /data，采集端发布物挂到 /releases，不要用容器内匿名卷。
 # ============================================================================
@@ -25,9 +25,9 @@ ARG VERSION=1.1.0
 ARG BUILD_TIME=unknown
 ARG TARGETARCH=amd64
 RUN go build -trimpath \
-      -ldflags "-s -w -X github.com/sangxi/strix/internal/version.BuildTime=${BUILD_TIME}" \
-      -o /out/strix-server ./cmd/strix-server \
- && /out/strix-server -version
+      -ldflags "-s -w -X github.com/sangxi/gridperch/internal/version.BuildTime=${BUILD_TIME}" \
+      -o /out/gridperch-server ./cmd/gridperch-server \
+ && /out/gridperch-server -version
 
 # ---------------------------------------------------------------- 运行层
 FROM alpine:3.20
@@ -36,18 +36,18 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata \
  && mkdir -p /data /releases
 
-COPY --from=build /out/strix-server /usr/local/bin/strix-server
+COPY --from=build /out/gridperch-server /usr/local/bin/gridperch-server
 
 ENV TZ=Asia/Shanghai \
-    STRIX_ADDR=:9999 \
-    STRIX_DB=/data/strix.db \
-    STRIX_RELEASE_DIR=/releases
+    GRIDPERCH_ADDR=:9999 \
+    GRIDPERCH_DB=/data/gridperch.db \
+    GRIDPERCH_RELEASE_DIR=/releases
 
 VOLUME ["/data", "/releases"]
 EXPOSE 9999
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1${STRIX_ADDR}/api/health" >/dev/null 2>&1 || exit 1
+  CMD wget -qO- "http://127.0.0.1${GRIDPERCH_ADDR}/api/health" >/dev/null 2>&1 || exit 1
 
-WORKDIR /opt/strix
-ENTRYPOINT ["/usr/local/bin/strix-server"]
+WORKDIR /opt/gridperch
+ENTRYPOINT ["/usr/local/bin/gridperch-server"]
