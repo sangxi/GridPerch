@@ -755,25 +755,59 @@ try {
 Write-Host '==> 注册开机自启计划任务'
 # 只带定位服务端与标识本机的最小参数，其余配置由平台「采集端配置」下发。
 # 注意：$args 是 PowerShell 自动变量，必须换名，否则会覆盖脚本自身的参数集。
-$agentArgs = "-server $Server -token-hash $TokenHash -name $HostName"
-$action    = New-ScheduledTaskAction -Execute $Exe -Argument $agentArgs -WorkingDirectory $InstallDir
-$trigger   = New-ScheduledTaskTrigger -AtStartup
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
-# ExecutionTimeLimit 置 0 表示不限时：计划任务默认执行满 72 小时会被强杀，常驻进程必须放开
-$settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
-$splat = @{ TaskName = 'gridperch-agent'; Action = $action; Trigger = $trigger; Principal = $principal
-            Settings = $settings; Description = 'GridPerch 采集端'; Force = $true }
-Register-ScheduledTask @splat | Out-Null
-Start-ScheduledTask -TaskName 'gridperch-agent'
+$agentArgs  = "-server $Server -token-hash $TokenHash -name $HostName"
+$taskName   = 'gridperch-agent'
+$registered = $false
+
+# 优先走 ScheduledTasks 模块（Windows 8 / Server 2012 起才有）。两个坑，改之前先看：
+#   ① Win8.1 / Server 2012 R2（6.3）上，SYSTEM 主体**不带** -LogonType 时注册会直接报
+#      「参数错误 0x80070057」—— 下载、拉配置全都成功，只卡这最后一步。必须显式写
+#      -LogonType ServiceAccount，缺了它这个主体在旧系统上被判定为非法。
+#   ② Win7 / Server 2008 R2 只有 PowerShell 2.0，连 New-ScheduledTaskAction 都没有，
+#      只能回落 schtasks.exe。所以下面每条模块命令都单独判断，不能只判断一次。
+if (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue) {
+  try {
+    $action    = New-ScheduledTaskAction -Execute $Exe -Argument $agentArgs -WorkingDirectory $InstallDir
+    $trigger   = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    # ExecutionTimeLimit 置 0 表示不限时：计划任务默认执行满 72 小时会被强杀，常驻进程必须放开
+    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'GridPerch 采集端' -Force | Out-Null
+    $registered = $true
+  } catch {
+    Write-Host "    计划任务 API 注册失败（$($_.Exception.Message)），改用 schtasks.exe 重试"
+  }
+}
+
+if (-not $registered) {
+  # schtasks 从 Windows XP 起就有；/SC ONSTART + /RU SYSTEM + /RL HIGHEST 等价于上面的 cmdlet 组合
+  $tr = '"' + $Exe + '" ' + $agentArgs
+  & schtasks.exe /Create /TN $taskName /TR $tr /SC ONSTART /RU SYSTEM /RL HIGHEST /F | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "注册开机自启失败（schtasks 退出码 $LASTEXITCODE）。可手工执行：schtasks /Create /TN $taskName /TR ""$tr"" /SC ONSTART /RU SYSTEM /RL HIGHEST /F"
+  }
+  Write-Host '    已通过 schtasks.exe 注册'
+}
+
+# 立刻拉起来：Start-ScheduledTask 同样是模块命令，旧系统要用 schtasks /Run
+if (Get-Command Start-ScheduledTask -ErrorAction SilentlyContinue) {
+  Start-ScheduledTask -TaskName $taskName
+} else {
+  & schtasks.exe /Run /TN $taskName | Out-Null
+}
 Start-Sleep -Seconds 2
-$task = Get-ScheduledTask -TaskName 'gridperch-agent'
-Write-Host "    计划任务状态：$($task.State)"
+if (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue) {
+  $taskState = (Get-ScheduledTask -TaskName $taskName).State
+} else {
+  $taskState = '已注册（旧系统不支持查询状态，可用 schtasks /Query 查看）'
+}
+Write-Host "    计划任务状态：$taskState"
 Write-Host ''
 Write-Host '==> 安装完成。采集端已注册为开机自启任务 gridperch-agent。'
 Write-Host '    数据请到控制台「主机监控」查看。'
-Write-Host '    手动重启：Start-ScheduledTask -TaskName gridperch-agent'
-Write-Host '    查看状态：Get-ScheduledTask -TaskName gridperch-agent | Select-Object State'
-Write-Host '    卸载任务：Unregister-ScheduledTask -TaskName gridperch-agent -Confirm:$false'
+Write-Host '    手动重启：schtasks /Run /TN gridperch-agent'
+Write-Host '    查看状态：schtasks /Query /TN gridperch-agent'
+Write-Host '    卸载任务：schtasks /Delete /TN gridperch-agent /F'
 `
 
 /* ================ 四、授权管理 ================ */
