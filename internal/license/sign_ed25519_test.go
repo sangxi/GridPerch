@@ -1,6 +1,7 @@
 package license
 
 import (
+	"crypto/ed25519"
 	"strings"
 	"testing"
 )
@@ -119,5 +120,34 @@ func TestLegacyHmacSecretAccepted(t *testing.T) {
 	}
 	if _, err := v.Verify(PrefixV1 + body + "." + hmacSign(body, "other-secret")); err == nil {
 		t.Fatal("未知密钥签发的授权码应被拒绝")
+	}
+}
+
+// TestMultiKeyVerifier 覆盖「授权中心换过密钥对」的场景：
+// 现行公钥换新之后，旧私钥签发的存量授权码必须仍能验过，否则客户手上的码会集体作废。
+func TestMultiKeyVerifier(t *testing.T) {
+	otherPub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("生成测试密钥失败：%v", err)
+	}
+	v, errs := NewVerifierFromStrings([]string{PublicKeyString(otherPub), vectorPub}, "")
+	if len(errs) != 0 {
+		t.Fatalf("公钥解析不应报错：%v", errs)
+	}
+	if len(v.Fingerprints()) != 2 {
+		t.Fatalf("应装载两把公钥，实际 %d 把", len(v.Fingerprints()))
+	}
+	// 首要指纹是新的那把（日志展示用它）
+	if got := v.Fingerprint(); got != Fingerprint(otherPub) {
+		t.Fatalf("首要公钥指纹应为新公钥，实际 %s", got)
+	}
+	// 旧私钥签的测试向量，靠第二把公钥验过
+	if _, err := v.Verify(vectorCode); err != nil {
+		t.Fatalf("历史公钥应让存量授权码继续通过：%v", err)
+	}
+	// 只留新公钥时必须失败，反证上一步确实是历史公钥救的
+	onlyNew, _ := NewVerifierFromStrings([]string{PublicKeyString(otherPub)}, "")
+	if _, err := onlyNew.Verify(vectorCode); err == nil {
+		t.Fatal("只有新公钥时，旧码应验签失败")
 	}
 }

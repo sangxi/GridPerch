@@ -69,18 +69,20 @@ func New(cfg *config.Server, st *store.Store) *Server {
 		cfg: cfg, store: st, sessions: map[string]session{}, stopCh: make(chan struct{}),
 		hub: HubStatus{AgentCached: map[string]string{}},
 	}
-	pub, err := license.ParsePublicKey(config.LicensePublicKey)
-	if err != nil {
-		log.Printf("警告：内置授权验签公钥无法解析（%v），新格式授权码将无法校验", err)
+	// 公钥可以有多把：授权中心换过密钥对之后，旧私钥签发的存量授权码仍要能验。
+	// 现行公钥排在第一位，指纹自检只看它。
+	ver, keyErrs := license.NewVerifierFromStrings(config.LicensePublicKeys(),
+		cfg.LicenseSecret, cfg.LicenseSecretGridPerch, cfg.LicenseSecretLegacy)
+	s.licVer = ver
+	for _, e := range keyErrs {
+		log.Printf("警告：内置授权验签公钥无法解析（%v），该条目已跳过", e)
 	}
-	if over := config.LicenseKeyFingerprint; over != "" && license.Fingerprint(pub) != over {
+	if over := config.LicenseKeyFingerprint; over != "" && license.Fingerprint(s.licVer.PublicKey()) != over {
 		log.Printf("警告：内置公钥指纹为 %s，与 LicenseKeyFingerprint 声明的 %s 不一致，请检查 licensekey.go",
-			license.Fingerprint(pub), over)
+			license.Fingerprint(s.licVer.PublicKey()), over)
 	}
-	// 新旧两个 HMAC 密钥都交给验签器：更名前签发的存量授权码用的是旧密钥。
 	// 三代 HMAC 密钥一起交给验签器：GridPerch 现行密钥 + Strix / OpsMonitor 两代旧密钥，
 	// 存量授权码（OPSM1- / WGC- / OPSM-）无论哪一代签的都能继续验。
-	s.licVer = license.NewVerifier(pub, cfg.LicenseSecret, cfg.LicenseSecretGridPerch, cfg.LicenseSecretLegacy)
 	s.importStartupLicense()
 	return s
 }

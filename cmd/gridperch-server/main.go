@@ -39,10 +39,16 @@ func main() {
 	defer st.Close()
 
 	log.Printf("gridperch-server %s，控制台账号：%s / %s（首次启动后请在启动参数中修改）", version.Display(version.Version), cfg.AdminUser, cfg.AdminPass)
-	if pub, err := license.ParsePublicKey(config.LicensePublicKey); err == nil {
-		log.Printf("授权验签公钥指纹：%s（应与授权中心启动日志一致）", license.Fingerprint(pub))
+	// 把内置的全部验签公钥指纹都打出来：授权中心换过密钥对时，靠这一行就能判断
+	// 「客户手里的码为什么验不过」——两侧指纹不一致就是钥匙不配对。
+	if ver, errs := license.NewVerifierFromStrings(config.LicensePublicKeys()); ver.Ready() {
+		for _, e := range errs {
+			log.Printf("警告：内置授权验签公钥有条目无法解析：%v", e)
+		}
+		log.Printf("授权验签公钥指纹：%s（首要公钥，应与授权中心显示的一致%s）",
+			ver.Fingerprint(), legacyKeyHint(ver.Fingerprints()))
 	} else {
-		log.Printf("警告：内置授权验签公钥无法解析：%v", err)
+		log.Printf("警告：未内置可用的授权验签公钥，新格式授权码将无法校验")
 	}
 	// 未显式配置对外地址时提前提醒：安装命令会按「控制台访问地址」反推，
 	// 云主机（网卡只有内网 IP）或反向代理后面很容易反推出别的机器连不上的地址。
@@ -90,4 +96,14 @@ func publicURLLooksUnreachable(raw string) bool {
 		return true
 	}
 	return false
+}
+
+// legacyKeyHint 说明除首要公钥外还有几把历史公钥在生效。
+// 换过密钥对的授权中心，旧码靠这些历史公钥继续验得过；启动日志里一并打出来，
+// 免得看到「首要指纹与授权中心不一致」就以为配错了。
+func legacyKeyHint(all []string) string {
+	if len(all) <= 1 {
+		return ""
+	}
+	return fmt.Sprintf("；另有 %d 把历史公钥继续生效：%s", len(all)-1, strings.Join(all[1:], "、"))
 }

@@ -94,8 +94,12 @@ func Fingerprint(pub ed25519.PublicKey) string {
 }
 
 // Verifier 是校验方持有的校验材料：新版用公钥，旧版用对称密钥。
+//
+// pubs 是多把公钥而不是一把：授权中心换过密钥对之后，手上一批用旧私钥签发的
+// 授权码不能作废，所以验签时逐把试，任意一把通过即认。第一把是「现行」公钥，
+// 指纹与日志展示都用它。
 type Verifier struct {
-	pub    ed25519.PublicKey
+	pubs   []ed25519.PublicKey
 	legacy []string
 }
 
@@ -103,23 +107,69 @@ type Verifier struct {
 // legacySecret 为旧版 HMAC 密钥，可传多个（更名前后各一个默认值），
 // 全部为空表示不再接受旧格式授权码。
 func NewVerifier(pub ed25519.PublicKey, legacySecret ...string) Verifier {
+	return NewMultiVerifier([]ed25519.PublicKey{pub}, legacySecret...)
+}
+
+// NewMultiVerifier 用多把公钥构造校验器（第一把为现行公钥）。
+// 长度不为 32 字节的条目直接丢弃，避免把「抄错一半」的公钥带进验签流程。
+func NewMultiVerifier(pubs []ed25519.PublicKey, legacySecret ...string) Verifier {
+	keys := make([]ed25519.PublicKey, 0, len(pubs))
+	for _, p := range pubs {
+		if len(p) == ed25519.PublicKeySize {
+			keys = append(keys, p)
+		}
+	}
 	secrets := make([]string, 0, len(legacySecret))
 	for _, s := range legacySecret {
 		if s = strings.TrimSpace(s); s != "" {
 			secrets = append(secrets, s)
 		}
 	}
-	return Verifier{pub: pub, legacy: secrets}
+	return Verifier{pubs: keys, legacy: secrets}
+}
+
+// NewVerifierFromStrings 直接吃 base64 公钥文本（可多把，现行在前），
+// 解析失败的条目跳过并通过 errs 返回，调用方据此打告警日志。
+// 这样配置侧只需要维护字符串列表，不必把 ed25519 类型带到处跑。
+func NewVerifierFromStrings(keys []string, legacySecret ...string) (Verifier, []error) {
+	pubs := make([]ed25519.PublicKey, 0, len(keys))
+	var errs []error
+	for _, s := range keys {
+		if strings.TrimSpace(s) == "" {
+			continue
+		}
+		p, err := ParsePublicKey(s)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		pubs = append(pubs, p)
+	}
+	return NewMultiVerifier(pubs, legacySecret...), errs
 }
 
 // Ready 判断校验器是否可用于校验新版授权码。
-func (v Verifier) Ready() bool { return len(v.pub) == ed25519.PublicKeySize }
+func (v Verifier) Ready() bool { return len(v.pubs) > 0 }
 
-// PublicKey 返回内置公钥。
-func (v Verifier) PublicKey() ed25519.PublicKey { return v.pub }
+// PublicKey 返回现行公钥。
+func (v Verifier) PublicKey() ed25519.PublicKey {
+	if len(v.pubs) == 0 {
+		return nil
+	}
+	return v.pubs[0]
+}
 
-// Fingerprint 返回内置公钥指纹。
-func (v Verifier) Fingerprint() string { return Fingerprint(v.pub) }
+// Fingerprint 返回现行公钥指纹。
+func (v Verifier) Fingerprint() string { return Fingerprint(v.PublicKey()) }
+
+// Fingerprints 返回全部可用公钥的指纹（现行在前），用于启动自检日志。
+func (v Verifier) Fingerprints() []string {
+	out := make([]string, 0, len(v.pubs))
+	for _, p := range v.pubs {
+		out = append(out, Fingerprint(p))
+	}
+	return out
+}
 
 // Format 返回授权码的格式标识：ed25519 / hmac / unknown，供状态与日志展示。
 func (v Verifier) Format(raw string) string {
@@ -164,10 +214,16 @@ func (v Verifier) verifyEd25519(code string) (*License, error) {
 	if err != nil {
 		return nil, errors.New("授权码签名无法解析")
 	}
-	if len(blob) != ed25519.SignatureSize || !ed25519.Verify(v.pub, []byte(body), blob) {
+	if len(blob) != ed25519.SignatureSize {
 		return nil, ErrNotSignedByUs
 	}
-	return decodePayload(body)
+	// 逐把公钥试：授权中心换过密钥对之后，旧私钥签发的码仍要能用
+	for _, pub := range v.pubs {
+		if ed25519.Verify(pub, []byte(body), blob) {
+			return decodePayload(body)
+		}
+	}
+	return nil, ErrNotSignedByUs
 }
 
 func (v Verifier) verifyHMAC(code string) (*License, error) {
