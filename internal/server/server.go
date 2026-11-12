@@ -65,6 +65,9 @@ type Server struct {
 	// 设备账号的网页终端会话（SSH），空值时按需初始化
 	termMu   sync.Mutex
 	termSess map[string]*sshTermSession
+
+	// 手动清理（Purge）的运行状态
+	purge purgeJob
 }
 
 // New 创建服务端实例。
@@ -223,6 +226,9 @@ func (s *Server) Handler() http.Handler {
 
 	// 数据导出
 	mux.Handle("GET /api/export/{kind}", s.auth(http.HandlerFunc(s.handleExport)))
+	// 运维手动作业：立刻清理一次过期数据（备份前腾空间、保留期调整后追进度）
+	mux.Handle("GET /api/maintenance/purge", s.auth(s.admin(http.HandlerFunc(s.handlePurge))))
+	mux.Handle("POST /api/maintenance/purge", s.auth(s.admin(s.audit(http.HandlerFunc(s.handlePurge)))))
 
 	// 采集端版本发布与升级进度
 	mux.Handle("GET /api/releases", s.auth(s.adminOrOperator(http.HandlerFunc(s.handleReleases))))

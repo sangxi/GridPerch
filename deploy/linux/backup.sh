@@ -53,6 +53,25 @@ done
 [ -f "$ENVFILE" ] || echo "警告：没有 $ENVFILE，设备密码将无法解密，请确认这是不是你要的" >&2
 
 mkdir -p "$DEST"
+
+# ---- 空间预检 ------------------------------------------------------------
+# 快照（VACUUM INTO）只拷有效页，所以按「有效数据 + 20% 余量」判断，
+# 而不是按数据库文件大小——库删过数据没 VACUUM 时文件会大得多。
+# 空间不够就直接退出，绝不写到一半把磁盘塞满。
+NEED=$("$BIN" -db "$DB" -dbsize 2>/dev/null || echo 0)
+FREE=$(df -PB1 "$DEST" 2>/dev/null | awk 'NR==2{print $4}')
+if [ "${NEED:-0}" -gt 0 ] && [ -n "${FREE:-}" ]; then
+  NEED_MARGIN=$((NEED + NEED / 5))
+  if [ "$FREE" -lt "$NEED_MARGIN" ]; then
+    echo "磁盘空间不足，已跳过本次备份：" >&2
+    echo "  预计需要 $((NEED_MARGIN / 1024 / 1024)) MB（有效数据 $((NEED / 1024 / 1024)) MB + 20% 余量）" >&2
+    echo "  $DEST 当前可用 $((FREE / 1024 / 1024)) MB" >&2
+    echo "  处理：等历史数据清理跑几轮后再试，或用 -d 指到有空间的磁盘 / NAS" >&2
+    exit 1
+  fi
+  echo "==> 空间预检通过：需要约 $((NEED_MARGIN / 1024 / 1024)) MB，可用 $((FREE / 1024 / 1024)) MB"
+fi
+
 STAMP=$(date +%Y%m%d-%H%M%S)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

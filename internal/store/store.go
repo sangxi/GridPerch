@@ -126,6 +126,35 @@ func maxInt(a, b int) int {
 	return b
 }
 
+// LiveSize 估算「有效数据」占多少字节（总页数减空闲页）。
+//
+// 数据库删了数据但没 VACUUM 时，文件还是那么大，而快照（VACUUM INTO）
+// 只拷有效页。这个值用来在备份前判断「有没有地方放得下」：
+// 清理任务跑过几轮后它会明显变小，备份才装得下。
+func LiveSize(dbPath string) (int64, error) {
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	var pageSize, pageCount, freePages int64
+	if err := db.QueryRow(`PRAGMA page_size`).Scan(&pageSize); err != nil {
+		return 0, err
+	}
+	if err := db.QueryRow(`PRAGMA page_count`).Scan(&pageCount); err != nil {
+		return 0, err
+	}
+	if err := db.QueryRow(`PRAGMA freelist_count`).Scan(&freePages); err != nil {
+		return 0, err
+	}
+	live := pageCount - freePages
+	if live < 0 {
+		live = 0
+	}
+	return live * pageSize, nil
+}
+
 // BackupTo 把数据库一致性快照写到 dest，返回快照大小。
 //
 // 用 SQLite 的 VACUUM INTO：它在读事务里生成一个干净副本，不需要停服，

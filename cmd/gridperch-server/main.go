@@ -35,6 +35,15 @@ func main() {
 		log.Printf("沿用更名前的数据库文件：%s（新默认值为 gridperch.db，需要归位改名后重启即可）", p)
 		cfg.DBPath = p
 	}
+	// 只打印有效数据大小：给备份脚本做空间预检用，输出纯字节数
+	if cfg.PrintDBSize {
+		size, err := store.LiveSize(cfg.DBPath)
+		if err != nil {
+			log.Fatalf("统计数据库大小失败: %v", err)
+		}
+		fmt.Println(size)
+		return
+	}
 	// 备份模式：做一次一致性快照就退出，不启动服务、不跑迁移。
 	// 用 VACUUM INTO 而不是 cp：不停服、不漏 WAL、顺带压实空闲页。
 	if cfg.BackupPath != "" {

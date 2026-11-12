@@ -61,6 +61,7 @@ var auditRules = map[string]auditRule{
 	"DELETE /api/device-accounts/{id}":        {Action: "删除设备账号", Category: "device", Target: ":path"},
 	"POST /api/device-accounts/{id}/test":     {Action: "设备连通性检测", Category: "device", Target: ":path"},
 	"POST /api/device-accounts/import":        {Action: "表格导入设备账号", Category: "device"},
+	"POST /api/maintenance/purge":             {Action: "手动清理历史数据", Category: "data"},
 	"POST /api/device-accounts/{id}/secret":   {Action: "复制设备口令", Category: "device", Target: ":path"},
 	"POST /api/device-accounts/{id}/ssh/open": {Action: "打开 SSH 终端", Category: "device", Target: ":path"},
 	"POST /api/inspections":                   {Action: "生成巡检报告", Category: "inspection", Target: "title", Detail: "scope"},

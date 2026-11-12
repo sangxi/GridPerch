@@ -68,6 +68,8 @@ type Server struct {
 	// BackupPath 非空表示「做一次一致性快照后退出」，不启动服务。
 	// 供 --backup 与定时任务使用，不需要停服。
 	BackupPath string
+	// PrintDBSize 打印「有效数据字节数」后退出，供备份脚本判断空间是否够。
+	PrintDBSize bool
 }
 
 // DefaultHubURL 内置的授权系统地址。
@@ -270,6 +272,8 @@ func ParseServer() *Server {
 	flag.BoolVar(&cfg.PrintVersion, "version", false, "打印版本号后退出")
 	flag.StringVar(&cfg.BackupPath, "backup", "",
 		"把数据库一致性快照写到指定文件后退出（不停服；目标文件不能已存在）")
+	flag.BoolVar(&cfg.PrintDBSize, "dbsize", false,
+		"打印数据库有效数据占用的字节数后退出（备份前判断空间是否够用）")
 	flag.Parse()
 	// 未显式传 -hub 时保留配置里的值（来自 GRIDPERCH_HUB 环境变量，或内置默认地址）；
 	// 显式传入才覆盖——传空值（-hub=）即「完全离线」，与原语义一致。
