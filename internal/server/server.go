@@ -191,6 +191,9 @@ func (s *Server) Handler() http.Handler {
 	// 补关联：导入后才上报的主机、改过 IP 的机器，再兜一次
 	mux.Handle("POST /api/device-accounts/relink",
 		s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleDeviceRelink)))))
+	// 按关联主机的操作系统补全用户名 / 协议（Linux→root+SSH，Windows→administrator+RDP）
+	mux.Handle("POST /api/device-accounts/sync-os",
+		s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleDeviceSyncOS)))))
 	mux.Handle("PUT /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("DELETE /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("POST /api/device-accounts/{id}/test", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountTest))))

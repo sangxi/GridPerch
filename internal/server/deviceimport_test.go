@@ -50,6 +50,30 @@ func TestNormalizeProtocol(t *testing.T) {
 	}
 }
 
+// TestOSDefaults 现场约定：Linux → root/SSH/22，Windows → administrator/RDP/3389。
+func TestOSDefaults(t *testing.T) {
+	cases := []struct {
+		os       string
+		proto    string
+		port     int
+		username string
+	}{
+		{"linux", "ssh", 22, "root"},
+		{"Linux", "ssh", 22, "root"},
+		{"freebsd", "ssh", 22, "root"},
+		{"windows", "rdp", 3389, "administrator"},
+		{"Windows", "rdp", 3389, "administrator"},
+		{"", "", 0, ""},
+		{"darwin", "", 0, ""}, // macOS 不在约定内，不做假设
+	}
+	for _, c := range cases {
+		p, port, u := osDefaults(c.os)
+		if p != c.proto || port != c.port || u != c.username {
+			t.Errorf("osDefaults(%q)=(%q,%d,%q)，期望 (%q,%d,%q)", c.os, p, port, u, c.proto, c.port, c.username)
+		}
+	}
+}
+
 // TestSplitHostPort 地址列里带端口要能拆开，否则会拼出 IP:9801:22 这种非法地址。
 func TestSplitHostPort(t *testing.T) {
 	cases := []struct {

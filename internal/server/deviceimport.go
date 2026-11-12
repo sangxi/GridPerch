@@ -1,7 +1,9 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -109,6 +111,117 @@ func mapHeaderRow(row []string) map[int]string {
 		return nil
 	}
 	return m
+}
+
+// osDefaults 按主机操作系统给出默认的协议、端口与用户名。
+//
+// 现场约定：Linux 一律 root + SSH 22，Windows 一律 administrator + 远程桌面 3389。
+// 只在用户没写的时候补，写了就尊重表里的值 —— 有些 Windows 装了 OpenSSH，
+// 有些人 Linux 用普通账号，不能被规则覆盖。
+func osDefaults(osName string) (protocol string, port int, username string) {
+	switch strings.ToLower(strings.TrimSpace(osName)) {
+	case "linux", "unix", "freebsd", "openbsd", "netbsd", "solaris", "aix":
+		return "ssh", 22, "root"
+	case "windows":
+		return "rdp", 3389, "administrator"
+	}
+	return "", 0, ""
+}
+
+// resolveAccountHost 按「关联主机 → 地址 → 名称」的顺序找到账号对应的监控主机。
+func resolveAccountHost(a model.DeviceAccount, byName, byIP map[string]model.Host) *model.Host {
+	for _, cand := range []string{a.BindHost, a.Host, a.Name} {
+		cand = strings.TrimSpace(cand)
+		if cand == "" {
+			continue
+		}
+		key := strings.ToLower(cand)
+		if h, ok := byName[key]; ok {
+			return &h
+		}
+		if h, ok := byIP[key]; ok {
+			return &h
+		}
+	}
+	return nil
+}
+
+// handleDeviceSyncOS 按关联主机的操作系统，补全用户名并（可选）纠正协议。
+func (s *Server) handleDeviceSyncOS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "msg": "不支持的方法"})
+		return
+	}
+	var req struct {
+		SwitchProtocol bool `json:"switchProtocol"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
+
+	hosts, err := s.store.ListHosts()
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	byName, byIP := map[string]model.Host{}, map[string]model.Host{}
+	for _, h := range hosts {
+		byName[strings.ToLower(h.Hostname)] = h
+		if h.IP != "" {
+			byIP[strings.ToLower(h.IP)] = h
+		}
+	}
+	accounts, err := s.store.ListDeviceAccounts("")
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	var userFilled, protoSwitched, unknownHost int
+	for _, a := range accounts {
+		h := resolveAccountHost(a, byName, byIP)
+		if h == nil {
+			unknownHost++
+			continue
+		}
+		defProto, defPort, defUser := osDefaults(h.OS)
+		if defProto == "" {
+			unknownHost++
+			continue
+		}
+		changed := false
+		if strings.TrimSpace(a.Username) == "" {
+			a.Username = defUser
+			changed = true
+			userFilled++
+		}
+		if req.SwitchProtocol && !strings.EqualFold(a.Protocol, defProto) {
+			// 端口只在「还是另一套默认值」时才改，避免把用户自定义的端口冲掉
+			if a.Port == 0 || a.Port == 22 || a.Port == 3389 {
+				a.Port = defPort
+			}
+			a.Protocol = defProto
+			changed = true
+			protoSwitched++
+		}
+		if !changed {
+			continue
+		}
+		if a.BindHost == "" {
+			a.BindHost = h.Hostname
+		}
+		if err := s.store.SaveDeviceAccount(&a); err != nil {
+			log.Printf("按系统补全 %s 失败: %v", a.Name, err)
+		}
+	}
+	msg := fmt.Sprintf("已补全 %d 条用户名", userFilled)
+	if req.SwitchProtocol {
+		msg += fmt.Sprintf("，按系统调整协议 %d 条", protoSwitched)
+	}
+	if unknownHost > 0 {
+		msg += fmt.Sprintf("；%d 条找不到对应主机，未处理", unknownHost)
+	}
+	writeJSON(w, map[string]any{"ok": true, "msg": msg, "result": map[string]int{
+		"scanned": len(accounts), "userFilled": userFilled,
+		"protocolSwitched": protoSwitched, "unknownHost": unknownHost,
+	}})
 }
 
 // normalizeProtocol 统一协议写法，返回协议代号与默认端口。
@@ -305,7 +418,17 @@ func (s *Server) importDeviceRows(rows [][]string) (*deviceImportResult, error) 
 			continue
 		}
 		port, _ := strconv.Atoi(portRaw)
-		protocol, port := normalizeProtocol(field("protocol"), port)
+		rawProto := field("protocol")
+		protocol, port := normalizeProtocol(rawProto, port)
+		// 表里没写用户名时，按关联主机的系统补默认值：Linux → root，Windows → administrator。
+		//
+		// 协议不动：Windows 账号保持 SSH 反而两种入口都能用（终端走 SSH、桌面按主机
+		// 系统判断），真用不上 SSH 的机器再手工改成「远程桌面」即可。
+		if matched != nil {
+			if _, _, defUser := osDefaults(matched.OS); defUser != "" && username == "" {
+				username = defUser
+			}
+		}
 		if username == "" {
 			res.NoUser++
 		}

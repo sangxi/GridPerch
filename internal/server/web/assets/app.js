@@ -3452,6 +3452,7 @@ async function renderDevices() {
   let html = `<div class="toolbar">
     <span class="muted">表格导入支持 .xlsx / .csv，按 IP 或主机名自动关联监控主机。</span>
     <span class="spacer"></span>
+    <button class="btn ghost small" id="devSyncOs" title="按关联主机的系统补全用户名与协议：Linux→root/SSH，Windows→administrator/远程桌面">按系统补全</button>
     <button class="btn ghost small" id="devRelink" title="给未关联主机的账号再匹配一次：地址=主机 IP、名称/地址=主机名">关联主机</button>
     <button class="btn ghost small" id="devImport">${icon('upload')} 导入表格</button>
     <button class="btn primary" id="devNew">+ 新增账号</button>
@@ -3464,6 +3465,7 @@ async function renderDevices() {
   app().innerHTML = html;
   $('#devNew').onclick = () => openDeviceEditor(null, accounts, assets, hosts);
   $('#devImport').onclick = () => openDeviceImport();
+  $('#devSyncOs').onclick = () => openDeviceSyncOS();
   $('#devRelink').onclick = async () => {
     if (!confirm('给尚未关联主机的账号再匹配一次？\n\n口径：地址=主机 IP、名称或地址=主机名。只补空值，已关联的账号不会改动。')) return;
     try {
@@ -3508,6 +3510,56 @@ async function renderDevices() {
     };
   });
 }
+// 按关联主机的操作系统补全账号：Linux 用 root + SSH，Windows 用 administrator + 远程桌面。
+// 只补空值，表里已经写了的用户名与自定义端口不动。
+function openDeviceSyncOS() {
+  const modal = ensureModal();
+  modal.show(`
+    <div class="modal-head"><h3>按操作系统补全账号</h3></div>
+    <div class="modal-body">
+      <div class="hint-box">
+        按账号关联的监控主机判断系统：<br>
+        <b>Linux</b> → 用户名 <code>root</code>，SSH 端口 22<br>
+        <b>Windows</b> → 用户名 <code>administrator</code>，远程桌面端口 3389
+      </div>
+      <div class="form-row"><label>协议</label>
+        <label class="chk"><input type="checkbox" id="syncProto"> 同时把 Windows 账号改成「远程桌面」协议</label>
+      </div>
+      <div class="seg-note">
+        默认<b>只补用户名，不动协议</b>：Windows 账号保持 SSH 时，网页终端和远程桌面两个入口都能用；
+        勾上后 Windows 账号会切成远程桌面（端口 3389），对应的网页终端入口会置灰。<br>
+        用户名已经填了的不动；端口只在当前是 22 / 3389 / 空 时才改，自定义端口保留；
+        找不到对应监控主机的账号会跳过。
+      </div>
+      <div id="syncResult"></div>
+      <div class="modal-actions">
+        <button class="btn" id="syncCancel">取消</button>
+        <button class="btn primary" id="syncRun">开始补全</button>
+      </div>
+    </div>`);
+  let changed = false;
+  $('#syncCancel').onclick = () => {
+    modal.close();
+    if (changed) render();
+  };
+  $('#syncRun').onclick = async () => {
+    const box = $('#syncResult');
+    const btn = $('#syncRun');
+    btn.disabled = true;
+    box.innerHTML = '<div class="test-result running">正在补全…</div>';
+    try {
+      const r = await post('/api/device-accounts/sync-os', { switchProtocol: $('#syncProto').checked });
+      box.innerHTML = `<div class="test-result ok">${esc(r.msg || '已处理')}</div>`;
+      toast(r.msg || '已补全');
+      changed = true;
+    } catch (e) {
+      box.innerHTML = `<div class="test-result bad">补全失败：${esc(e.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
 // 设备账号表格导入。两种来源都要吃：
 //  - 表格格式：人工维护的 Excel，带中文表头；
 //  - 数据库格式：从 CMDB / DBA 表 select 出来的结果，往往没有表头，
