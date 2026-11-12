@@ -190,6 +190,18 @@ var catalogOSBuckets = []struct {
 	{"", "其他"},
 }
 
+// catalogOSAliases 每个系统桶「可以复用的已有目录名」。
+//
+// 现场常见的目录名叫「Windows系统」「linux系统」，如果自动分组只会新建
+// Windows / Linux，就会出现两套并存的目录，比不分组更乱。这里按别名先把
+// 已有目录认下来，认不到才新建。
+var catalogOSAliases = map[string][]string{
+	"Windows": {"windows", "windows系统", "windows主机", "win", "win系统"},
+	"Linux":   {"linux", "linux系统", "linux主机"},
+	"macOS":   {"macos", "mac os", "mac", "darwin", "苹果", "macos系统"},
+	"其他":      {"其他", "其它", "other", "其他系统", "其他主机"},
+}
+
 // catalogNameOfOS 返回某系统代号应归入的目录名。
 // unix 单独归到「其他」：unix 是个大类（AIX/Solaris/FreeBSD），
 // 单独立目录反而会让目录列表越分越碎。
@@ -202,6 +214,43 @@ func catalogNameOfOS(osName string) string {
 	return "其他"
 }
 
+// normalizeCatalogName 归一化目录名，用于别名匹配：
+// 去空白、转小写、去掉常见分隔符，让「Windows 系统」「windows系统」等价。
+func normalizeCatalogName(s string) string {
+	var sb strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		switch r {
+		case ' ', '\t', '_', '-', '·', '（', '）', '(', ')':
+			continue
+		default:
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
+// matchCatalogAlias 判断已有目录名是否属于某个系统桶。
+// 先比完全相等，再比包含：「Windows系统-生产」这类带后缀的目录也应该被复用。
+func matchCatalogAlias(bucketName, catalogName string) bool {
+	aliases := catalogOSAliases[bucketName]
+	n := normalizeCatalogName(catalogName)
+	if n == "" {
+		return false
+	}
+	for _, a := range aliases {
+		if n == normalizeCatalogName(a) {
+			return true
+		}
+	}
+	for _, a := range aliases {
+		// 短别名（mac / win）只认完全相等，否则「mac地址管理」这类目录会被误认领
+		if na := normalizeCatalogName(a); len(na) >= 4 && strings.Contains(n, na) {
+			return true
+		}
+	}
+	return false
+}
+
 // AutoAssignResult 自动分组的执行结果。
 type AutoAssignResult struct {
 	CatalogsCreated int            `json:"catalogsCreated"`
@@ -212,20 +261,33 @@ type AutoAssignResult struct {
 
 // AutoAssignCatalogByOS 按操作系统把主机归入 Windows / Linux / macOS / 其他。
 //
-// overwrite=false 只处理「从来没有归属记录」的主机：已经被人工归过类、
-// 或者被人工显式放到「未分组」的主机都不动，避免把运维整理好的目录冲掉。
+// overwrite=false 只处理「当前没有目录归属」的主机（含被人为移回「未分组」的），
+// 已经归进某个目录的主机不动，避免把运维整理好的分类冲掉。
 func (s *Store) AutoAssignCatalogByOS(overwrite bool) (AutoAssignResult, error) {
 	res := AutoAssignResult{ByCatalog: map[string]int{}}
 	ids := map[string]string{}
+	sorts := map[string]int{}
+
+	// 先把现场已有的目录按别名认领下来（「Windows系统」「linux系统」这类），
+	// 认不到的系统桶等真有主机要归入时再建 —— 没有 macOS 的现场不该凭空
+	// 多出一个空目录，更不该和人工建的同义目录并存两套。
+	existing, err := s.ListHostCatalogs()
+	if err != nil {
+		return res, err
+	}
+	claimed := map[string]bool{}
 	for i, b := range catalogOSBuckets {
-		id, created, err := s.ensureCatalogByName(b.Name, i+1)
-		if err != nil {
-			return res, err
+		sorts[b.Name] = i + 1
+		for _, c := range existing {
+			if claimed[c.ID] {
+				continue
+			}
+			if matchCatalogAlias(b.Name, c.Name) {
+				ids[b.Name] = c.ID
+				claimed[c.ID] = true
+				break
+			}
 		}
-		if created {
-			res.CatalogsCreated++
-		}
-		ids[b.Name] = id
 	}
 
 	// 一次读取全部主机与归属，避免逐台查库
@@ -253,12 +315,25 @@ func (s *Store) AutoAssignCatalogByOS(overwrite bool) (AutoAssignResult, error) 
 	}
 
 	for _, it := range list {
-		if _, ok := refs[it.host]; ok && !overwrite {
+		// 判定标准是「有没有真正归进某个目录」，而不是「有没有归属记录」：
+		// 目录被删除、或主机被移回「未分组」时，host_catalog_ref 里仍留着
+		// catalog_id='' 的行，按记录判断会把这类主机永远挡在归档之外。
+		if ref, ok := refs[it.host]; ok && ref.CatalogID != "" && !overwrite {
 			res.HostsSkipped++
 			continue
 		}
 		name := catalogNameOfOS(it.osName)
-		if err := s.SetHostCatalog(it.host, ids[name]); err != nil {
+		id, ok := ids[name]
+		if !ok {
+			// 该桶还没有可用目录，按需建一个（整个调用里只建一次）
+			id, err = s.createCatalog(name, sorts[name])
+			if err != nil {
+				return res, err
+			}
+			ids[name] = id
+			res.CatalogsCreated++
+		}
+		if err := s.SetHostCatalog(it.host, id); err != nil {
 			return res, err
 		}
 		res.HostsAssigned++
@@ -267,24 +342,17 @@ func (s *Store) AutoAssignCatalogByOS(overwrite bool) (AutoAssignResult, error) 
 	return res, nil
 }
 
-// ensureCatalogByName 按名字取目录，不存在则创建；返回 created 表示本次新建。
-func (s *Store) ensureCatalogByName(name string, sort int) (id string, created bool, err error) {
-	err = s.rdb.QueryRow(`SELECT id FROM host_catalog WHERE name=? LIMIT 1`, name).Scan(&id)
-	if err == nil {
-		return id, false, nil
-	}
-	if err != sql.ErrNoRows {
-		return "", false, err
-	}
+// createCatalog 新建自动分组用的目录；并发下同名已存在时直接复用。
+func (s *Store) createCatalog(name string, sort int) (string, error) {
 	c := &HostCatalog{Name: name, Remark: "按操作系统自动分组", Sort: sort}
 	if err := s.SaveHostCatalog(c); err != nil {
-		// 并发下可能已被别的请求创建，再取一次
-		if again := s.rdb.QueryRow(`SELECT id FROM host_catalog WHERE name=? LIMIT 1`, name).Scan(&id); again == nil {
-			return id, false, nil
+		var id string
+		if qerr := s.rdb.QueryRow(`SELECT id FROM host_catalog WHERE name=? LIMIT 1`, name).Scan(&id); qerr == nil {
+			return id, nil
 		}
-		return "", false, err
+		return "", err
 	}
-	return c.ID, true, nil
+	return c.ID, nil
 }
 
 // SetHostCatalogBatch 批量移动主机，用于目录页的多选操作。
