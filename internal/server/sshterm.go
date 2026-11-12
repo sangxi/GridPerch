@@ -180,8 +180,15 @@ func (s *Server) handleSSHOpen(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Cols int `json:"cols"`
 		Rows int `json:"rows"`
+		// Password 是「当前登录账号」的口令，只用于二次确认：
+		// 拿别人的登录态开 shell 是最容易被忽略的越权，必须再验一次人。
+		Password string `json:"password"`
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
+	if !s.confirmCurrentUser(r, req.Password) {
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"ok": false, "msg": "当前账号密码不正确，无法打开终端"})
+		return
+	}
 	if req.Cols <= 0 || req.Cols > 400 {
 		req.Cols = 100
 	}

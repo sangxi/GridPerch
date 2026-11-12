@@ -35,58 +35,59 @@ var auditCategoryCN = map[string]string{
 
 // auditRules 将「方法 + 路由模式」映射为审计动作。
 var auditRules = map[string]auditRule{
-	"POST /api/login":                       {Action: "登录控制台", Category: "auth", Target: "username"},
-	"POST /api/logout":                      {Action: "退出登录", Category: "auth"},
-	"POST /api/alerts/{id}/resolve":         {Action: "标记告警已恢复", Category: "alert", Target: ":path"},
-	"POST /api/alerts/{id}/ack":             {Action: "认领告警", Category: "alert", Target: ":path"},
-	"POST /api/alerts/{id}/unack":           {Action: "释放告警认领", Category: "alert", Target: ":path"},
-	"POST /api/alerts/{id}/note":            {Action: "填写告警处理备注", Category: "alert", Target: ":path", Detail: "note"},
-	"DELETE /api/alerts/{id}":               {Action: "删除告警", Category: "alert", Target: ":path"},
-	"POST /api/alerts/bulk-delete":          {Action: "批量删除告警", Category: "alert", Target: "state", Detail: "ids,state,deleted"},
-	"POST /api/deploy/batch":                {Action: "批量下发采集端安装", Category: "agent", Target: "os", Detail: "os,targets,user"},
-	"POST /api/alert-silences":              {Action: "新增告警静默规则", Category: "alert", Target: "hostname", Detail: "type,level,startTime,endTime,reason"},
-	"DELETE /api/alert-silences/{id}":       {Action: "删除告警静默规则", Category: "alert", Target: ":path"},
-	"POST /api/tasks":                       {Action: "新建监控项", Category: "monitor", Target: "name", Detail: "type,runner,hosts"},
-	"PUT /api/tasks/{id}":                   {Action: "修改监控项", Category: "monitor", Target: "name", Detail: "type,runner,hosts,enabled"},
-	"DELETE /api/tasks/{id}":                {Action: "删除监控项", Category: "monitor", Target: ":path"},
-	"POST /api/commands":                    {Action: "下发指令", Category: "command", Target: "host", Detail: "cmd"},
-	"POST /api/tools/probe":                 {Action: "执行网络探测", Category: "tools", Target: "type"},
-	"DELETE /api/commands/{id}":             {Action: "删除指令记录", Category: "command", Target: ":path"},
-	"POST /api/assets":                      {Action: "新增资产", Category: "asset", Target: "name", Detail: "category,ip"},
-	"PUT /api/assets/{id}":                  {Action: "修改资产", Category: "asset", Target: "name", Detail: "category,ip"},
-	"DELETE /api/assets/{id}":               {Action: "删除资产", Category: "asset", Target: ":path"},
-	"POST /api/assets/batch":                {Action: "批量导入资产", Category: "asset"},
-	"POST /api/device-accounts":             {Action: "新增设备账号", Category: "device", Target: "name", Detail: "protocol,host,port"},
-	"PUT /api/device-accounts/{id}":         {Action: "修改设备账号", Category: "device", Target: "name", Detail: "protocol,host,port"},
-	"DELETE /api/device-accounts/{id}":      {Action: "删除设备账号", Category: "device", Target: ":path"},
-	"POST /api/device-accounts/{id}/test":   {Action: "设备连通性检测", Category: "device", Target: ":path"},
-	"POST /api/device-accounts/import":      {Action: "表格导入设备账号", Category: "device"},
-	"POST /api/device-accounts/{id}/secret": {Action: "复制设备口令", Category: "device", Target: ":path"},
-	"POST /api/inspections":                 {Action: "生成巡检报告", Category: "inspection", Target: "title", Detail: "scope"},
-	"DELETE /api/inspections/{id}":          {Action: "删除巡检报告", Category: "inspection", Target: ":path"},
-	"POST /api/members":                     {Action: "新建成员账号", Category: "member", Target: "username", Detail: "role,nickname"},
-	"PUT /api/members/{username}":           {Action: "修改成员账号", Category: "member", Target: "username", Detail: "role,enabled,menus"},
-	"DELETE /api/members/{username}":        {Action: "删除成员账号", Category: "member", Target: ":path"},
-	"POST /api/tokens":                      {Action: "新建开放接口凭证", Category: "token", Target: "name", Detail: "perms"},
-	"DELETE /api/tokens/{id}":               {Action: "删除开放接口凭证", Category: "token", Target: ":path"},
-	"PUT /api/settings":                     {Action: "修改系统设置", Category: "setting"},
-	"POST /api/test-mail":                   {Action: "发送测试邮件", Category: "mail"},
-	"POST /api/releases":                    {Action: "发布采集端版本", Category: "release", Target: "version", Detail: "goos,goarch,notes"},
-	"DELETE /api/releases/{id}":             {Action: "删除采集端版本", Category: "release", Target: ":path"},
-	"POST /api/releases/{id}/latest":        {Action: "设为下发版本", Category: "release", Target: ":path"},
-	"POST /api/license":                     {Action: "导入授权码", Category: "license"},
-	"DELETE /api/license":                   {Action: "解除授权", Category: "license"},
-	"DELETE /api/audit":                     {Action: "清空审计日志", Category: "data"},
-	"DELETE /api/mail/logs":                 {Action: "清空邮件记录", Category: "data"},
-	"PUT /api/agent-config":                 {Action: "修改采集端全局配置", Category: "agentcfg", Detail: "agentInterval,agentSkipDisk,agentUpdateMode,agentAllowCommand"},
-	"PUT /api/hosts/{host}/agent-config":    {Action: "修改采集端主机配置", Category: "agentcfg", Target: ":host", Detail: "interval,skipDisk,updateMode,allowCommand"},
-	"DELETE /api/hosts/{host}/agent-config": {Action: "恢复采集端默认配置", Category: "agentcfg", Target: ":host"},
-	"PUT /api/hosts/{host}/rename":          {Action: "重命名主机", Category: "host", Target: ":host", Detail: "name"},
-	"DELETE /api/hosts/{host}":              {Action: "删除主机", Category: "host", Target: ":host"},
-	"POST /api/webhooks":                    {Action: "新增机器人", Category: "webhook", Target: "name", Detail: "kind,url,enabled,levels"},
-	"PUT /api/webhooks/{id}":                {Action: "修改机器人", Category: "webhook", Target: "name", Detail: "kind,url,enabled,levels"},
-	"DELETE /api/webhooks/{id}":             {Action: "删除机器人", Category: "webhook", Target: ":path"},
-	"POST /api/webhooks/{id}/test":          {Action: "测试机器人", Category: "webhook", Target: ":path"},
+	"POST /api/login":                         {Action: "登录控制台", Category: "auth", Target: "username"},
+	"POST /api/logout":                        {Action: "退出登录", Category: "auth"},
+	"POST /api/alerts/{id}/resolve":           {Action: "标记告警已恢复", Category: "alert", Target: ":path"},
+	"POST /api/alerts/{id}/ack":               {Action: "认领告警", Category: "alert", Target: ":path"},
+	"POST /api/alerts/{id}/unack":             {Action: "释放告警认领", Category: "alert", Target: ":path"},
+	"POST /api/alerts/{id}/note":              {Action: "填写告警处理备注", Category: "alert", Target: ":path", Detail: "note"},
+	"DELETE /api/alerts/{id}":                 {Action: "删除告警", Category: "alert", Target: ":path"},
+	"POST /api/alerts/bulk-delete":            {Action: "批量删除告警", Category: "alert", Target: "state", Detail: "ids,state,deleted"},
+	"POST /api/deploy/batch":                  {Action: "批量下发采集端安装", Category: "agent", Target: "os", Detail: "os,targets,user"},
+	"POST /api/alert-silences":                {Action: "新增告警静默规则", Category: "alert", Target: "hostname", Detail: "type,level,startTime,endTime,reason"},
+	"DELETE /api/alert-silences/{id}":         {Action: "删除告警静默规则", Category: "alert", Target: ":path"},
+	"POST /api/tasks":                         {Action: "新建监控项", Category: "monitor", Target: "name", Detail: "type,runner,hosts"},
+	"PUT /api/tasks/{id}":                     {Action: "修改监控项", Category: "monitor", Target: "name", Detail: "type,runner,hosts,enabled"},
+	"DELETE /api/tasks/{id}":                  {Action: "删除监控项", Category: "monitor", Target: ":path"},
+	"POST /api/commands":                      {Action: "下发指令", Category: "command", Target: "host", Detail: "cmd"},
+	"POST /api/tools/probe":                   {Action: "执行网络探测", Category: "tools", Target: "type"},
+	"DELETE /api/commands/{id}":               {Action: "删除指令记录", Category: "command", Target: ":path"},
+	"POST /api/assets":                        {Action: "新增资产", Category: "asset", Target: "name", Detail: "category,ip"},
+	"PUT /api/assets/{id}":                    {Action: "修改资产", Category: "asset", Target: "name", Detail: "category,ip"},
+	"DELETE /api/assets/{id}":                 {Action: "删除资产", Category: "asset", Target: ":path"},
+	"POST /api/assets/batch":                  {Action: "批量导入资产", Category: "asset"},
+	"POST /api/device-accounts":               {Action: "新增设备账号", Category: "device", Target: "name", Detail: "protocol,host,port"},
+	"PUT /api/device-accounts/{id}":           {Action: "修改设备账号", Category: "device", Target: "name", Detail: "protocol,host,port"},
+	"DELETE /api/device-accounts/{id}":        {Action: "删除设备账号", Category: "device", Target: ":path"},
+	"POST /api/device-accounts/{id}/test":     {Action: "设备连通性检测", Category: "device", Target: ":path"},
+	"POST /api/device-accounts/import":        {Action: "表格导入设备账号", Category: "device"},
+	"POST /api/device-accounts/{id}/secret":   {Action: "复制设备口令", Category: "device", Target: ":path"},
+	"POST /api/device-accounts/{id}/ssh/open": {Action: "打开 SSH 终端", Category: "device", Target: ":path"},
+	"POST /api/inspections":                   {Action: "生成巡检报告", Category: "inspection", Target: "title", Detail: "scope"},
+	"DELETE /api/inspections/{id}":            {Action: "删除巡检报告", Category: "inspection", Target: ":path"},
+	"POST /api/members":                       {Action: "新建成员账号", Category: "member", Target: "username", Detail: "role,nickname"},
+	"PUT /api/members/{username}":             {Action: "修改成员账号", Category: "member", Target: "username", Detail: "role,enabled,menus"},
+	"DELETE /api/members/{username}":          {Action: "删除成员账号", Category: "member", Target: ":path"},
+	"POST /api/tokens":                        {Action: "新建开放接口凭证", Category: "token", Target: "name", Detail: "perms"},
+	"DELETE /api/tokens/{id}":                 {Action: "删除开放接口凭证", Category: "token", Target: ":path"},
+	"PUT /api/settings":                       {Action: "修改系统设置", Category: "setting"},
+	"POST /api/test-mail":                     {Action: "发送测试邮件", Category: "mail"},
+	"POST /api/releases":                      {Action: "发布采集端版本", Category: "release", Target: "version", Detail: "goos,goarch,notes"},
+	"DELETE /api/releases/{id}":               {Action: "删除采集端版本", Category: "release", Target: ":path"},
+	"POST /api/releases/{id}/latest":          {Action: "设为下发版本", Category: "release", Target: ":path"},
+	"POST /api/license":                       {Action: "导入授权码", Category: "license"},
+	"DELETE /api/license":                     {Action: "解除授权", Category: "license"},
+	"DELETE /api/audit":                       {Action: "清空审计日志", Category: "data"},
+	"DELETE /api/mail/logs":                   {Action: "清空邮件记录", Category: "data"},
+	"PUT /api/agent-config":                   {Action: "修改采集端全局配置", Category: "agentcfg", Detail: "agentInterval,agentSkipDisk,agentUpdateMode,agentAllowCommand"},
+	"PUT /api/hosts/{host}/agent-config":      {Action: "修改采集端主机配置", Category: "agentcfg", Target: ":host", Detail: "interval,skipDisk,updateMode,allowCommand"},
+	"DELETE /api/hosts/{host}/agent-config":   {Action: "恢复采集端默认配置", Category: "agentcfg", Target: ":host"},
+	"PUT /api/hosts/{host}/rename":            {Action: "重命名主机", Category: "host", Target: ":host", Detail: "name"},
+	"DELETE /api/hosts/{host}":                {Action: "删除主机", Category: "host", Target: ":host"},
+	"POST /api/webhooks":                      {Action: "新增机器人", Category: "webhook", Target: "name", Detail: "kind,url,enabled,levels"},
+	"PUT /api/webhooks/{id}":                  {Action: "修改机器人", Category: "webhook", Target: "name", Detail: "kind,url,enabled,levels"},
+	"DELETE /api/webhooks/{id}":               {Action: "删除机器人", Category: "webhook", Target: ":path"},
+	"POST /api/webhooks/{id}/test":            {Action: "测试机器人", Category: "webhook", Target: ":path"},
 }
 
 // sensitiveKeys 这些字段的值不写入审计明细，避免口令泄漏到日志。
@@ -108,6 +109,12 @@ func (s *Server) audit(next http.Handler) http.Handler {
 		if r.Body != nil {
 			body, _ = io.ReadAll(io.LimitReader(r.Body, 2<<20))
 			r.Body = passthroughBody{io.MultiReader(bytes.NewReader(body), r.Body), r.Body}
+		}
+		// 这两类请求体里带明文口令：整段丢弃，连解析都不做。
+		// 现在没把它们配进 Target/Detail，但规则以后被改一次就可能把口令写进审计表，
+		// 干脆在入口处断掉这条路。
+		if isCredentialPath(r.URL.Path) {
+			body = nil
 		}
 		// 请求进入时先取当前账号，登录接口此时无会话，稍后从请求体兜底
 		user := s.currentUser(r)
@@ -163,6 +170,11 @@ func (s *Server) audit(next http.Handler) http.Handler {
 		}
 		s.store.AppendAudit(e)
 	})
+}
+
+// isCredentialPath 判断该接口的请求体是否含明文口令（不参与审计解析）。
+func isCredentialPath(path string) bool {
+	return strings.HasSuffix(path, "/secret") || strings.HasSuffix(path, "/ssh/open")
 }
 
 // parseAuditBody 从请求体中提取操作对象与要点明细。

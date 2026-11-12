@@ -43,6 +43,27 @@
   #banner.hide { display: none; }
   #banner a { color: #60a5fa; }
   #measure { position: fixed; left: -9999px; top: -9999px; white-space: pre; font-size: 13px; }
+  /* 二次确认弹层：口令只在内存里过一遍，不写 localStorage、不进 URL */
+  .auth-mask {
+    position: fixed; inset: 0; background: rgba(6,10,22,.72); z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .auth-mask.hide { display: none; }
+  .auth-box { width: 340px; background: #101a33; border: 1px solid #26334f; border-radius: 10px; padding: 18px 20px; }
+  .auth-box h3 { margin: 0 0 6px; font-size: 15px; }
+  .auth-box p { margin: 0 0 12px; color: var(--dim); font-size: 12.5px; line-height: 1.6; }
+  .auth-box input {
+    width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #26334f;
+    background: #0b1224; color: var(--fg); font-size: 13px; outline: none;
+  }
+  .auth-box input:focus { border-color: #3b5bab; }
+  .auth-err { min-height: 18px; color: #f87171; font-size: 12px; margin-top: 6px; }
+  .auth-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .auth-acts button {
+    background: #16203a; color: var(--fg); border: 1px solid #26334f; border-radius: 6px;
+    padding: 6px 14px; font-size: 12.5px; cursor: pointer;
+  }
+  .auth-acts button.a-ok { background: var(--ok); border-color: var(--ok); color: #04120a; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -57,6 +78,18 @@
 </header>
 <pre id="out"></pre>
 <div id="banner">正在连接…</div>
+<div id="auth" class="auth-mask hide">
+  <div class="auth-box">
+    <h3 id="authTitle">确认身份</h3>
+    <p id="authHint">请输入当前登录账号的密码</p>
+    <input type="password" id="authPwd" autocomplete="current-password" placeholder="当前账号密码">
+    <div class="auth-err" id="authErr"></div>
+    <div class="auth-acts">
+      <button id="authCancel">取消</button>
+      <button class="a-ok" id="authOk">确定</button>
+    </div>
+  </div>
+</div>
 <textarea id="sink" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
 <span id="measure">XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX</span>
 
@@ -74,6 +107,42 @@
   var btnClose = document.getElementById('btnClose');
   var btnReconnect = document.getElementById('btnReconnect');
   var btnPwd = document.getElementById('btnPwd');
+  var authMask = document.getElementById('auth');
+  var authTitle = document.getElementById('authTitle');
+  var authHint = document.getElementById('authHint');
+  var authPwd = document.getElementById('authPwd');
+  var authErr = document.getElementById('authErr');
+  var authResolve = null;
+
+  // 二次确认：用当前登录账号的口令验一次身份，返回 Promise<string|null>。
+  // 口令只存在于这个输入框与一次请求体里，关闭即清空，不落任何存储。
+  function askPassword(title, hint) {
+    return new Promise(function (resolve) {
+      authTitle.textContent = title;
+      authHint.textContent = hint;
+      authPwd.value = '';
+      authErr.textContent = '';
+      authMask.classList.remove('hide');
+      authResolve = resolve;
+      setTimeout(function () { authPwd.focus(); }, 30);
+    });
+  }
+  function closeAuth(val) {
+    authMask.classList.add('hide');
+    authPwd.value = '';
+    var fn = authResolve;
+    authResolve = null;
+    if (fn) fn(val);
+  }
+  document.getElementById('authOk').addEventListener('click', function () {
+    var v = authPwd.value;
+    if (!v) { authErr.textContent = '请输入当前账号密码'; return; }
+    closeAuth(v);
+  });
+  document.getElementById('authCancel').addEventListener('click', function () { closeAuth(null); });
+  authPwd.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('authOk').click(); }
+  });
 
   var accId = new URLSearchParams(location.search).get('id') || '';
   var sid = null;
@@ -212,6 +281,18 @@
   function connect() {
     btnReconnect.disabled = true;
     btnClose.disabled = true;
+    askPassword('打开 SSH 终端', '终端能以该账号直接操作目标主机。为保证操作可追溯，请再次输入当前登录账号的密码。').then(function (pwd) {
+      if (pwd === null) {
+        setStatus('off', '已取消');
+        showBanner('已取消：确认身份后才能打开终端。');
+        btnReconnect.disabled = false;
+        return;
+      }
+      doConnect(pwd);
+    });
+  }
+
+  function doConnect(password) {
     showBanner('正在连接…');
     setStatus('', '连接中');
     loadAccount().then(function (acc) {
@@ -219,7 +300,8 @@
       titleEl.textContent = acc.name || acc.host || '网页终端';
       btnPwd.disabled = !acc.hasSecret;
       var size = termSize();
-      return post('/api/device-accounts/' + encodeURIComponent(accId) + '/ssh/open', size).then(function (r) {
+      return post('/api/device-accounts/' + encodeURIComponent(accId) + '/ssh/open',
+        { cols: size.cols, rows: size.rows, password: password }).then(function (r) {
         sid = r.sid;
         connected = true;
         setStatus('on', (r.user || acc.username) + '@' + (r.target || acc.host));

@@ -549,13 +549,38 @@ func containsString(list []string, v string) bool {
 	return false
 }
 
+// confirmCurrentUser 校验「当前登录账号的密码」，用于敏感操作前的二次确认。
+//
+// 只比对会话里的用户名，不接受请求里传来的用户名 —— 否则就成了任意账号的
+// 口令爆破入口。校验失败返回 false，调用方负责回 403。
+//
+// 注意：这里拿到的明文口令只用于比对，**绝不写日志、绝不回传、绝不入库**。
+func (s *Server) confirmCurrentUser(r *http.Request, password string) bool {
+	m := s.currentUser(r)
+	if m == nil || strings.TrimSpace(password) == "" {
+		return false
+	}
+	return s.store.CheckUser(m.Username, password)
+}
+
 // handleDeviceSecret 返回解密后的口令，供「复制密码」按钮使用。
 //
 // 刻意用 POST 而不是 GET：审计中间件只记录写操作，而「查看明文口令」是敏感动作，
 // 必须留下「谁在什么时候看了哪条账号」的记录。响应也带 no-store，避免被缓存。
+//
+// 调用前必须带上当前登录账号的密码做二次确认：会话 cookie 被旁人拿到时，
+// 至少还要知道本人的口令才能把明文密码取走。
 func (s *Server) handleDeviceSecret(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "msg": "不支持的方法"})
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
+	if !s.confirmCurrentUser(r, req.Password) {
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"ok": false, "msg": "当前账号密码不正确，无法查看口令"})
 		return
 	}
 	acc, err := s.store.DeviceCredential(r.PathValue("id"))

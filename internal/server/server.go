@@ -202,7 +202,9 @@ func (s *Server) Handler() http.Handler {
 		s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleDeviceSecret)))))
 	// 网页终端（SSH）与远程桌面（.rdp 文件）
 	term := func(h http.HandlerFunc) http.Handler { return s.auth(s.adminOrOperator(h)) }
-	mux.Handle("POST /api/device-accounts/{id}/ssh/open", term(s.handleSSHOpen))
+	// 开终端是敏感动作：走审计，成功与失败（口令校验不通过）都会留痕
+	mux.Handle("POST /api/device-accounts/{id}/ssh/open",
+		s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleSSHOpen)))))
 	mux.Handle("GET /api/device-accounts/{id}/ssh/stream", term(s.handleSSHStream))
 	mux.Handle("POST /api/device-accounts/{id}/ssh/input", term(s.handleSSHInput))
 	mux.Handle("POST /api/device-accounts/{id}/ssh/resize", term(s.handleSSHResize))

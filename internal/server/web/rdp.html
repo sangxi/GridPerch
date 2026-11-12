@@ -35,6 +35,18 @@
   code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; }
   .err { color: #b91c1c; font-size: 13px; }
   #autoNote { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  /* 二次确认弹层：口令只在输入框和一次请求体里，关闭即清空 */
+  .mask { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .mask.hide { display: none; }
+  .dlg { width: 340px; background: #fff; border-radius: 10px; padding: 18px 20px; box-shadow: 0 12px 32px rgba(16,24,40,.18); }
+  .dlg h3 { margin: 0 0 6px; font-size: 15px; }
+  .dlg p { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+  .dlg input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; outline: none; }
+  .dlg input:focus { border-color: var(--primary); }
+  .dlg .err { min-height: 18px; color: #b91c1c; font-size: 12px; margin-top: 6px; }
+  .dlg .acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  .dlg .acts button { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 6px 14px; font-size: 12.5px; cursor: pointer; }
+  .dlg .acts button.ok { background: var(--primary); border-color: var(--primary); color: #fff; }
 </style>
 </head>
 <body>
@@ -64,6 +76,18 @@
     <div id="err" class="err"></div>
   </div>
 </div>
+<div id="mask" class="mask hide">
+  <div class="dlg">
+    <h3>确认身份</h3>
+    <p>查看明文密码属于敏感操作，请再次输入当前登录账号的密码。</p>
+    <input type="password" id="pwd" autocomplete="current-password" placeholder="当前账号密码">
+    <div class="err" id="pwdErr"></div>
+    <div class="acts">
+      <button id="pwdCancel">取消</button>
+      <button class="ok" id="pwdOk">确定</button>
+    </div>
+  </div>
+</div>
 <script>
 (function () {
   'use strict';
@@ -80,6 +104,37 @@
   var errEl = document.getElementById('err');
   var address = '';
   var username = '';
+
+  // 二次确认：查看明文密码前再验一次当前登录账号的口令
+  var mask = document.getElementById('mask');
+  var pwdInput = document.getElementById('pwd');
+  var pwdErr = document.getElementById('pwdErr');
+  var pwdResolve = null;
+
+  function askPassword() {
+    return new Promise(function (resolve) {
+      pwdInput.value = '';
+      pwdErr.textContent = '';
+      mask.classList.remove('hide');
+      pwdResolve = resolve;
+      setTimeout(function () { pwdInput.focus(); }, 30);
+    });
+  }
+  function closePwd(val) {
+    mask.classList.add('hide');
+    pwdInput.value = '';
+    var fn = pwdResolve;
+    pwdResolve = null;
+    if (fn) fn(val);
+  }
+  document.getElementById('pwdOk').addEventListener('click', function () {
+    if (!pwdInput.value) { pwdErr.textContent = '请输入当前账号密码'; return; }
+    closePwd(pwdInput.value);
+  });
+  document.getElementById('pwdCancel').addEventListener('click', function () { closePwd(null); });
+  pwdInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('pwdOk').click(); }
+  });
 
   // 统一走 clipboard API，失败就退回到 prompt（浏览器非 https 时没有 clipboard）
   function copyText(text, btn, doneLabel) {
@@ -139,21 +194,24 @@
     if (username) copyText(username, copyUserBtn, '复制用户名');
   });
   copyPwdBtn.addEventListener('click', function () {
-    copyPwdBtn.disabled = true;
-    var restore = function () { copyPwdBtn.disabled = false; };
-    fetch('/api/device-accounts/' + encodeURIComponent(id) + '/secret', {
-      method: 'POST', credentials: 'same-origin'
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok || j.ok === false) throw new Error(j.msg || ('HTTP ' + r.status));
-        return j;
-      });
-    }).then(function (j) {
-      copyText(String(j.secret || ''), copyPwdBtn, '复制密码');
-      restore();
-    }).catch(function (e) {
-      autoNote.textContent = '取密码失败：' + String(e.message || e);
-      restore();
+    askPassword().then(function (pwd) {
+      if (!pwd) return;
+      copyPwdBtn.disabled = true;
+      fetch('/api/device-accounts/' + encodeURIComponent(id) + '/secret', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd }),
+        credentials: 'same-origin'
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (!r.ok || j.ok === false) throw new Error(j.msg || ('HTTP ' + r.status));
+          return j;
+        });
+      }).then(function (j) {
+        copyText(String(j.secret || ''), copyPwdBtn, '复制密码');
+      }).catch(function (e) {
+        autoNote.textContent = '取密码失败：' + String(e.message || e);
+      }).then(function () { copyPwdBtn.disabled = false; });
     });
   });
 })();
