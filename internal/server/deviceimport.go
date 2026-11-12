@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -264,7 +265,8 @@ func (s *Server) importDeviceRows(rows [][]string) (*deviceImportResult, error) 
 		// 关联主机：先按主机名，再按 IP；关联列本身也可能是 IP
 		bind := ""
 		var matched *model.Host
-		for _, cand := range []string{bindRaw, hostRaw} {
+		// 第三个候选是「名称」：现场常把主机名直接写进名称列
+		for _, cand := range []string{bindRaw, hostRaw, field("name")} {
 			if cand == "" {
 				continue
 			}
@@ -399,6 +401,39 @@ func containsString(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// handleDeviceRelink 给尚未关联主机的账号补关联。
+//
+// 导入时的匹配只反映「当时」的主机表；之后新装采集端的机器、改过 IP 的机器，
+// 都需要再兜一次。用户也可以点「一键关联主机」立即触发。
+func (s *Server) handleDeviceRelink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "msg": "不支持的方法"})
+		return
+	}
+	n, err := s.store.RelinkDeviceAccounts()
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	msg := fmt.Sprintf("已为 %d 条账号补上关联主机", n)
+	if n == 0 {
+		msg = "没有可补的账号：未关联的账号在主机表里找不到相同 IP 或主机名"
+	}
+	writeJSON(w, map[string]any{"ok": true, "linked": n, "msg": msg})
+}
+
+// relinkDeviceAccounts 由后台定期调用，静默补关联。
+func (s *Server) relinkDeviceAccounts() {
+	n, err := s.store.RelinkDeviceAccounts()
+	if err != nil {
+		log.Printf("设备账号补关联失败: %v", err)
+		return
+	}
+	if n > 0 {
+		log.Printf("已为 %d 条设备账号补上关联主机", n)
+	}
 }
 
 // handleDeviceImportTemplate 下载一份 CSV 模板，省得用户猜列名。

@@ -724,6 +724,42 @@ func (s *Store) DeviceCredential(id string) (*model.DeviceAccount, error) {
 	return &a, nil
 }
 
+// RelinkDeviceAccounts 给尚未关联主机的设备账号补上 bind_host，返回补上的条数。
+//
+// 导入时只按「当时的」主机表匹配，之后才有采集端上报的机器就永远关联不上；
+// 这里按三种口径再兜一遍（地址=主机 IP、名称=主机名、地址=主机名），
+// 只填空值，不动已经关联好的账号。
+func (s *Store) RelinkDeviceAccounts() (int, error) {
+	now := nowStr()
+	stmts := []string{
+		// 地址就是主机 IP：最常见
+		`UPDATE device_account SET bind_host=(
+			SELECT h.hostname FROM host h WHERE h.ip=device_account.host LIMIT 1), update_time=?
+		 WHERE IFNULL(bind_host,'')=''
+		   AND EXISTS(SELECT 1 FROM host h WHERE h.ip=device_account.host)`,
+		// 名称直接用了主机名
+		`UPDATE device_account SET bind_host=(
+			SELECT h.hostname FROM host h WHERE h.hostname=device_account.name LIMIT 1), update_time=?
+		 WHERE IFNULL(bind_host,'')=''
+		   AND EXISTS(SELECT 1 FROM host h WHERE h.hostname=device_account.name)`,
+		// 地址填的是主机名而不是 IP
+		`UPDATE device_account SET bind_host=(
+			SELECT h.hostname FROM host h WHERE h.hostname=device_account.host LIMIT 1), update_time=?
+		 WHERE IFNULL(bind_host,'')=''
+		   AND EXISTS(SELECT 1 FROM host h WHERE h.hostname=device_account.host)`,
+	}
+	total := 0
+	for _, q := range stmts {
+		res, err := s.wdb.Exec(q, now)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	return total, nil
+}
+
 // DeviceCredentialForHost 为一台主机挑选可用的 SSH 凭据：
 //  1. 先按设备账号的「地址」精确匹配（地址填成目标 IP 最简单）；
 //  2. 再按「关联主机」匹配：设备账号绑定的主机 hostname 对应的 IP == 目标；

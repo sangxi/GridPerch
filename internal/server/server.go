@@ -188,6 +188,9 @@ func (s *Server) Handler() http.Handler {
 		s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleDeviceAccountImport)))))
 	mux.Handle("GET /api/device-accounts/import/template",
 		s.auth(s.adminOrOperator(http.HandlerFunc(s.handleDeviceImportTemplate))))
+	// 补关联：导入后才上报的主机、改过 IP 的机器，再兜一次
+	mux.Handle("POST /api/device-accounts/relink",
+		s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleDeviceRelink)))))
 	mux.Handle("PUT /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("DELETE /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("POST /api/device-accounts/{id}/test", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountTest))))
@@ -523,6 +526,8 @@ func (s *Server) maintenance() {
 			// 开了「新主机自动按系统归组」后，新接入的机器最迟 5 分钟内进目录；
 			// 已有归属的主机不会被改动。
 			s.autoAssignCatalogByOS()
+			// 设备账号同理：先导入账号、后装采集端的机器，靠这一步补上关联
+			s.relinkDeviceAccounts()
 		case <-purge.C:
 			if err := s.store.Purge(); err != nil {
 				log.Printf("清理历史数据失败: %v", err)

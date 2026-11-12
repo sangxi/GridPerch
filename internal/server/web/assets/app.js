@@ -3452,6 +3452,7 @@ async function renderDevices() {
   let html = `<div class="toolbar">
     <span class="muted">表格导入支持 .xlsx / .csv，按 IP 或主机名自动关联监控主机。</span>
     <span class="spacer"></span>
+    <button class="btn ghost small" id="devRelink" title="给未关联主机的账号再匹配一次：地址=主机 IP、名称/地址=主机名">关联主机</button>
     <button class="btn ghost small" id="devImport">${icon('upload')} 导入表格</button>
     <button class="btn primary" id="devNew">+ 新增账号</button>
   </div>
@@ -3463,6 +3464,14 @@ async function renderDevices() {
   app().innerHTML = html;
   $('#devNew').onclick = () => openDeviceEditor(null, accounts, assets, hosts);
   $('#devImport').onclick = () => openDeviceImport();
+  $('#devRelink').onclick = async () => {
+    if (!confirm('给尚未关联主机的账号再匹配一次？\n\n口径：地址=主机 IP、名称或地址=主机名。只补空值，已关联的账号不会改动。')) return;
+    try {
+      const r = await post('/api/device-accounts/relink', {});
+      toast(r.msg || '已处理');
+      render();
+    } catch (e) { toast('关联失败：' + e.message, true); }
+  };
   document.querySelectorAll('[data-term]').forEach((b) => {
     b.onclick = () => window.open('/term?id=' + encodeURIComponent(b.dataset.term), '_blank', 'noopener');
   });
