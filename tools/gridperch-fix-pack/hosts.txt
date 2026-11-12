@@ -1,0 +1,17 @@
+﻿# GridPerch offline repair pack - IP to host name mapping (UTF-8)
+# Format: IP,HostName   (one line per machine, no spaces before the comma)
+# The script picks the line whose IP matches this machine's IPv4 address.
+# If an IP is not listed, it falls back to the running agent's -name argument,
+# then to the Windows COMPUTERNAME.
+192.168.40.149,电子监管码服务器
+192.168.40.216,楚雄远程审方服务器
+192.168.40.161,BL_ETL
+192.168.40.162,BL数据库
+192.168.40.163,ERP医疗器械数据库1
+192.168.40.170,OA新接口服务器
+192.168.40.99,华招
+192.168.40.128,启软测试库
+192.168.40.140,多仓OMS接口
+192.168.40.168,新零售应用数据服务器
+192.168.40.94,楚雄虹城服务器
+192.168.40.159,推广零售服务器-关机-

@@ -631,12 +631,19 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
   sudo systemctl daemon-reload
-  sudo systemctl enable --now gridperch-agent
+  sudo systemctl enable gridperch-agent
+  # 🔴 必须 restart，不能只用 enable --now：重装时服务往往已在运行，
+  #    enable --now 对运行中的进程是空操作，单元里新的 -name / -token-hash
+  #    不会应用——旧进程继续用旧参数上报（现象：重装了，名字/口令还是旧的，
+  #    token 不对的机器重装后依然被服务端拒收）。restart 才会让新单元生效。
+  sudo systemctl restart gridperch-agent
   sleep 2
   systemctl status gridperch-agent --no-pager || true
   echo "==> 完成。日志：journalctl -u gridperch-agent -f"
 else
   echo "==> 未检测到 systemd，改用 nohup 常驻"
+  sudo pkill -f 'gridperch-agent' 2>/dev/null || true
+  sleep 1
   sudo nohup "$BIN" $ARGS >/var/log/gridperch-agent.log 2>&1 &
   echo "==> 已后台启动，日志：/var/log/gridperch-agent.log"
 fi
@@ -755,12 +762,26 @@ try {
 Write-Host '==> 注册开机自启计划任务'
 # 只带定位服务端与标识本机的最小参数，其余配置由平台「采集端配置」下发。
 # 注意：$args 是 PowerShell 自动变量，必须换名，否则会覆盖脚本自身的参数集。
-$agentArgs  = "-server $Server -token-hash $TokenHash -name $HostName"
+$agentArgs  = '-server ' + $Server + ' -token-hash ' + $TokenHash + ' -name "' + $HostName + '"'
 $taskName   = 'gridperch-agent'
 $registered = $false
 
-# 优先走 ScheduledTasks 模块（Windows 8 / Server 2012 起才有）。两个坑，改之前先看：
-#   ① Win8.1 / Server 2012 R2（6.3）上，SYSTEM 主体**不带** -LogonType 时注册会直接报
+# 日志必须落到文件：采集端常驻在计划任务里，stdout/stderr 没有任何接收方，
+# 进程崩溃时 panic 堆栈和最后几条日志会全部蒸发，事后只剩「主机掉线了」这个现象。
+# 旧系统现场排查尤其依赖这个文件，没有它就只能靠猜。
+$logFile    = Join-Path $InstallDir 'logs\agent.log'
+$agentArgs  = $agentArgs + ' -log "' + $logFile + '"'
+
+# 🔴 旧系统（Win7 / 2008 R2 / 2012 R2 / Win8.1）必须锁死「不自动升级」。
+# 采集端默认 updateMode=auto，会去平台拉最新版 —— 而平台上最新的是**正式版**
+# （Go 1.21+ 构建，最低要求 Windows 10 / Server 2016）。这些系统都不满足，一旦被换上
+# 正式版就会起不来（runtime 初始化阶段崩），表现为「装好后跑几天突然掉线、不再上报」。
+# 离线兼容包一直带这两个开关，在线安装命令之前漏了，导致旧系统机器迟早被自动升级打死。
+if ($Legacy) {
+  $agentArgs = $agentArgs + ' -update off -remote-config off'
+}
+
+# 优先走 ScheduledTasks 模块（Windows 8 / Server 2012 起才有）。两个坑，改之前先看：#   ① Win8.1 / Server 2012 R2（6.3）上，SYSTEM 主体**不带** -LogonType 时注册会直接报
 #      「参数错误 0x80070057」—— 下载、拉配置全都成功，只卡这最后一步。必须显式写
 #      -LogonType ServiceAccount，缺了它这个主体在旧系统上被判定为非法。
 #   ② Win7 / Server 2008 R2 只有 PowerShell 2.0，连 New-ScheduledTaskAction 都没有，
@@ -770,8 +791,14 @@ if (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue) {
     $action    = New-ScheduledTaskAction -Execute $Exe -Argument $agentArgs -WorkingDirectory $InstallDir
     $trigger   = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    # ExecutionTimeLimit 置 0 表示不限时：计划任务默认执行满 72 小时会被强杀，常驻进程必须放开
-    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
+    # ExecutionTimeLimit 置 0 表示不限时：计划任务默认执行满 72 小时会被强杀，常驻进程必须放开。
+    # StartWhenAvailable 必须显式打开：它默认是 false，机器重启时若网络还没就绪、采集端
+    # 启动即失败，任务就再也不会被拉起 —— 现场表现是「重启后采集端永远离线」。
+    # 旧系统那条 XML 路径本来就带这个开关，模块路径漏了，于是只有 Server 2012 R2
+    # （有 ScheduledTasks 模块、走了模块路径）整批掉线，2008 R2（走 XML）一台没掉。
+    # RestartCount 提到 999：Windows 允许的最大值，进程崩了能一直重启，不会因为
+    # 三次重试用完就永久离线。
+    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'GridPerch 采集端' -Force | Out-Null
     $registered = $true
   } catch {
@@ -780,13 +807,77 @@ if (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue) {
 }
 
 if (-not $registered) {
-  # schtasks 从 Windows XP 起就有；/SC ONSTART + /RU SYSTEM + /RL HIGHEST 等价于上面的 cmdlet 组合
-  $tr = '"' + $Exe + '" ' + $agentArgs
-  & schtasks.exe /Create /TN $taskName /TR $tr /SC ONSTART /RU SYSTEM /RL HIGHEST /F | Out-Null
+  # 🔴 旧系统必须走 Task XML，不能用 schtasks /Create /TR。三个原因：
+  #   ① /TR 的值是「exe 路径 + 一串参数」，既有空格又需要内部引号：PowerShell 先
+  #      转义一层、schtasks 再解析一层，结果 /TR 只吃到第一个引号为止，后面的
+  #      -server 全被当成 schtasks 自己的开关，报「无效参数/选项 - '-server'」。
+  #   ② 就算注册成功，schtasks 创建的任务默认 ExecutionTimeLimit = PT72H ——
+  #      常驻进程跑满 72 小时会被任务计划程序**直接强杀**。现场表现就是
+  #      「装好后两三天采集端自己停了，机器没重启也没人动」。XML 里显式写
+  #      PT0S 才是不限时。
+  #   ③ /TR 方式补不了失败重启；XML 里 RestartOnFailure 让进程崩了能自己起来。
+  $xmlPath = Join-Path $env:TEMP 'gridperch-agent-task.xml'
+  $xmlExe  = [System.Security.SecurityElement]::Escape($Exe)
+  $xmlArgs = [System.Security.SecurityElement]::Escape($agentArgs)
+  $xmlDir  = [System.Security.SecurityElement]::Escape($InstallDir)
+
+  # ⚠️ here-string 的结束符 "@ 必须顶在第 1 列，前面不能有空格，否则语法报错
+  $taskXml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>GridPerch 采集端</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <BootTrigger>
+      <Enabled>true</Enabled>
+    </BootTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>999</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>$xmlExe</Command>
+      <Arguments>$xmlArgs</Arguments>
+      <WorkingDirectory>$xmlDir</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+"@
+  $taskXml | Out-File -FilePath $xmlPath -Encoding Unicode
+  & schtasks.exe /Create /TN $taskName /XML $xmlPath /F | Out-Null
+  Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
   if ($LASTEXITCODE -ne 0) {
-    throw "注册开机自启失败（schtasks 退出码 $LASTEXITCODE）。可手工执行：schtasks /Create /TN $taskName /TR ""$tr"" /SC ONSTART /RU SYSTEM /RL HIGHEST /F"
+    throw "注册开机自启失败（schtasks 退出码 $LASTEXITCODE）。可手工执行：schtasks /Create /TN $taskName /XML <上面这个 xml> /F"
   }
-  Write-Host '    已通过 schtasks.exe 注册'
+  Write-Host '    已通过 schtasks.exe + Task XML 注册（不限时运行、失败自动重启）'
 }
 
 # 立刻拉起来：Start-ScheduledTask 同样是模块命令，旧系统要用 schtasks /Run

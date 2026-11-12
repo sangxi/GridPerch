@@ -24,6 +24,10 @@ import (
 const (
 	statusOK   = "1"
 	statusFail = "2"
+	// statusErr 表示「检查器自己出了问题」：配置缺失、探测器异常、检查过程 panic。
+	// 它和 statusFail 必须分开：statusFail 是目标确实不达标（该告警），
+	// statusErr 是这个监控项自己坏了（该修配置或探测器，告警级别也要更高）。
+	statusErr = "3"
 )
 
 // targetOf 解析监控项配置为通用 kv。
@@ -78,7 +82,7 @@ func (c *Checker) Run(t model.TaskAssignment) model.MonitorResult {
 
 	defer func() {
 		if r := recover(); r != nil {
-			res.Status = statusFail
+			res.Status = statusErr
 			res.Msg = fmt.Sprintf("检查异常: %v", r)
 		}
 	}()
@@ -104,7 +108,7 @@ func (c *Checker) Run(t model.TaskAssignment) model.MonitorResult {
 		return c.finish(t, c.checkScript(t, res, timeout))
 	default:
 		res.Msg = "暂不支持的监控类型: " + t.Type
-		res.Status = statusFail
+		res.Status = statusErr
 		return res
 	}
 }
@@ -140,7 +144,7 @@ func (c *Checker) checkProcess(t model.TaskAssignment, res model.MonitorResult) 
 		keyword = cfg["keyword"]
 	}
 	if keyword == "" {
-		res.Status = statusFail
+		res.Status = statusErr
 		res.Msg = "监控项缺少进程关键字配置"
 		return res
 	}
@@ -150,17 +154,27 @@ func (c *Checker) checkProcess(t model.TaskAssignment, res model.MonitorResult) 
 		res.Msg = "读取进程列表失败: " + err.Error()
 		return res
 	}
+	// match 可选：命令行关键字。多个同名进程（如多个 Tomcat 的 java）光靠
+	// name 分不出来，用 -Dcatalina.base=/opt/tomcatA 这类命令行片段进一步区分。
+	match := strings.TrimSpace(cfg["match"])
 	matched := []string{}
 	for _, p := range procs {
 		name, err := p.Name()
 		if err != nil || name == "" {
 			continue
 		}
-		if strings.Contains(strings.ToLower(name), strings.ToLower(keyword)) {
-			matched = append(matched, name)
-			if len(matched) >= 5 {
-				break
+		if !strings.Contains(strings.ToLower(name), strings.ToLower(keyword)) {
+			continue
+		}
+		if match != "" {
+			cmd, _ := p.Cmdline()
+			if !strings.Contains(strings.ToLower(cmd), strings.ToLower(match)) {
+				continue
 			}
+		}
+		matched = append(matched, name)
+		if len(matched) >= 5 {
+			break
 		}
 	}
 	if len(matched) == 0 {
@@ -204,7 +218,7 @@ func (c *Checker) checkHTTP(t model.TaskAssignment, res model.MonitorResult, tim
 	cfg := targetOf(t.Target)
 	url := cfg["url"]
 	if url == "" {
-		res.Status = statusFail
+		res.Status = statusErr
 		res.Msg = "监控项缺少 URL 配置"
 		return res
 	}
@@ -261,7 +275,7 @@ func (c *Checker) checkPing(t model.TaskAssignment, res model.MonitorResult, tim
 	cfg := targetOf(t.Target)
 	host := cfg["host"]
 	if host == "" {
-		res.Status = statusFail
+		res.Status = statusErr
 		res.Msg = "监控项缺少主机地址配置"
 		return res
 	}
@@ -529,7 +543,7 @@ func (c *Checker) checkLog(t model.TaskAssignment, res model.MonitorResult) mode
 	path := cfg["path"]
 	keyword := cfg["keyword"]
 	if path == "" || keyword == "" {
-		res.Status = statusFail
+		res.Status = statusErr
 		res.Msg = "监控项缺少日志路径或关键字配置"
 		return res
 	}
@@ -585,7 +599,7 @@ func (c *Checker) checkLog(t model.TaskAssignment, res model.MonitorResult) mode
 	if cfg["regex"] == "true" {
 		re, err := regexp.Compile(keyword)
 		if err != nil {
-			res.Status = statusFail
+			res.Status = statusErr
 			res.Msg = "关键字正则非法: " + err.Error()
 			return res
 		}

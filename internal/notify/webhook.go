@@ -118,8 +118,12 @@ func alertMarkdown(prefix string, alerts []Alert) (title, text string) {
 		shown = shown[:maxWebhookAlerts]
 	}
 	for _, a := range shown {
+		host := oneLine(a.Hostname)
+		if ip := oneLine(a.IP); ip != "" {
+			host = host + "（" + ip + "）"
+		}
 		sb.WriteString(fmt.Sprintf("> **%s** ｜ %s ｜ %s\n>\n> %s\n>\n> 时间：%s\n\n",
-			oneLine(a.Hostname), levelCN(a.Level), typeCN(a.Type), oneLine(a.Content), oneLine(a.CreateTime)))
+			host, levelCN(a.Level), typeCN(a.Type), oneLine(a.Content), oneLine(a.CreateTime)))
 	}
 	if rest := len(alerts) - len(shown); rest > 0 {
 		sb.WriteString(fmt.Sprintf("> 其余 %d 条请在控制台「告警中心」查看。\n", rest))
@@ -132,7 +136,11 @@ func plainText(prefix string, alerts []Alert) string {
 	title, _ := alertMarkdown(prefix, alerts)
 	lines := []string{title}
 	for _, a := range alerts[:minInt(len(alerts), maxWebhookAlerts)] {
-		lines = append(lines, fmt.Sprintf("宿主：%s 级别：%s 类型：%s", oneLine(a.Hostname), levelCN(a.Level), typeCN(a.Type)))
+		host := oneLine(a.Hostname)
+		if ip := oneLine(a.IP); ip != "" {
+			host = host + "（" + ip + "）"
+		}
+		lines = append(lines, fmt.Sprintf("宿主：%s 级别：%s 类型：%s", host, levelCN(a.Level), typeCN(a.Type)))
 		lines = append(lines, fmt.Sprintf("内容：%s", oneLine(a.Content)))
 		lines = append(lines, fmt.Sprintf("时间：%s", oneLine(a.CreateTime)))
 		lines = append(lines, "")
@@ -152,6 +160,32 @@ func SendWebhook(cfg WebhookConfig, alerts []Alert) error {
 	if err != nil {
 		return err
 	}
+	return postWebhook(cfg, target, payload)
+}
+
+// SendWebhookText 推送一条自定义标题与正文的消息。
+//
+// 巡检报告、日报这类「非告警」内容不复用告警版式：精简报告只是一行统计，
+// 塞进「检测到 N 条告警」的模板里会很怪，所以单独组装消息体。
+func SendWebhookText(cfg WebhookConfig, title, markdown, text string) error {
+	if !cfg.Usable() {
+		return nil
+	}
+	if strings.TrimSpace(markdown) == "" {
+		markdown = text
+	}
+	if strings.TrimSpace(text) == "" {
+		text = strings.TrimSpace(title) + "\n" + markdown
+	}
+	target, payload, err := buildWebhookTextRequest(cfg, title, markdown, text)
+	if err != nil {
+		return err
+	}
+	return postWebhook(cfg, target, payload)
+}
+
+// postWebhook 统一发送并解析机器人返回体。
+func postWebhook(cfg WebhookConfig, target string, payload map[string]any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("序列化消息失败: %w", err)
@@ -259,6 +293,79 @@ func buildWebhookRequest(cfg WebhookConfig, alerts []Alert) (string, map[string]
 			"count":   len(alerts),
 			"alerts":  items,
 			"source":  "GridPerch",
+			"time":    now.Format(timeLayout),
+		}, nil
+	}
+	return "", nil, fmt.Errorf("不支持的机器人类型：%s", cfg.Kind)
+}
+
+// buildWebhookTextRequest 按机器人类型组装自定义消息体（标题 + 正文）。
+func buildWebhookTextRequest(cfg WebhookConfig, title, md, text string) (string, map[string]any, error) {
+	target := cfg.URL
+	now := time.Now()
+	if strings.TrimSpace(title) == "" {
+		title = "GridPerch 巡检报告"
+	}
+
+	switch cfg.Kind {
+	case KindDingTalk:
+		if cfg.Secret != "" {
+			ts := strconv.FormatInt(now.UnixMilli(), 10)
+			sign := signDingTalk(ts, cfg.Secret)
+			sep := "?"
+			if strings.Contains(target, "?") {
+				sep = "&"
+			}
+			target = fmt.Sprintf("%s%stimestamp=%s&sign=%s", target, sep, ts, url.QueryEscape(sign))
+		}
+		payload := map[string]any{
+			"msgtype":  "markdown",
+			"markdown": map[string]any{"title": title, "text": md},
+		}
+		if at := atPayload(cfg); len(at) > 0 || cfg.AtAll {
+			body := map[string]any{}
+			if len(at) > 0 {
+				body["atMobiles"] = at
+			}
+			if cfg.AtAll {
+				body["isAtAll"] = true
+			}
+			payload["at"] = body
+		}
+		return target, payload, nil
+
+	case KindWeCom:
+		content := md
+		if at := wecomAt(cfg); at != "" {
+			content += "\n" + at
+		}
+		return target, map[string]any{
+			"msgtype":  "markdown",
+			"markdown": map[string]any{"content": content},
+		}, nil
+
+	case KindFeishu:
+		payload := map[string]any{
+			"msg_type": "text",
+			"content":  map[string]any{"text": text},
+		}
+		if cfg.Secret != "" {
+			ts := strconv.FormatInt(now.Unix(), 10)
+			payload["timestamp"] = ts
+			payload["sign"] = signFeishu(ts, cfg.Secret)
+		}
+		return target, payload, nil
+
+	case KindSlack:
+		return target, map[string]any{"text": text}, nil
+
+	case KindCustom:
+		return target, map[string]any{
+			"title":   title,
+			"content": md,
+			"text":    text,
+			"source":  "GridPerch",
+			"kind":    "report",
 			"time":    now.Format(timeLayout),
 		}, nil
 	}

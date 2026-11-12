@@ -281,7 +281,7 @@ func (s *Store) SaveMonitorResults(hostname string, results []model.MonitorResul
 		prev, existed := previous[r.TaskID]
 		if existed && prev == r.Status {
 			// 状态未变化：持续异常时按冷却期补记流水，避免频繁写入
-			if r.Status == "2" && !throttled(s, r.TaskID, hostname) {
+			if (r.Status == "2" || r.Status == "3") && !throttled(s, r.TaskID, hostname) {
 				if _, err = eventStmt.Exec(newID(), r.TaskID, hostname, taskType, taskName, r.Status, prev, r.Value, r.Msg, r.CheckTime); err != nil {
 					return err
 				}
@@ -292,7 +292,7 @@ func (s *Store) SaveMonitorResults(hostname string, results []model.MonitorResul
 			return err
 		}
 		// 由异常转为正常：自动恢复关联告警
-		if existed && prev == "2" && r.Status == "1" {
+		if existed && (prev == "2" || prev == "3") && r.Status == "1" {
 			if _, err = tx.Exec(`UPDATE alert SET state='0', update_time=? WHERE monitor_task_id=? AND hostname=? AND state='1'`,
 				now, r.TaskID, hostname); err != nil {
 				return err
@@ -300,7 +300,10 @@ func (s *Store) SaveMonitorResults(hostname string, results []model.MonitorResul
 			continue
 		}
 		// 新产生的异常：写入告警并做冷却去重
-		if r.Status == "2" {
+		if r.Status == "2" || r.Status == "3" {
+			// 监控项失败(2，目标不可达/进程没了)与检查出错(3)一律按「严重」处理：
+			// 这类是可用性故障，优先级高于资源阈值告警，不该按 warning 混在其中。
+			level := "critical"
 			var existID string
 			err := s.rdb.QueryRow(`SELECT id FROM alert WHERE hostname=? AND monitor_task_id=? AND state='1'`, hostname, r.TaskID).Scan(&existID)
 			if err != nil {
@@ -308,8 +311,11 @@ func (s *Store) SaveMonitorResults(hostname string, results []model.MonitorResul
 				if t, ok := getTask(r.TaskID); ok && t.AlertContent != "" {
 					content = t.AlertContent + " " + content
 				}
+				if r.Status == "3" {
+					content = "【检查出错】" + content
+				}
 				if _, err = tx.Exec(`INSERT INTO alert(id, hostname, type, level, value, content, state, create_time, update_time, monitor_task_id)
-					VALUES(?,?,?,'warning',?,?,'1',?,?,?)`, newID(), hostname, taskType, r.Value, content, now, now, r.TaskID); err != nil {
+					VALUES(?,?,?,?,?,?,'1',?,?,?)`, newID(), hostname, taskType, level, r.Value, content, now, now, r.TaskID); err != nil {
 					return err
 				}
 			}
@@ -381,7 +387,8 @@ func (s *Store) SummaryOfMonitor() (*MonitorSummary, error) {
 	if err := s.rdb.QueryRow(`SELECT COUNT(1) FROM monitor_task WHERE enabled=1`).Scan(&sum.TaskTotal); err != nil {
 		return nil, err
 	}
-	if err := s.rdb.QueryRow(`SELECT COUNT(1) FROM monitor_state WHERE status='2'`).Scan(&sum.BadItems); err != nil {
+	// status='3'（检查出错）同样算异常监控点：监控项自己坏了也是要处理的
+	if err := s.rdb.QueryRow(`SELECT COUNT(1) FROM monitor_state WHERE status='2' OR status='3'`).Scan(&sum.BadItems); err != nil {
 		return nil, err
 	}
 	if err := s.rdb.QueryRow(`SELECT COUNT(1) FROM monitor_state`).Scan(&sum.Items); err != nil {

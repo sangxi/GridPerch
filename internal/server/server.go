@@ -124,9 +124,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/host-catalogs/{id}", s.auth(s.admin(s.audit(http.HandlerFunc(s.hostCatalogItem)))))
 	mux.Handle("DELETE /api/host-catalogs/{id}", s.auth(s.admin(s.audit(http.HandlerFunc(s.hostCatalogItem)))))
 	mux.Handle("GET /api/host-catalogs/{id}/members", s.auth(http.HandlerFunc(s.hostCatalogMembers)))
+	// 按操作系统自动分组：运维把几十台机器手工归类很费时，这里一次点击完成
+	mux.Handle("POST /api/host-catalogs/auto-assign", s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.hostCatalogAutoAssign)))))
 	mux.Handle("POST /api/hosts/{host}/catalog", s.auth(s.adminOrOperator(http.HandlerFunc(s.hostCatalogAssign))))
 	// 添加主机：下发采集端接入参数（通信密钥、服务端地址）
 	mux.Handle("GET /api/agent/install", s.auth(http.HandlerFunc(s.handleAgentInstall)))
+	// 批量下发采集端安装（服务端 SSH 上目标机执行安装脚本），仅管理员。
+	mux.Handle("POST /api/deploy/batch", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleBatchDeploy)))))
 	mux.Handle("GET /api/metrics", s.auth(http.HandlerFunc(s.handleMetrics)))
 	mux.Handle("GET /api/metrics/overview", s.auth(http.HandlerFunc(s.handleMetricOverview)))
 	mux.Handle("GET /api/alerts", s.auth(http.HandlerFunc(s.handleAlerts)))
@@ -135,6 +139,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/alerts/{id}/ack", s.auth(s.audit(http.HandlerFunc(s.handleAlertAck))))
 	mux.Handle("POST /api/alerts/{id}/unack", s.auth(s.audit(http.HandlerFunc(s.handleAlertUnack))))
 	mux.Handle("POST /api/alerts/{id}/note", s.auth(s.audit(http.HandlerFunc(s.handleAlertNote))))
+	// 删除告警是破坏性操作：事故追溯要靠这些记录，只给管理员。
+	mux.Handle("DELETE /api/alerts/{id}", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleAlertDelete)))))
+	// 批量删除：按 ID 列表或整状态清空，同样只给管理员。
+	mux.Handle("POST /api/alerts/bulk-delete", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleBulkDeleteAlerts)))))
 	mux.Handle("GET /api/alert-silences", s.auth(http.HandlerFunc(s.handleSilences)))
 	mux.Handle("POST /api/alert-silences", s.auth(s.audit(http.HandlerFunc(s.handleAddSilence))))
 	mux.Handle("DELETE /api/alert-silences/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDelSilence))))
@@ -175,12 +183,15 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("POST /api/device-accounts/{id}/test", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountTest))))
 
-	// 巡检报告
+	// 巡检报告（手动生成的存档报告）
 	mux.Handle("GET /api/inspections", s.auth(http.HandlerFunc(s.handleInspections)))
 	mux.Handle("POST /api/inspections", s.auth(s.audit(http.HandlerFunc(s.handleInspections))))
 	mux.Handle("GET /api/inspections/{id}", s.auth(http.HandlerFunc(s.handleInspectionItem)))
 	mux.Handle("GET /api/inspections/{id}/export", s.auth(http.HandlerFunc(s.handleInspectionExport)))
 	mux.Handle("DELETE /api/inspections/{id}", s.auth(s.audit(http.HandlerFunc(s.handleInspectionItem))))
+	// 定时巡检报告推送：预览（不发）与立即发送（验证通道）
+	mux.Handle("GET /api/reports/preview", s.auth(s.adminOrOperator(http.HandlerFunc(s.handleReportPreview))))
+	mux.Handle("POST /api/reports/test", s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleReportTest)))))
 
 	// 数据导出
 	mux.Handle("GET /api/export/{kind}", s.auth(http.HandlerFunc(s.handleExport)))
@@ -232,6 +243,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/settings", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleSettings)))))
 	mux.Handle("POST /api/test-mail", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleTestMail)))))
 
+	// 服务端运行日志：排障时直接在控制台看，不必 SSH 上机器翻 journalctl。
+	// 日志含来源 IP 与鉴权失败明细，因此不给只读账号开放。
+	mux.Handle("GET /api/logs", s.auth(s.adminOrOperator(http.HandlerFunc(s.handleServerLogs))))
 	// 审计日志与邮件发送记录
 	mux.Handle("GET /api/audit", s.auth(s.admin(http.HandlerFunc(s.handleAudit))))
 	mux.Handle("DELETE /api/audit", s.auth(s.admin(s.audit(http.HandlerFunc(s.handleAudit)))))
@@ -280,16 +294,22 @@ func serveFile(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) 
 		return
 	}
 	w.Header().Set("Content-Type", detectType(name))
-	// 页面入口同样禁止强缓存，保证升级后立刻拿到引用最新资源的新版 HTML。
-	w.Header().Set("Cache-Control", "no-cache")
+	// 页面入口同样禁止缓存（no-store），保证升级后立刻拿到引用最新资源的新版 HTML。
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	w.Write(data)
 }
 
-// noCache 给内嵌静态资源加上 no-cache：允许缓存但每次必须回源校验，
-// 避免升级二进制后浏览器/反向代理仍在使用旧的前端文件。
+// noCache 给内嵌静态资源加上 no-store：完全禁止缓存，每次都必须取回最新文件。
+//
+// 用 no-store 而不是 no-cache 是踩过的坑：no-cache 只要求「回源校验」，
+// 但在没有 ETag/Last-Modified 的情况下，部分浏览器的同会话导航仍会直接用内存里的
+// 旧 app.js，表现就是「二进制升了、界面还是旧的、按钮没有」，还得手动 Ctrl+F5。
+// no-store 对这类管理控制台的体积（app.js 两百多 KB）代价可忽略，换来升级后普通刷新即生效。
 func noCache(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -445,19 +465,27 @@ func (s *Server) maintenance() {
 		hubEvery = 5 * time.Minute
 	}
 	hubber := time.NewTicker(hubEvery)
+	// 巡检报告按时间桶判断是否到点，30 秒轮询足够准，也不会给库造成压力
+	reporter := time.NewTicker(30 * time.Second)
 	defer refresh.Stop()
 	defer purge.Stop()
 	defer checkpoint.Stop()
 	defer mailer.Stop()
 	defer hooker.Stop()
 	defer hubber.Stop()
+	defer reporter.Stop()
 	for {
 		select {
 		case <-s.stopCh:
 			return
 		case <-refresh.C:
-			if err := s.store.RefreshHostStates(); err != nil {
-				log.Printf("刷新主机状态失败: %v", err)
+			// 掉线判定、状态更新、告警写入一次做完（DetectOfflineAlerts 内部会更新
+			// host.state）。不能先调 RefreshHostStates：状态一旦先改成离线，这里就
+			// 分不出「本轮刚掉线」，告警会永远发不出来。
+			if n, err := s.store.DetectOfflineAlerts(); err != nil {
+				log.Printf("检测主机掉线失败: %v", err)
+			} else if n > 0 {
+				log.Printf("%d 台主机掉线，已生成告警", n)
 			}
 			if n := s.store.TimeoutCommands(2 * time.Minute); n > 0 {
 				log.Printf("标记 %d 条下发指令为超时", n)
@@ -468,6 +496,9 @@ func (s *Server) maintenance() {
 			if err := s.store.Checkpoint(); err != nil {
 				log.Printf("WAL 检查点失败: %v", err)
 			}
+			// 开了「新主机自动按系统归组」后，新接入的机器最迟 5 分钟内进目录；
+			// 已有归属的主机不会被改动。
+			s.autoAssignCatalogByOS()
 		case <-purge.C:
 			if err := s.store.Purge(); err != nil {
 				log.Printf("清理历史数据失败: %v", err)
@@ -478,6 +509,8 @@ func (s *Server) maintenance() {
 			s.pushAlertMail()
 		case <-hooker.C:
 			s.pushAlertWebhook()
+		case <-reporter.C:
+			s.pushInspectionReports()
 		case <-hubber.C:
 			s.hubSync()
 		}
@@ -553,6 +586,19 @@ func (s *Server) pushAlertMail() {
 			content := fmt.Sprintf("监控项 %s 已恢复正常（%s）", e.Name, e.Msg)
 			list = append(list, notify.Alert{Hostname: e.Hostname, Type: e.Type, Level: "info",
 				Content: content, CreateTime: e.CheckTime})
+		}
+		// 主机恢复通知：掉线告警恢复时只是把状态置 0（记录留着可追溯），
+		// 恢复事件从这里取，不另写一条告警 —— 否则告警列表里全是「主机已恢复」噪声。
+		hosts, herr := s.store.RecentHostRecoveriesSince(settings["mailLastSent"])
+		if herr != nil {
+			log.Printf("查询主机恢复事件失败: %v", herr)
+		}
+		for _, h := range hosts {
+			if h.RecoveredAt > maxTime {
+				maxTime = h.RecoveredAt
+			}
+			list = append(list, notify.Alert{Hostname: h.Hostname, Type: "offline", Level: "info",
+				Content: "主机已恢复上报，掉线告警自动关闭", CreateTime: h.RecoveredAt})
 		}
 	}
 	if len(list) == 0 {
@@ -732,6 +778,13 @@ func (s *Server) handleMinTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"result": fmt.Sprintf(
 			"error：已接入主机数达到授权上限 %d 台，请在控制台「授权管理」中导入更高档位的授权码", st.MaxHosts)})
 		return
+	}
+	// 掉线恢复检测必须在落库之前做：批量落盘里 host 的 state 是直接置成 '1' 的，
+	// 等落完再判断就看不出之前是不是离线，掉线告警会一直挂着不关闭。
+	if recovered, err := s.store.MarkHostOnline(report.Hostname); err != nil {
+		log.Printf("处理主机 %s 恢复上线失败: %v", report.Hostname, err)
+	} else if recovered {
+		log.Printf("主机 %s 已恢复上报", report.Hostname)
 	}
 	if err := s.store.SaveReport(&report); err != nil {
 		log.Printf("保存上报数据失败: %v", err)
@@ -964,6 +1017,48 @@ func (s *Server) handleAlertUnack(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+// handleAlertDelete 删除一条告警记录。
+//
+// 只删这一行，同一故障的其他行不动 —— 告警是按冷却窗口逐次入库的，
+// 删一条不等于故障被处理掉了。
+func (s *Server) handleAlertDelete(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.DelAlert(r.PathValue("id")); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+// handleBulkDeleteAlerts 批量删除告警：要么按 ID 列表（前端勾选的多条），
+// 要么按状态整批（「清空未恢复」传 state='1'）。破坏性操作，只给管理员。
+// 返回实际删除条数，便于前端把本地副本同步掉。
+func (s *Server) handleBulkDeleteAlerts(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs   []string `json:"ids"`
+		State string   `json:"state"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "请求格式错误"})
+		return
+	}
+	if len(body.IDs) == 0 && body.State == "" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "请传入 ids 或 state"})
+		return
+	}
+	var deleted int
+	var err error
+	if len(body.IDs) > 0 {
+		deleted, err = s.store.DelAlerts(body.IDs)
+	} else {
+		deleted, err = s.store.DelAlertsByState(body.State)
+	}
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "deleted": deleted})
+}
+
 func (s *Server) handleAlertNote(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Note string `json:"note"`
@@ -1059,7 +1154,10 @@ func normalizeValue(rv reflect.Value, depth int) any {
 		}
 		out := reflect.MakeSlice(rv.Type(), rv.Len(), rv.Len())
 		for i := 0; i < rv.Len(); i++ {
-			if nv := normalizeValue(rv.Index(i), depth+1); nv != nil {
+			// 指针切片被归一化后会解引用成值，类型与元素不符；此时保留原值，
+			// 交给编码器处理。与 map 分支一样先做可赋值性判断，避免 reflect.Set panic。
+			if nv := normalizeValue(rv.Index(i), depth+1); nv != nil &&
+				reflect.TypeOf(nv).AssignableTo(rv.Type().Elem()) {
 				out.Index(i).Set(reflect.ValueOf(nv))
 			} else {
 				out.Index(i).Set(rv.Index(i))

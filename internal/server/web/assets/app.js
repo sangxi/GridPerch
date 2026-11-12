@@ -10,15 +10,15 @@ const SHOW_HUB_URL = false;
 
 /* ---------------- 导航结构（左侧模块栏） ---------------- */
 const NAV_GROUPS = [
-  { label: '监控', items: [['dashboard', '仪表盘'], ['hosts', '主机'], ['catalogs', '主机目录'], ['tasks', '监控项'], ['alerts', '告警']] },
+  { label: '监控', items: [['dashboard', '仪表盘'], ['hosts', '主机'], ['catalogs', '主机目录'], ['tasks', '监控项'], ['alerts', '告警'], ['deploy', '批量部署']] },
   { label: '运维', items: [['tools', '工具箱'], ['commands', '指令下发'], ['assets', '资产台账'], ['devices', '设备账号'], ['inspections', '巡检报告']] },
-  { label: '系统', items: [['releases', '在线升级'], ['license', '授权购买'], ['members', '成员权限'], ['tokens', '开放接口'], ['audit', '审计日志'], ['settings', '系统设置']] },
+  { label: '系统', items: [['releases', '在线升级'], ['license', '授权购买'], ['members', '成员权限'], ['tokens', '开放接口'], ['audit', '审计日志'], ['logs', '运行日志'], ['settings', '系统设置']] },
 ];
 const ROUTE_TITLES = {
-  dashboard: '仪表盘', hosts: '主机监控', catalogs: '主机目录', onboard: '添加主机', tasks: '监控项管理', alerts: '告警中心',
+  dashboard: '仪表盘', hosts: '主机监控', catalogs: '主机目录', onboard: '添加主机', deploy: '采集端批量部署', tasks: '监控项管理', alerts: '告警中心',
   tools: '工具箱', commands: '指令下发', assets: '资产台账', devices: '设备账号', inspections: '巡检报告',
   releases: '采集端版本发布', license: '授权管理',
-  members: '成员账号与权限', tokens: '数据开放接口', audit: '审计日志', settings: '系统设置',
+  members: '成员账号与权限', tokens: '数据开放接口', audit: '审计日志', logs: '服务端运行日志', settings: '系统设置',
 };
 
 /* ---------------- 全局状态 ---------------- */
@@ -191,10 +191,12 @@ function ringCard(title, segments, centerText, centerLabel, valueSize) {
 }
 
 // hbarRow 横向进度条，用于资源占用排行。
-function hbarRow(name, display, value, max, color) {
+function hbarRow(name, display, value, max, color, dotCls) {
   const pct = max > 0 ? Math.min(100, (Math.max(0, value) / max) * 100) : 0;
+  // dotCls 有值时才画系统色点，其他调用点（不带系统信息）保持原样
+  const dot = dotCls ? `<i class="os-dot ${dotCls}" style="margin-right:6px"></i>` : '';
   return `<div class="hbar">
-    <div class="hbar-head"><span class="hbar-name" title="${esc(name)}">${esc(name)}</span><span class="hbar-val">${esc(display)}</span></div>
+    <div class="hbar-head"><span class="hbar-name" title="${esc(name)}">${dot}${esc(name)}</span><span class="hbar-val">${esc(display)}</span></div>
     <div class="hbar-track"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>
   </div>`;
 }
@@ -372,10 +374,10 @@ function router() {
 
 async function render() {
   const renderers = {
-    dashboard: renderDashboard, hosts: renderHosts, catalogs: renderCatalogs, onboard: renderOnboard, tasks: renderTasks, alerts: renderAlerts,
+    dashboard: renderDashboard, hosts: renderHosts, catalogs: renderCatalogs, onboard: renderOnboard, deploy: renderDeploy, tasks: renderTasks, alerts: renderAlerts,
     tools: renderTools, commands: renderCommands, assets: renderAssets, devices: renderDevices, inspections: renderInspections,
     releases: renderUpgrade, license: renderLicenseBuy,
-    members: renderMembers, tokens: renderTokens, audit: renderAudit, settings: renderSettings,
+    members: renderMembers, tokens: renderTokens, audit: renderAudit, logs: renderLogs, settings: renderSettings,
   };
   const fn = renderers[state.route] || renderDashboard;
   app().innerHTML = '<section class="panel"><div class="panel-body"><div class="empty">加载中…</div></div></section>';
@@ -412,10 +414,21 @@ function maybePlayAlert(count) {
 }
 
 /* ---------------- 通用表格渲染 ---------------- */
-function dataTable(headers, rows, emptyText) {
+// headers 里可以传字符串，也可以传 { label, key }。带 key 的列渲染成可点击排序的表头，
+// sortState 形如 { key, dir }，dir=1 升序、-1 降序。
+function dataTable(headers, rows, emptyText, sortState) {
   if (!rows.length) return `<div class="empty">${esc(emptyText || '暂无数据')}</div>`;
   let html = '<div class="table-scroll"><table class="data"><thead><tr>';
-  headers.forEach((h) => { html += `<th>${esc(h)}</th>`; });
+  headers.forEach((h) => {
+    if (typeof h === 'string' || !h.key) {
+      html += `<th>${esc(typeof h === 'string' ? h : h.label)}</th>`;
+      return;
+    }
+    const on = sortState && sortState.key === h.key;
+    const mark = on ? (sortState.dir > 0 ? '▲' : '▼') : '';
+    html += `<th class="sortable${on ? ' on' : ''}" data-sort="${esc(h.key)}" title="点击按此列排序">`
+      + `${esc(h.label)}<i class="sort-ar">${mark}</i></th>`;
+  });
   html += '</tr></thead><tbody>';
   rows.forEach((cells) => {
     html += '<tr>';
@@ -557,8 +570,8 @@ async function renderDashboard() {
   const memMax = Math.max(60, ...byMem.map((h) => h.memPer));
   const rankBody = (byCpu.length || byMem.length)
     ? `<div class="rank-cols">
-        <div><div class="rank-title">CPU 占用 Top 5</div>${byCpu.map((h) => hbarRow(h.hostname, fmtNum(h.cpuPer) + '%', h.cpuPer, cpuMax, h.cpuPer >= 85 ? '#dc2626' : h.cpuPer >= 70 ? '#f59e0b' : '#2563eb')).join('') || '<div class="empty">暂无在线主机</div>'}</div>
-        <div><div class="rank-title">内存占用 Top 5</div>${byMem.map((h) => hbarRow(h.hostname, fmtNum(h.memPer) + '%', h.memPer, memMax, h.memPer >= 85 ? '#dc2626' : h.memPer >= 70 ? '#f59e0b' : '#7c3aed')).join('') || '<div class="empty">暂无在线主机</div>'}</div>
+        <div><div class="rank-title">CPU 占用 Top 5</div>${byCpu.map((h) => hbarRow(h.hostname, fmtNum(h.cpuPer) + '%', h.cpuPer, cpuMax, h.cpuPer >= 85 ? '#dc2626' : h.cpuPer >= 70 ? '#f59e0b' : '#2563eb', osMeta(h).cls)).join('') || '<div class="empty">暂无在线主机</div>'}</div>
+        <div><div class="rank-title">内存占用 Top 5</div>${byMem.map((h) => hbarRow(h.hostname, fmtNum(h.memPer) + '%', h.memPer, memMax, h.memPer >= 85 ? '#dc2626' : h.memPer >= 70 ? '#f59e0b' : '#7c3aed', osMeta(h).cls)).join('') || '<div class="empty">暂无在线主机</div>'}</div>
       </div>`
     : '<div class="empty">暂无在线主机，无法生成资源排行</div>';
   html += `<div class="grid-2">
@@ -568,8 +581,8 @@ async function renderDashboard() {
 
   // ---- 主机概览 ----
   const hostRows = hosts.slice(0, 12).map((h) => [
-    `<a class="link" href="javascript:openHost('${esc(h.hostname)}')">${esc(h.hostname)}</a>`,
-    `<span class="mono">${esc(h.ip)}</span>`, esc(h.version),
+    `<a class="link" href="javascript:openHost('${esc(h.hostname)}')">${osDot(h)}${esc(h.hostname)}</a>`,
+    `<span class="mono">${esc(h.ip)}</span>`, osCell(h),
     h.state === '1' ? '<span class="tag ok"><i class="dot"></i>在线</span>' : '<span class="tag danger"><i class="dot"></i>离线</span>',
     barHtml(h.cpuPer), barHtml(h.memPer), esc(h.cpuCoreNum) + ' 核', esc(h.uptimeDesc || h.lastSeen),
   ]);
@@ -585,7 +598,10 @@ async function renderDashboard() {
   ]);
   const evRows = (events || []).map((e) => [
     esc(e.name), esc(typeCN(e.type)), esc(e.hostname),
-    e.status === '2' ? '<span class="tag danger"><i class="dot"></i>异常</span>' : '<span class="tag ok"><i class="dot"></i>正常</span>',
+    // 状态三态：1 正常 / 2 目标不达标 / 3 检查器自己出错（配置缺失、探测器异常）
+    e.status === '3' ? '<span class="tag warn"><i class="dot"></i>检查出错</span>'
+      : e.status === '2' ? '<span class="tag danger"><i class="dot"></i>异常</span>'
+        : '<span class="tag ok"><i class="dot"></i>正常</span>',
     `<span class="ellipsis mono" title="${esc(e.msg)}">${esc(e.msg)}</span>`, `<span class="mono">${esc(e.checkTime)}</span>`,
   ]);
   html += `<div class="grid-2">
@@ -594,7 +610,7 @@ async function renderDashboard() {
   </div>`;
 
   // ---- 异常监控点清单（有则展示） ----
-  const badStates = (states || []).filter((s) => s.status === '2').slice(0, 10);
+  const badStates = (states || []).filter((s) => s.status === '2' || s.status === '3').slice(0, 10);
   if (badStates.length) {
     const rows = badStates.map((s) => [
       esc(s.name), esc(typeCN(s.type)), esc(s.hostname),
@@ -655,6 +671,108 @@ function bindDashboardActions() {
 }
 
 /* ================= 主机监控 ================= */
+// 操作系统 → 配色与显示名。h.os 是后端从 version_detail 派生的（windows/linux/darwin），
+// 老采集端没有该字段时退化成「未知」。cls 同时用于系统标签和主机名前的色点。
+const OS_META = {
+  windows: { cls: 'win', label: 'Windows' },
+  linux: { cls: 'linux', label: 'Linux' },
+  darwin: { cls: 'mac', label: 'macOS' },
+  unix: { cls: 'unix', label: 'Unix' },
+};
+function osMeta(h) {
+  return OS_META[h && h.os] || { cls: 'net', label: (h && h.os) || '未知' };
+}
+// 系统明细：把「Microsoft Windows Server 2012 R2 6.3.9600」压成
+// 「Server 2012 R2 6.3.9600」—— 去掉厂商前缀，再去掉和标签重复的系统名，
+// 避免显示成「Windows  Windows Server ...」各说一遍。
+// 只抠版本号（6.3.9600）不行：那个数字看不出是 Server 2012 R2 还是 Win8.1，
+// 也看不出 Win10 还是 Win11。
+function osDetail(h) {
+  let s = String(h.version || '').replace(/^Microsoft\s+/i, '').trim();
+  const label = osMeta(h).label;
+  if (label) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    s = s.replace(new RegExp('^' + escaped + '\\s+', 'i'), '');
+  }
+  return s;
+}
+// 系统列：彩色标签 + 版本明细，完整原文放 title。主机列表与仪表盘概览共用，
+// 保证同一台机器在两个页面的颜色和写法一致。
+function osCell(h) {
+  const m = osMeta(h);
+  const detail = osDetail(h);
+  return `<span class="tag os os-${m.cls}">${esc(m.label)}</span>`
+    + (detail ? `<span class="os-ver" title="${esc(h.version)}">${esc(detail)}</span>` : '');
+}
+// 主机名前的系统色点，供只显示名字的位置（排行、概览）复用
+function osDot(h) {
+  return `<i class="os-dot ${osMeta(h).cls}"></i>`;
+}
+
+/* ---------------- 主机列表排序 ---------------- */
+// 排序偏好存本地：运维习惯了按某个列看，刷新页面不该被重置。
+const HOST_SORT_KEY = 'gp.hostSort';
+let hostSort = loadHostSort();
+
+function loadHostSort() {
+  try {
+    const raw = localStorage.getItem(HOST_SORT_KEY);
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && typeof o.key === 'string' && (o.dir === 1 || o.dir === -1)) return o;
+    }
+  } catch (e) { /* 本地存储不可用时用默认排序 */ }
+  return { key: 'hostname', dir: 1 };
+}
+
+function saveHostSort() {
+  try { localStorage.setItem(HOST_SORT_KEY, JSON.stringify(hostSort)); } catch (e) { /* 忽略 */ }
+}
+
+// IP 按数值比较，避免 192.168.40.9 排在 192.168.40.10 后面。
+// 非 IPv4（IPv6 / 空）统一给 -1，沉到最前面，不会打乱正常网段。
+function ipSortKey(ip) {
+  const parts = String(ip || '').split('.');
+  if (parts.length !== 4) return -1;
+  let n = 0;
+  for (const p of parts) {
+    const v = Number(p);
+    if (!Number.isInteger(v) || v < 0 || v > 255) return -1;
+    n = n * 256 + v;
+  }
+  return n;
+}
+
+function hostSortValue(h, key) {
+  switch (key) {
+    case 'ip': return ipSortKey(h.ip);
+    case 'catalogName': return h.catalogId ? (h.catalogName || '') : '未分组';
+    case 'version': return osMeta(h).label + ' ' + String(h.version || '');
+    case 'state': return h.state === '1' ? 0 : 1;
+    case 'cpuPer': return Number(h.cpuPer) || 0;
+    case 'memPer': return Number(h.memPer) || 0;
+    default: return String(h[key] || '');
+  }
+}
+
+// 排序不改原数组：hosts 还被筛选与行内操作复用。
+function sortHosts(list) {
+  const key = hostSort.key;
+  const dir = hostSort.dir;
+  const out = list.slice();
+  out.sort((a, b) => {
+    const va = hostSortValue(a, key);
+    const vb = hostSortValue(b, key);
+    let r;
+    if (typeof va === 'number' && typeof vb === 'number') r = va - vb;
+    else r = String(va).localeCompare(String(vb), 'zh-CN');
+    // 主键相同时按主机名兜底，保证每次渲染顺序稳定
+    if (r === 0 && key !== 'hostname') r = String(a.hostname).localeCompare(String(b.hostname), 'zh-CN');
+    return r * dir;
+  });
+  return out;
+}
+
 async function renderHosts() {
   const hosts = await getList('/api/hosts');
   window.__hosts = hosts;
@@ -674,27 +792,53 @@ async function renderHosts() {
       ${isAdmin ? `<button class="ico-btn" data-hren="${esc(h.hostname)}" title="重命名（历史数据一并迁移）">${icon('edit')}</button>` : ''}
       ${isAdmin ? `<button class="ico-btn danger" data-hdel="${esc(h.hostname)}" title="删除主机及其历史数据">${icon('trash')}</button>` : ''}
     </span>`;
-  // 双击主机名进入四方格详情，链接本身保留单击跳转抽屉的可发现性
-  const hostCell = (h) => `<a href="javascript:openHost('${esc(h.hostname)}')" data-dbl="${esc(h.hostname)}" title="双击查看四方格详情">${esc(h.hostname)}</a>`;
+  // 双击主机名进入四方格详情，链接本身保留单击跳转抽屉的可发现性。
+  // 名字前面那点颜色是系统标识，扫一眼就能把 Windows 和 Linux 分开。
+  const hostCell = (h) => `<span class="host-cell"><span class="os-dot ${osMeta(h).cls}"></span>`
+    + `<a href="javascript:openHost('${esc(h.hostname)}')" data-dbl="${esc(h.hostname)}" title="双击查看四方格详情">${esc(h.hostname)}</a></span>`;
   const catCell = (h) => h.catalogId
     ? `<span class="tag cat">${esc(h.catalogName)}</span>`
     : '<span class="muted">未分组</span>';
+  // 状态列顺带显示「多久没上报了」：在线时没必要占地方，离线时才需要知道是刚掉
+  // 还是已经躺了三天。完整时间戳放 title，省下的这一列正好让操作按钮全露出来。
+  const stateCell = (h) => (h.state === '1'
+    ? '<span class="tag ok">在线</span>'
+    : `<span class="tag danger">离线</span><span class="os-ver" title="${esc(h.lastSeen)}">${esc(h.uptimeDesc)}</span>`);
+  // 1280 宽下这张表放不下第 9 列：多出来的宽度会顶到右侧吸附的操作列上，
+  // 表现为「CPU 型号」只剩品牌首词、列头被遮成「CPU ！」。型号在双击进入的
+  // 四方格详情里能看到，列表这边让位给操作按钮。
   const hostRow = (h) => [
     hostCell(h),
     catCell(h),
-    esc(h.ip), esc(h.version),
-    h.state === '1' ? '<span class="tag ok">在线</span>' : '<span class="tag danger">离线</span>',
-    barHtml(h.cpuPer), barHtml(h.memPer), esc(h.cpuXh), esc(h.lastSeen),
+    esc(h.ip), osCell(h),
+    stateCell(h),
+    barHtml(h.cpuPer), barHtml(h.memPer),
     hostActions(h),
   ];
-  const HEAD = ['主机', '目录', 'IP', '操作系统', '状态', 'CPU', '内存', 'CPU 型号', '最后上报', '操作'];
+  // 表头带 key 的列可点击排序。CPU / 内存第一次点按降序（先看最吃资源的），
+  // 其余按升序（IP 从小到大、主机名按拼音），符合排查习惯。
+  const HEAD = [
+    { key: 'hostname', label: '主机' },
+    { key: 'catalogName', label: '目录' },
+    { key: 'ip', label: 'IP' },
+    { key: 'version', label: '操作系统' },
+    { key: 'state', label: '状态' },
+    { key: 'cpuPer', label: 'CPU' },
+    { key: 'memPer', label: '内存' },
+    { label: '操作' },
+  ];
   const catOptions = ['<option value="">全部目录</option>', '<option value="__none__">未分组</option>']
     .concat(catalogs.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}（${c.hostCount || 0}）</option>`)).join('');
-  const rows = hosts.map(hostRow);
+  // 系统筛选和上面的配色是一套东西：颜色把系统分开，下拉负责只看其中一类
+  const osOptions = ['<option value="">全部系统</option>']
+    .concat(Object.keys(OS_META).map((k) => `<option value="${k}">${OS_META[k].label}</option>`))
+    .concat('<option value="__other__">其他</option>').join('');
   let html = `<div class="toolbar">
     <input type="search" id="hostSearch" placeholder="搜索主机名 / IP / 系统 / 目录">
     <select id="hostCatalogFilter" class="sel">${catOptions}</select>
+    <select id="hostOsFilter" class="sel">${osOptions}</select>
     <span class="spacer"></span>
+    ${canCfg ? '<button class="btn ghost small" id="hostAutoCat" title="按 Windows / Linux / macOS / 其他 自动归组，只处理未分类主机">按系统分组</button>' : ''}
     ${state.menus.indexOf('catalogs') >= 0 ? '<a class="btn ghost small" href="#/catalogs">主机目录</a>' : ''}
     ${state.menus.indexOf('onboard') >= 0 ? '<a class="btn primary small" href="#/onboard">+ 添加主机</a>' : ''}
     <a class="btn ghost small" href="/api/export/hosts?format=csv">导出 CSV</a>
@@ -702,30 +846,67 @@ async function renderHosts() {
   </div>`;
   html += `<div class="hint-line">提示：<b>双击主机名</b>进入四方格详情（CPU / 内存 / 历史告警 / 网络速率）。`
     + (isAdmin ? '管理员可对主机行执行<b>重命名</b>（历史数据一并迁移）与<b>删除</b>。' : '') + '</div>';
-  html += panel('主机列表', dataTable(HEAD, rows, '尚未有主机接入'), '');
+  html += panel('主机列表', '<div class="host-table" id="hostTableBox"></div>', '');
   app().innerHTML = html;
 
-  const applyFilter = () => {
+  // 筛选 + 排序 + 重绘放在一处：搜索框、下拉、表头点击都走它，
+  // 避免三条路径各写一遍导致排序在筛选后丢失。
+  const paint = () => {
     const kw = ($('#hostSearch').value || '').toLowerCase();
     const cat = $('#hostCatalogFilter').value;
+    const os = $('#hostOsFilter').value;
     const filtered = hosts.filter((h) => {
       const hitKw = (h.hostname + h.ip + h.version + (h.catalogName || '')).toLowerCase().includes(kw);
       let hitCat = true;
       if (cat === '__none__') hitCat = !h.catalogId;
       else if (cat) hitCat = h.catalogId === cat;
-      return hitKw && hitCat;
+      let hitOs = true;
+      if (os === '__other__') hitOs = !OS_META[h.os];
+      else if (os) hitOs = h.os === os;
+      return hitKw && hitCat && hitOs;
     });
-    const el = document.querySelector('.panel');
-    if (!el) return;
-    el.innerHTML = '<div class="panel-head"><h3>主机列表</h3></div>'
-      + dataTable(HEAD, filtered.map(hostRow), '无匹配主机');
+    const box = $('#hostTableBox');
+    if (!box) return;
+    box.innerHTML = dataTable(HEAD, sortHosts(filtered).map(hostRow), '无匹配主机', hostSort);
+    const panelEl = box.closest('.panel');
+    const head = panelEl ? panelEl.querySelector('.panel-head h3') : null;
+    if (head) head.textContent = filtered.length === hosts.length
+      ? `主机列表（${hosts.length}）` : `主机列表（${filtered.length} / ${hosts.length}）`;
     bindHostActions();
     bindHostDblClick();
+    bindHostSort();
   };
-  $('#hostSearch').oninput = applyFilter;
-  $('#hostCatalogFilter').onchange = applyFilter;
-  bindHostActions();
-  bindHostDblClick();
+  const bindHostSort = () => {
+    document.querySelectorAll('#hostTableBox th[data-sort]').forEach((th) => {
+      th.onclick = () => {
+        const key = th.dataset.sort;
+        if (hostSort.key === key) {
+          hostSort = { key, dir: -hostSort.dir };
+        } else {
+          // 占用类指标默认先看高的，其余默认从小到大
+          hostSort = { key, dir: (key === 'cpuPer' || key === 'memPer') ? -1 : 1 };
+        }
+        saveHostSort();
+        paint();
+      };
+    });
+  };
+  $('#hostSearch').oninput = paint;
+  $('#hostCatalogFilter').onchange = paint;
+  $('#hostOsFilter').onchange = paint;
+  const autoBtn = $('#hostAutoCat');
+  if (autoBtn) autoBtn.onclick = autoAssignCatalogByOS;
+  paint();
+}
+
+// 按操作系统一键归组。默认不覆盖人工归类，误点时也能用「覆盖」再点一次。
+async function autoAssignCatalogByOS() {
+  if (!confirm('按操作系统把主机归入「Windows / Linux / macOS / 其他」目录？\n\n默认只处理尚未归类的机器，已经手工分好的目录不会被改动。')) return;
+  try {
+    const r = await post('/api/host-catalogs/auto-assign', { overwrite: false });
+    toast(r.msg || '已按系统归组');
+    render();
+  } catch (e) { toast(e.message, true); }
 }
 
 // 双击主机名 → 打开四方格详情页（告警在前、网速在后）
@@ -825,6 +1006,9 @@ async function confirmHostDelete(hostname) {
 /* ================= 主机目录（名称支持中文） ================= */
 async function renderCatalogs() {
   const [cats, hosts] = await Promise.all([asList((await get('/api/host-catalogs')).list), getList('/api/hosts')]);
+  let cfg = {};
+  try { cfg = await get('/api/settings'); } catch (e) { cfg = {}; }
+  const autoNew = cfg.catalogAutoByOs === 'true';
   const canEdit = !(state.user && state.user.role === 'viewer');
   const rows = cats.map((c) => [
     esc(c.name),
@@ -841,6 +1025,9 @@ async function renderCatalogs() {
   let html = `<div class="toolbar">
     <span class="muted">按业务、机房或环境把主机归类，目录名可以是中文。</span>
     <span class="spacer"></span>
+    ${canEdit ? `<label class="chk" title="开启后，新接入且未归类的主机最迟 5 分钟内自动进入系统目录">
+      <input type="checkbox" id="catAutoNew" ${autoNew ? 'checked' : ''}> 新主机自动按系统归组</label>` : ''}
+    ${canEdit ? '<button class="btn ghost small" id="catAuto">按系统分组一次</button>' : ''}
     ${canEdit ? '<button class="btn primary small" id="catNew">+ 新建目录</button>' : ''}
     <a class="btn ghost small" href="#/hosts">返回主机列表</a>
   </div>`;
@@ -852,6 +1039,17 @@ async function renderCatalogs() {
   app().innerHTML = html;
   const nb = $('#catNew');
   if (nb) nb.onclick = () => openCatalogForm(null, hosts);
+  const autoBtn = $('#catAuto');
+  if (autoBtn) autoBtn.onclick = autoAssignCatalogByOS;
+  const autoNewBox = $('#catAutoNew');
+  if (autoNewBox) {
+    autoNewBox.onchange = async () => {
+      try {
+        await put('/api/settings', { catalogAutoByOs: String(autoNewBox.checked) });
+        toast(autoNewBox.checked ? '已开启：新主机将按系统自动归组' : '已关闭自动归组');
+      } catch (e) { toast(e.message, true); autoNewBox.checked = !autoNewBox.checked; }
+    };
+  }
   document.querySelectorAll('[data-cedit]').forEach((b) => {
     b.onclick = () => {
       const c = cats.find((x) => x.id === b.dataset.cedit);
@@ -2112,8 +2310,8 @@ const RES_ALERT_CN = {
 };
 // typeCN 统一把告警 / 监控项的类型码翻译成中文。
 const typeCN = (t) => TYPE_CN[t] || RES_ALERT_CN[t] || t || '—';
-// ALERT_TYPE_CN 告警筛选用的完整类型表（监控项类型 + 主机资源阈值）。
-const ALERT_TYPE_CN = Object.assign({}, RES_ALERT_CN, TYPE_CN);
+// ALERT_TYPE_CN 告警筛选用的完整类型表（监控项类型 + 主机资源阈值 + 主机掉线）。
+const ALERT_TYPE_CN = Object.assign({}, RES_ALERT_CN, TYPE_CN, { offline: '主机掉线' });
 const TARGET_TPL = {
   process: { name: 'nginx' },
   port: { host: '127.0.0.1', port: 80 },
@@ -2142,7 +2340,7 @@ const TARGET_TPL = {
 const TARGET_HINT = {
   file: '首次执行会建立文件指纹基线，之后内容变化即告警；目录会递归校验（可用 maxFiles 限制文件数）。',
   log: '增量扫描日志文件，命中关键字即告警；配置自动恢复命令可实现日志异常自动处理。',
-  process: '进程不存在即告警；开启自动恢复并填写启动命令，可实现进程下线自动拉起。',
+  process: '进程不存在即告警；开启自动恢复并填写启动命令，可实现进程下线自动拉起。多个同名进程（如多个 Tomcat 的 java）可加 "match" 填命令行关键字（如 catalina.base 路径）进一步区分。',
   snmp: 'targets 字段可批量填入多个设备 IP（逗号分隔），由服务端统一轮询多台网络设备；oids 支持 sysUpTime/sysDescr/ifInOctets 等别名。',
   k8s: 'token 需具备读取 nodes 的权限；skipTls 为 true 时忽略自签证书校验。',
   nginxlog: '按增量解析 Nginx access log，统计请求量与 5xx 错误率，超过 errorRate 阈值即告警。',
@@ -2169,7 +2367,8 @@ async function renderTasks() {
   });
   const stateRows = states.map((s) => [
     esc(s.name), esc(typeCN(s.type)), esc(s.hostname),
-    s.status === '2' ? '<span class="tag danger">异常</span>' : '<span class="tag ok">正常</span>',
+    s.status === '3' ? '<span class="tag warn">检查出错</span>'
+      : s.status === '2' ? '<span class="tag danger">异常</span>' : '<span class="tag ok">正常</span>',
     `<span class="mono">${esc(s.msg)}</span>`, esc(s.checkTime),
   ]);
 
@@ -2209,7 +2408,7 @@ async function openTaskEditor(id) {
       <div class="form-grid">
         <label>名称<input type="text" id="tName" value="${esc(task.name)}" placeholder="例如：核心交换机 SNMP"></label>
         <label>类型<select id="tType"></select></label>
-        <label>作用主机<select id="tHosts"><option value="*">全部主机</option>${hosts.map((h) => `<option value="${esc(h.hostname)}" ${task.hosts === h.hostname ? 'selected' : ''}>${esc(h.hostname)}</option>`).join('')}</select></label>
+        <label>作用主机<select id="tHosts"><option value="*">全部主机</option>${hosts.map((h) => `<option value="${esc(h.hostname)}" ${task.hosts === h.hostname ? 'selected' : ''}>${esc(h.hostname)}${h.ip ? `（${esc(h.ip)}）` : ''}</option>`).join('')}</select></label>
         <label>执行端<select id="tRunner"><option value="agent">采集端执行</option><option value="server">服务端探测</option></select></label>
         <label>采集间隔（秒）<input type="number" id="tInterval" value="${task.intervalSec}" min="5"></label>
         <label>超时时间（秒）<input type="number" id="tTimeout" value="${task.timeoutSec}" min="1"></label>
@@ -2331,6 +2530,18 @@ async function renderAlerts() {
     getList('/api/alert-silences').catch(() => []),
   ]);
   const liveSilence = silences.filter((s) => s.active);
+  // 删除告警是管理动作，只给管理员
+  const isAdmin = !!(state.user && state.user.role === 'admin');
+  // 批量删除的勾选集合：跨筛选重绘保持选中，删除成功后清空。
+  const selected = new Set();
+  window.__alertSelecting = false;
+  const updateSel = () => {
+    const n = selected.size;
+    const el = $('#aSelN'); if (el) el.textContent = n;
+    const bd = $('#aBulkDel'); if (bd) bd.disabled = n === 0;
+    // 有勾选时暂停后台自动重绘：否则选到一半被 30s 刷新冲掉，勾选全丢。
+    window.__alertSelecting = n > 0;
+  };
 
   let html = '<div class="kpi-grid" id="aKpi"></div>';
   html += `<div class="toolbar">
@@ -2338,10 +2549,14 @@ async function renderAlerts() {
     <select id="aState"><option value="">全部状态</option><option value="1">未恢复</option><option value="0">已恢复</option></select>
     <select id="aAck"><option value="">全部处理状态</option><option value="unacked">未认领</option><option value="acked">处理中</option><option value="silenced">已静默</option></select>
     <input type="search" id="aKeyword" placeholder="按主机或内容搜索">
+    <label class="ck" title="同一主机、同一类型的重复告警只显示最新一条（不删数据，仅视图聚合）"><input type="checkbox" id="aDedup" checked> 折叠重复 <span id="aDedupTip" class="seg-note"></span></label>
     <span class="spacer"></span>
     <button class="btn ghost small with-ic" id="aSilenceMgr">${icon('bellOff')}静默规则${liveSilence.length ? `（${liveSilence.length}）` : ''}</button>
     <a class="btn ghost small with-ic" href="/api/export/alerts?format=csv">${icon('download')}CSV</a>
     <a class="btn ghost small with-ic" href="/api/export/alerts?format=xlsx">${icon('download')}Excel</a>
+    ${isAdmin ? `<label class="ck"><input type="checkbox" id="aSelAll"> 全选</label>
+    <button class="btn danger small" id="aBulkDel" disabled>批量删除(<span id="aSelN">0</span>)</button>
+    <button class="btn danger small ghost" id="aClearUnrec">清空未恢复</button>` : ''}
   </div>`;
   html += panel('告警记录', '<div id="alertBox" class="alert-table"></div>', '');
   const loginRows = logins.map((e) => [esc(e.hostname), esc(e.diff), esc(e.users), esc(e.createTime)]);
@@ -2366,8 +2581,23 @@ async function renderAlerts() {
       if (kw && !(a.hostname + a.content).toLowerCase().includes(kw)) return false;
       return true;
     });
+    // 折叠重复：同一主机 + 同一类型的告警只保留最新一条。告警是「按冷却窗口逐次入库」的，
+    // 一个持续高水位会堆出几十上百条同义记录；这里只在视图聚合，不删数据，计数提示原量。
+    const dedup = $('#aDedup') && $('#aDedup').checked;
+    let view = list;
+    if (dedup) {
+      const m = new Map();
+      for (const a of list) {
+        const k = a.hostname + '|' + a.type;
+        const cur = m.get(k);
+        if (!cur || a.createTime > cur.createTime) m.set(k, a);
+      }
+      view = [...m.values()];
+    }
+    const dTip = $('#aDedupTip');
+    if (dTip) dTip.textContent = dedup && view.length !== list.length ? `（${view.length}/${list.length}）` : '';
     const noteMap = new Map(alerts.map((a) => [a.id, a.note || '']));
-    const rows = list.map((a) => {
+    const rows = view.map((a) => {
       // 操作列用图标按钮：四个文字按钮并排要 200px，图标不到 110px，
       // 省下来的宽度给「内容」列。含义靠 title 悬停提示。
       const acts = [];
@@ -2382,34 +2612,95 @@ async function renderAlerts() {
       if (a.state === '1') {
         acts.push(`<button class="ico-btn ok" data-resolve="${esc(a.id)}" title="标记为已恢复">${icon('check')}</button>`);
       }
+      // 删除只给管理员：告警是事故追溯的依据，删了就找不回来了。
+      if (isAdmin) {
+        acts.push(`<button class="ico-btn danger" data-del="${esc(a.id)}" title="删除这条告警">${icon('trash')}</button>`);
+      }
       const content = esc(a.content) +
         (a.silenced ? ' <span class="tag" title="静默期内产生，未发通知">已静默</span>' : '') +
         (a.note ? `<div class="sub-note">备注：${esc(a.note)}</div>` : '');
-      return [
+      const cells = [
         esc(a.hostname), esc(typeCN(a.type)), levelTag(a.level), content,
         `<span class="cell-time">${esc(a.createTime)}</span>`,
         alertHandleTag(a), `<span class="row-acts">${acts.join('')}</span>`,
       ];
+      // 选择列仅管理员可见：普通用户无删除权限，勾了也没用。
+      if (isAdmin) cells.unshift(`<input type="checkbox" class="aSel" data-id="${esc(a.id)}">`);
+      return cells;
     });
-    $('#alertBox').innerHTML = dataTable(['主机', '类型', '级别', '内容', '时间', '处理状态', '操作'], rows, '无匹配告警');
+    $('#alertBox').innerHTML = dataTable(isAdmin ? ['选择', '主机', '类型', '级别', '内容', '时间', '处理状态', '操作'] : ['主机', '类型', '级别', '内容', '时间', '处理状态', '操作'], rows, '无匹配告警');
     bindAlertActions({ refresh: () => { drawKpi(); draw(); }, alerts, noteMap });
+    // 重绘后重新挂载勾选框：按 selected 还原勾选态，并刷新计数。
+    if (isAdmin) {
+      const selAll = $('#aSelAll'); if (selAll) selAll.checked = false;
+      document.querySelectorAll('#alertBox .aSel').forEach((cb) => {
+        cb.checked = selected.has(cb.dataset.id);
+        cb.onchange = () => {
+          if (cb.checked) selected.add(cb.dataset.id); else selected.delete(cb.dataset.id);
+          updateSel();
+        };
+      });
+      updateSel();
+    }
   };
   ['#aType', '#aState', '#aAck'].forEach((s) => { $(s).onchange = draw; });
   $('#aKeyword').oninput = draw;
+  $('#aDedup').onchange = draw;
   $('#aSilenceMgr').onclick = () => openSilenceManager(renderAlerts);
   draw();
+  // 批量删除：绑定工具栏按钮（仅管理员渲染了这些控件）。
+  if (isAdmin) {
+    $('#aSelAll').onchange = () => {
+      document.querySelectorAll('#alertBox .aSel').forEach((cb) => {
+        cb.checked = $('#aSelAll').checked;
+        if (cb.checked) selected.add(cb.dataset.id); else selected.delete(cb.dataset.id);
+      });
+      updateSel();
+    };
+    $('#aBulkDel').onclick = async () => {
+      if (!selected.size) return;
+      if (!confirm(`确定批量删除选中的 ${selected.size} 条告警？删除后无法恢复。`)) return;
+      try {
+        const r = await post('/api/alerts/bulk-delete', { ids: [...selected] });
+        const n = (r && r.deleted) || selected.size;
+        for (const id of selected) {
+          const i = alerts.findIndex((x) => x.id === id);
+          if (i >= 0) alerts.splice(i, 1);
+        }
+        selected.clear();
+        toast(`已删除 ${n} 条告警`);
+        drawKpi(); draw();
+      } catch (e) { toast('批量删除失败：' + e.message, true); }
+    };
+    $('#aClearUnrec').onclick = async () => {
+      if (!confirm('确定清空全部「未恢复」告警？这会把当前所有未恢复的告警记录一次性删除，操作不可恢复。')) return;
+      try {
+        const r = await post('/api/alerts/bulk-delete', { state: '1' });
+        const n = (r && r.deleted) || 0;
+        for (let i = alerts.length - 1; i >= 0; i--) if (alerts[i].state === '1') alerts.splice(i, 1);
+        selected.clear();
+        toast(`已清空 ${n} 条未恢复告警`);
+        drawKpi(); draw();
+      } catch (e) { toast('清空失败：' + e.message, true); }
+    };
+  }
 }
 
 // alertKpiHtml 顶部指标条。单独成函数是为了认领/释放后能原地刷新数字，
 // 而不是整页重绘（重绘会把用户刚填的筛选条件冲掉）。
 function alertKpiHtml(alerts, liveSilenceCount) {
   const active = alerts.filter((a) => a.state === '1');
-  const unacked = active.filter((a) => !a.ackBy && !a.silenced);
-  const acked = active.filter((a) => a.ackBy);
+  // 主机离线（type=offline）单列，不计入「告警」数字：掉线是可用性问题，
+  // 不该和 mem/disk 这类阈值告警混成一个总数——否则面板一直「很多告警」。
+  const offline = active.filter((a) => a.type === 'offline');
+  const realActive = active.filter((a) => a.type !== 'offline');
+  const unacked = realActive.filter((a) => !a.ackBy && !a.silenced);
+  const acked = realActive.filter((a) => a.ackBy);
   return [
-    kpiCard({ icon: 'bell', label: '未恢复告警', value: active.length, tone: active.length ? 'danger' : 'ok', sub: `共 ${alerts.length} 条记录` }),
+    kpiCard({ icon: 'bell', label: '未恢复告警', value: realActive.length, tone: realActive.length ? 'danger' : 'ok', sub: `不含主机离线，共 ${alerts.length} 条记录` }),
     kpiCard({ icon: 'pulse', label: '待认领', value: unacked.length, tone: unacked.length ? 'warn' : 'ok', sub: '尚未有人接手' }),
     kpiCard({ icon: 'task', label: '处理中', value: acked.length, tone: '', sub: '已认领未恢复' }),
+    kpiCard({ icon: 'pulse', label: '离线主机', value: offline.length, tone: offline.length ? 'danger' : 'ok', sub: '掉线单列（严重），不计入告警' }),
     kpiCard({ icon: 'shield', label: '静默生效中', value: liveSilenceCount, tone: '', sub: liveSilenceCount ? '这些规则期间不发通知' : '当前无静默规则' }),
   ].join('');
 }
@@ -2449,6 +2740,23 @@ function bindAlertActions(opts) {
       await post(`/api/alerts/${b.dataset.unack}/unack`, {});
       patch(b.dataset.unack, { ackBy: '', ackTime: '' });
     }, '已释放认领');
+  });
+  // 删除告警：只删这一条记录，不影响同一故障的其他行。
+  document.querySelectorAll('[data-del]').forEach((b) => {
+    b.onclick = async () => {
+      const id = b.dataset.del;
+      if (!window.confirm('确定删除这条告警记录？\n删除后无法恢复，事故追溯时会查不到。')) return;
+      try {
+        await del(`/api/alerts/${id}`);
+        const i = alerts.findIndex((x) => x.id === id);
+        if (i >= 0) alerts.splice(i, 1);
+        noteMap.delete(id);
+        toast('告警已删除');
+        refresh();
+      } catch (e) {
+        toast('删除失败：' + e.message, true);
+      }
+    };
   });
   document.querySelectorAll('[data-note]').forEach((b) => {
     b.onclick = () => {
@@ -2596,6 +2904,65 @@ async function openSilenceManager(after) {
   });
   $('#silNew').onclick = () => {
     openSilenceForm({}, () => { m.close(); openSilenceManager(after); if (after) after(); });
+  };
+}
+
+/* ================= 采集端批量部署 ================= */
+// 服务端作为 SSH 客户端，把采集端「推」到尚未接入的主机上：连上目标机后执行
+// 与手动安装完全相同的 install.sh / install.ps1，由脚本自己下载、校验、注册自启。
+// 平台由人显式选择（不做自动探测）；凭据只在本次请求使用，不落库。
+async function renderDeploy() {
+  const osOpt = (AGENT_OS || []).filter((o) => o.key === 'linux' || o.key === 'windows')
+    .map((o) => `<option value="${o.key}">${esc(o.label)}</option>`).join('')
+    || '<option value="linux">Linux / Unix</option><option value="windows">Windows</option>';
+  app().innerHTML = panel('批量下发采集端', `
+    <div class="seg-note">服务端通过 SSH 连接目标机，执行与手动安装相同的安装脚本，
+      自动下载、校验并注册开机自启。凭据仅本次使用，不保存。选择 Windows 时，目标机需已开启 OpenSSH Server。</div>
+    <div class="form-grid">
+      <label>目标平台<select id="dpOs">${osOpt}</select></label>
+      <label>默认账号<input id="dpUser" placeholder="Linux 建议 root，Windows 需管理员" value="root"></label>
+      <label>默认密码<input id="dpPass" type="password" placeholder="留空则优先用「设备账号」里该地址的 SSH 凭据"></label>
+      <label>SSH 端口<input id="dpPort" type="number" value="22"></label>
+    </div>
+    <label style="display:block;margin-top:8px">目标清单（一行一台）
+      <textarea id="dpTargets" rows="7" placeholder="192.168.40.10&#10;192.168.40.11,Administrator,Passw0rd&#10;192.168.40.12 root P@ssw0rd"></textarea>
+    </label>
+    <div class="seg-note" style="margin-top:4px">每行写「IP」时：若「设备账号」里已有该地址的 SSH 账号，自动取用其加密口令（列表不回明文）；否则用上面的默认账号密码。也可写「IP,账号,密码」为该台单独指定。密码含空格时请用逗号分隔。</div>
+    <div class="toolbar" style="margin-top:10px">
+      <span class="seg-note" id="dpTip">最多 200 台，并发 5 台</span>
+      <span class="spacer"></span>
+      <button class="btn primary" id="dpGo">开始批量部署</button>
+    </div>
+    <div id="dpResult"></div>`, '');
+
+  const btn = $('#dpGo');
+  btn.onclick = async () => {
+    const os = $('#dpOs').value;
+    const user = ($('#dpUser').value || '').trim();
+    const password = $('#dpPass').value;
+    const port = Number($('#dpPort').value) || 22;
+    const targets = ($('#dpTargets').value || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    if (!targets.length) { toast('请填写目标清单', true); return; }
+    btn.disabled = true;
+    $('#dpTip').textContent = `正在部署 ${targets.length} 台…（并发 5，约需 1~3 分钟，请勿刷新）`;
+    $('#dpResult').innerHTML = '<div class="empty">执行中，请稍候…</div>';
+    try {
+      const r = await post('/api/deploy/batch', { os, user, password, port, targets });
+      const rows = (r.results || []).map((x) => [
+        esc(x.host), esc(x.name || '-'),
+        x.ok ? '<span class="tag ok">成功</span>' : '<span class="tag danger">失败</span>',
+        esc(x.msg || ''),
+      ]);
+      $('#dpResult').innerHTML = panel(`部署结果：成功 ${r.success}/${r.total}`,
+        dataTable(['目标', '主机名', '结果', '说明'], rows, '无结果'), '');
+      $('#dpTip').textContent = `完成：成功 ${r.success}/${r.total}`;
+      toast(`批量部署完成，成功 ${r.success}/${r.total}`);
+    } catch (e) {
+      $('#dpResult').innerHTML = `<div class="test-result bad">${esc(e.message)}</div>`;
+      toast('部署失败：' + e.message, true);
+    } finally {
+      btn.disabled = false;
+    }
   };
 }
 
@@ -3051,10 +3418,10 @@ function openAssetBatch() {
 
 /* ================= 设备账号 ================= */
 async function renderDevices() {
-  const [accounts, assets] = await Promise.all([getList('/api/device-accounts'), getList('/api/assets')]);
-  const assetName = (id) => { const a = assets.find((x) => x.id === id); return a ? a.name : '-'; };
+  const [accounts, assets, hosts] = await Promise.all([getList('/api/device-accounts'), getList('/api/assets'), getList('/api/hosts').catch(() => [])]);
+  const hostLabel = (hn) => { const h = hosts.find((x) => x.hostname === hn); return h ? `${h.hostname}（${h.ip || '-'}）` : (hn || '-'); };
   const rows = accounts.map((a) => [
-    esc(a.name), esc(assetName(a.assetId)), esc(PROTOCOL_CN[a.protocol] || a.protocol),
+    esc(a.name), esc(hostLabel(a.bindHost)), esc(PROTOCOL_CN[a.protocol] || a.protocol),
     esc(a.host || '-'), String(a.port || '-'), esc(a.username || '-'),
     a.hasSecret ? '<span class="tag ok">已保存</span>' : '<span class="tag off">未设置</span>',
     esc(a.remark || '-'),
@@ -3071,11 +3438,11 @@ async function renderDevices() {
   <div class="hint-box">账号口令使用服务端密钥加密存储，列表页与接口均不返回明文。点击「检测」会用保存的凭据对设备发起一次真实连通性测试（SSH/SFTP/FTP/MySQL/Redis/SNMP/IPMI/Web 走协议校验，RDP 仅判断端口可达）。<br>
   在监控项的 target 中填写 <code>{"deviceId":"账号 ID"}</code>，即可让服务端探测直接复用这里的地址与口令；target 里显式写的字段优先级更高。</div>
   <div class="test-result" id="devTestBox" hidden></div>`;
-  html += panel('设备账号', dataTable(['名称', '关联资产', '协议', '地址', '端口', '用户名', '口令', '备注', '操作'], rows, '暂无设备账号'));
+  html += panel('设备账号', dataTable(['名称', '关联主机', '协议', '地址', '端口', '用户名', '口令', '备注', '操作'], rows, '暂无设备账号'));
   app().innerHTML = html;
-  $('#devNew').onclick = () => openDeviceEditor(null, accounts, assets);
+  $('#devNew').onclick = () => openDeviceEditor(null, accounts, assets, hosts);
   document.querySelectorAll('[data-edit]').forEach((b) => {
-    b.onclick = () => openDeviceEditor(accounts.find((x) => x.id === b.dataset.edit), accounts, assets);
+    b.onclick = () => openDeviceEditor(accounts.find((x) => x.id === b.dataset.edit), accounts, assets, hosts);
   });
   document.querySelectorAll('[data-test]').forEach((b) => {
     b.onclick = async () => {
@@ -3105,8 +3472,11 @@ async function renderDevices() {
   });
 }
 const PROTOCOL_CN = { ssh: 'SSH', sftp: 'SFTP', ftp: 'FTP', rdp: '远程桌面', mysql: 'MySQL', redis: 'Redis', snmp: 'SNMP', ipmi: 'IPMI', web: 'Web 控制台' };
-function openDeviceEditor(item, accounts, assets) {
+function openDeviceEditor(item, accounts, assets, hosts) {
   const a = item || { protocol: 'ssh', port: 22 };
+  hosts = hosts || [];
+  const hostOpts = ['<option value="">未关联</option>'].concat(
+    hosts.map((h) => `<option value="${esc(h.hostname)}" ${a.bindHost === h.hostname ? 'selected' : ''}>${esc(h.hostname)}（${esc(h.ip || '-')}）</option>`));
   const modal = ensureModal();
   modal.show(`
     <div class="modal-head"><h3>${item ? '编辑设备账号' : '新增设备账号'}</h3></div>
@@ -3114,7 +3484,7 @@ function openDeviceEditor(item, accounts, assets) {
       <div class="form-grid">
         <label>名称<input id="dName" value="${esc(a.name || '')}" placeholder="例如：核心交换机 SSH"></label>
         <label>协议<select id="dProtocol">${Object.keys(PROTOCOL_CN).map((k) => `<option value="${k}" ${a.protocol === k ? 'selected' : ''}>${PROTOCOL_CN[k]}</option>`).join('')}</select></label>
-        <label>关联资产<select id="dAsset"><option value="">未关联</option>${assets.map((x) => `<option value="${x.id}" ${a.assetId === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+        <label>关联主机<select id="dBindHost">${hostOpts.join('')}</select></label>
         <label>地址<input id="dHost" value="${esc(a.host || '')}"></label>
         <label>端口<input type="number" id="dPort" value="${a.port || 22}"></label>
         <label>用户名<input id="dUsername" value="${esc(a.username || '')}"></label>
@@ -3124,9 +3494,14 @@ function openDeviceEditor(item, accounts, assets) {
     </div>
     <div class="modal-actions"><button class="btn" id="dCancel">取消</button><button class="btn primary" id="dSave">保存</button></div>`);
   $('#dCancel').onclick = modal.close;
+  // 选主机后，地址留空则自动带出该主机 IP，批量部署即可按地址匹配到这条账号
+  $('#dBindHost').onchange = () => {
+    const h = hosts.find((x) => x.hostname === $('#dBindHost').value);
+    if (h && h.ip && !$('#dHost').value.trim()) $('#dHost').value = h.ip;
+  };
   $('#dSave').onclick = async () => {
     const payload = {
-      id: a.id || '', name: $('#dName').value, protocol: $('#dProtocol').value, assetId: $('#dAsset').value,
+      id: a.id || '', name: $('#dName').value, protocol: $('#dProtocol').value, assetId: a.assetId || '', bindHost: $('#dBindHost').value,
       host: $('#dHost').value, port: Number($('#dPort').value) || 22, username: $('#dUsername').value,
       secret: $('#dSecret').value, remark: $('#dRemark').value,
     };
@@ -3307,6 +3682,90 @@ async function renderTokens() {
 }
 
 /* ================= 审计日志 ================= */
+/* ---------------- 服务端运行日志 ---------------- */
+// 把过去要 SSH 上服务器翻 journalctl 的排障动作搬进控制台：
+// 按 IP / 关键字搜索、按类别过滤、按来源 IP 汇总，必要时补读 systemd 历史。
+const LOG_KINDS = { all: '全部', refused: '鉴权拒绝', error: '错误警告', upgrade: '升级', alert: '告警推送', info: '其它' };
+const LOG_TONE = { refused: 'danger', error: 'danger', upgrade: '', alert: 'ok', info: '' };
+
+function logDate(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() - (offsetDays || 0));
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+async function renderLogs() {
+  app().innerHTML = `
+    <div class="stat-row" id="lgStats"></div>
+    ${panel('来源 IP 汇总', '<div class="panel-body" id="lgIps"><div class="empty">加载中…</div></div>')}
+    ${panel('日志明细', `<div class="panel-body">
+      <div class="toolbar">
+        <input type="search" id="lgQ" placeholder="按 IP / 关键字搜索，如 192.168.40.94、token" style="min-width:270px">
+        <select id="lgKind">${Object.keys(LOG_KINDS).map((k) => `<option value="${k}">${esc(LOG_KINDS[k])}</option>`).join('')}</select>
+        <select id="lgSince">
+          <option value="">仅实时（本次启动后）</option>
+          <option value="${logDate(0)}">今天起（含历史）</option>
+          <option value="${logDate(1)}">昨天起</option>
+          <option value="${logDate(3)}">近 3 天</option>
+          <option value="${logDate(7)}">近 7 天</option>
+        </select>
+        <button class="btn small" id="lgSearch">查询</button>
+        <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="lgAuto"> 10 秒自动刷新</label>
+      </div>
+      <div class="muted" id="lgNote" style="margin:8px 0"></div>
+      <div id="lgList"><div class="empty">加载中…</div></div>
+    </div>`)}`;
+
+  const draw = async () => {
+    const list = $('#lgList');
+    // 切到别的页面后容器就没了，顺手停掉定时器，避免后台空跑报错。
+    if (!list) {
+      if (window.__logTimer) { clearInterval(window.__logTimer); window.__logTimer = null; }
+      return;
+    }
+    const q = new URLSearchParams({ q: $('#lgQ').value.trim(), kind: $('#lgKind').value, limit: '300' });
+    if ($('#lgSince').value) q.set('since', $('#lgSince').value);
+    let d;
+    try { d = await get('/api/logs?' + q.toString()); }
+    catch (e) { list.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+
+    const st = d.stats || {};
+    const mini = (label, value, danger) =>
+      `<div class="mini-stat"><div class="label">${esc(label)}</div><div class="value" ${danger ? 'style="color:var(--danger)"' : ''}>${esc(String(value))}</div></div>`;
+    $('#lgStats').innerHTML = mini('日志总数', st.all || 0) + mini('鉴权拒绝', st.refused || 0, (st.refused || 0) > 0)
+      + mini('错误警告', st.error || 0) + mini('升级', st.upgrade || 0) + mini('告警推送', st.alert || 0);
+
+    const ips = d.ips || [];
+    const ipBox = $('#lgIps');
+    ipBox.innerHTML = ips.length ? ips.map((i) =>
+      `<button class="btn small" data-ip="${esc(i.ip)}" style="margin:0 6px 6px 0">${esc(i.ip)} · ${esc(String(i.count))} 条${i.refused ? ` · 拒绝 ${esc(String(i.refused))}` : ''} · ${esc(i.last || '')}</button>`
+    ).join('') : '<div class="empty">暂无带来源 IP 的日志</div>';
+    ipBox.querySelectorAll('[data-ip]').forEach((b) => {
+      b.onclick = () => { $('#lgQ').value = b.dataset.ip; draw(); };
+    });
+
+    $('#lgNote').textContent = `${d.note || ''} 当前显示 ${(d.list || []).length} 条${d.journal ? '（已合并 systemd 历史）' : ''}。`;
+    const rows = (d.list || []).map((e) => [
+      `<span class="mono">${esc(e.time)}</span>`,
+      `<span class="tag ${LOG_TONE[e.kind] || ''}">${esc(LOG_KINDS[e.kind] || e.kind || '-')}</span>`,
+      `<span class="mono">${esc(e.ip || '-')}</span>`,
+      `<span class="mono" style="white-space:pre-wrap;word-break:break-all">${esc(e.text)}</span>`,
+    ]);
+    list.innerHTML = dataTable(['时间', '类别', '来源 IP', '内容'], rows, '没有匹配的日志');
+  };
+
+  $('#lgSearch').onclick = draw;
+  $('#lgQ').onkeydown = (ev) => { if (ev.key === 'Enter') draw(); };
+  $('#lgKind').onchange = draw;
+  $('#lgSince').onchange = draw;
+  $('#lgAuto').onchange = () => {
+    if (window.__logTimer) { clearInterval(window.__logTimer); window.__logTimer = null; }
+    if ($('#lgAuto').checked) window.__logTimer = setInterval(draw, 10000);
+  };
+  await draw();
+}
+
 async function renderAudit() {
   let stats = {};
   try { stats = await get('/api/audit/stats'); } catch (e) { stats = {}; }
@@ -3434,6 +3893,7 @@ async function renderSettings() {
     <button data-tab="alert">告警与提醒</button>
     <button data-tab="mail">邮件推送</button>
     <button data-tab="webhook">机器人推送</button>
+    <button data-tab="report">巡检报告</button>
   </div><div id="setBody"></div>`;
   app().innerHTML = html;
   const draw = () => {
@@ -3503,6 +3963,43 @@ async function renderSettings() {
         支持同时配置多个机器人，每个可单独订阅告警级别；机器人地址本身即凭据，<strong>只有管理员可见可改</strong>。
       </div>
       <div id="hookBox"><div class="empty">加载中…</div></div>`;
+    } else if (tab === 'report') {
+      const kinds = (val('reportPushKinds', 'day,week') || '').split(',').map((s) => s.trim());
+      const chans = (val('reportPushChannels', 'webhook') || '').split(',').map((s) => s.trim());
+      const lastOf = (k) => (val(k) ? `<span class="mono">${esc(val(k))}</span>` : '未发送');
+      body = `<div class="form-grid">
+        <label>启用定时推送<input type="checkbox" id="rpEnabled" ${val('reportPushEnabled') === 'true' ? 'checked' : ''}></label>
+        <label>发送时刻（每日 / 每周一 / 每月 1 日）<input type="time" id="rpTime" value="${esc(val('reportPushTime', '08:30'))}"></label>
+        <label class="full">推送频率
+          <span class="check-grid" style="margin-top:6px">
+            ${[['hour', '每小时'], ['day', '每日'], ['week', '每周'], ['month', '每月']].map((k) =>
+              `<label><input type="checkbox" class="rpKind" value="${k[0]}" ${kinds.indexOf(k[0]) >= 0 ? 'checked' : ''}> ${k[1]}</label>`).join('')}
+          </span>
+        </label>
+        <label class="full">推送通道
+          <span class="check-grid" style="margin-top:6px">
+            ${[['webhook', '群机器人（已启用的全部机器人）'], ['mail', '邮件（收件人见「邮件推送」）']].map((c) =>
+              `<label><input type="checkbox" class="rpChan" value="${c[0]}" ${chans.indexOf(c[0]) >= 0 ? 'checked' : ''}> ${c[1]}</label>`).join('')}
+          </span>
+        </label>
+        <label>预览 / 测试对象<select id="rpKind">
+          ${[['hour', '每小时速报'], ['day', '每日报告'], ['week', '每周报告'], ['month', '每月报告']].map((k) =>
+            `<option value="${k[0]}">${k[1]}</option>`).join('')}
+        </select></label>
+      </div>
+      <div class="hint-box">
+        <b>每小时 / 每日</b>只报关键数字：主机总数、在线、离线，以及每台离线主机已经离线多久。<br>
+        <b>每周 / 每月</b>额外带系统分布、目录分布、告警统计、监控项异常与巡检评分。<br>
+        小时报整点发；日/周/月报按上面的时刻发（周报在周一、月报在 1 日）。
+        服务重启或临时故障后，当期报告会补发一次，同一周期不会重复发。
+      </div>
+      <div class="seg-note">上次发送：每小时 ${lastOf('reportLastHour')} · 每日 ${lastOf('reportLastDay')} · 每周 ${lastOf('reportLastWeek')} · 每月 ${lastOf('reportLastMonth')}</div>
+      <div id="rpPreviewBox"></div>
+      <div class="modal-actions">
+        <button class="btn" id="rpPreview">预览正文</button>
+        <button class="btn" id="rpTest">立即发送</button>
+        <button class="btn primary" id="sSave">保存设置</button>
+      </div>`;
     } else {
       const levels = (val('mailLevels') || 'critical,warning,info').split(',').map((s) => s.trim());
       const secure = val('mailTLS') === 'true' ? 'tls' : (val('mailStartTLS') === 'true' ? 'starttls' : 'none');
@@ -3541,11 +4038,41 @@ async function renderSettings() {
       </div>
       <div id="mailLogBox"></div>`;
     }
-    if (tab !== 'mail' && tab !== 'webhook') body += `<div class="modal-actions"><button class="btn primary" id="sSave">保存设置</button></div>`;
+    if (tab !== 'mail' && tab !== 'webhook' && tab !== 'report') body += `<div class="modal-actions"><button class="btn primary" id="sSave">保存设置</button></div>`;
     $('#setBody').innerHTML = body;
     if ($('#sSave')) $('#sSave').onclick = saveSettings;
     if (tab === 'agent') loadAgentConfig();
     if (tab === 'webhook') loadWebhooks();
+    if (tab === 'report') {
+      // 预览只看正文，不发；立即发送复用同一份渲染结果，避免「预览和实发不一样」
+      const previewKind = () => ($('#rpKind') ? $('#rpKind').value : 'day');
+      $('#rpPreview').onclick = async () => {
+        const box = $('#rpPreviewBox');
+        box.innerHTML = '<div class="test-result running">正在生成…</div>';
+        try {
+          const r = await get('/api/reports/preview?kind=' + encodeURIComponent(previewKind()));
+          box.innerHTML = `<div style="margin-top:12px"></div>`
+            + panel('报告预览 · ' + esc(r.label || ''),
+              `<pre class="report-pre">${esc(r.text || '')}</pre>`, '');
+        } catch (e) { box.innerHTML = `<div class="test-result bad">生成失败：${esc(e.message)}</div>`; }
+      };
+      $('#rpTest').onclick = async () => {
+        const box = $('#rpPreviewBox');
+        const btn = $('#rpTest');
+        btn.disabled = true;
+        box.innerHTML = '<div class="test-result running">正在发送…</div>';
+        const saved = await saveSettings();
+        if (!saved) { box.innerHTML = '<div class="test-result bad">请先保存设置</div>'; btn.disabled = false; return; }
+        try {
+          const r = await post('/api/reports/test', { kind: previewKind() });
+          box.innerHTML = `<div class="test-result ok">${esc(r.msg || '已发送')}</div>`;
+          toast(r.msg || '已发送');
+        } catch (e) {
+          box.innerHTML = `<div class="test-result bad">发送失败：${esc(e.message)}</div>`;
+          toast('发送失败：' + e.message, true);
+        } finally { btn.disabled = false; }
+      };
+    }
     if ($('#sLogo')) {
       $('#sLogo').onchange = (ev) => {
         const file = ev.target.files[0];
@@ -3609,6 +4136,14 @@ async function renderSettings() {
       set('alertPrefix', $('#sPrefix')); set('alertSignature', $('#sSign')); set('alertSound', $('#sSound'));
       set('loginAlert', $('#sLoginAlert')); set('alertEscalateMin', $('#sEscalate'));
       if (!(Number($('#sEscalate').value) >= 0)) { toast('催办时长不能为负数，填 0 表示关闭', true); return false; }
+    } else if (tab === 'report') {
+      const on = $('#rpEnabled').checked;
+      patch.reportPushEnabled = String(on);
+      patch.reportPushTime = $('#rpTime').value || '08:30';
+      patch.reportPushKinds = Array.from(document.querySelectorAll('.rpKind:checked')).map((x) => x.value).join(',');
+      patch.reportPushChannels = Array.from(document.querySelectorAll('.rpChan:checked')).map((x) => x.value).join(',');
+      if (on && !patch.reportPushKinds) { toast('请至少勾选一个推送频率', true); return false; }
+      if (on && !patch.reportPushChannels) { toast('请至少勾选一个推送通道', true); return false; }
     } else {
       set('mailEnabled', $('#sMailEnabled')); set('mailHost', $('#sHost')); set('mailPort', $('#sPort'));
       set('mailUser', $('#sUser')); set('mailPassword', $('#sPass')); set('mailFrom', $('#sFrom'));
@@ -4015,11 +4550,13 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') toggleSidebar(false); });
   window.addEventListener('hashchange', router);
   // 含表单/筛选的页面不做自动重绘，避免把用户正在填写或查询的条件冲掉
-  const NO_AUTO_REFRESH = ['settings', 'audit', 'onboard', 'releases', 'license', 'members'];
+  const NO_AUTO_REFRESH = ['settings', 'audit', 'logs', 'onboard', 'releases', 'license', 'members'];
   setInterval(() => {
     // 有弹窗打开时先不自动重绘：否则用户正在填的弹窗会被后台刷新打断，
     // 产生「点了没反应 / 填到一半被清掉」的错觉。
     if (document.querySelector('.modal-mask.show')) return;
+    // 告警中心正在勾选待批量删除时暂停重绘，避免勾选被刷掉、列表乱跳。
+    if (state.route === 'alerts' && window.__alertSelecting) return;
     if (state.user && !window.__paused && NO_AUTO_REFRESH.indexOf(state.route) < 0) render();
   }, REFRESH_SEC * 1000);
 });

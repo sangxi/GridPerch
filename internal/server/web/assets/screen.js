@@ -100,6 +100,7 @@ function typeCN(t) {
     snmp: 'SNMP', mysql: 'MySQL', redis: 'Redis', kafka: 'Kafka',
     rabbitmq: 'RabbitMQ', elasticsearch: 'ES', k8s: 'K8S', ftp: 'FTP',
     ssh: 'SSH', sftp: 'SFTP', ipmi: 'IPMI',
+    offline: '主机掉线', mem: '内存', cpu: 'CPU', disk: '磁盘', net: '网络',
   }[t] || t;
 }
 

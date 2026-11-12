@@ -25,8 +25,8 @@ const (
 )
 
 // allMenus 控制台全部菜单项。
-var allMenus = []string{"dashboard", "hosts", "catalogs", "onboard", "releases", "tasks", "alerts", "commands", "tools",
-	"assets", "devices", "inspections", "screens", "members", "tokens", "license", "audit", "settings"}
+var allMenus = []string{"dashboard", "hosts", "catalogs", "onboard", "deploy", "releases", "tasks", "alerts", "commands", "tools",
+	"assets", "devices", "inspections", "screens", "members", "tokens", "license", "audit", "logs", "settings"}
 
 // roleDefaultMenus 各角色的默认可见菜单。
 // onboard（添加主机）会暴露采集端通信密钥，license（授权管理）涉及授权与机器码，
@@ -35,7 +35,7 @@ var allMenus = []string{"dashboard", "hosts", "catalogs", "onboard", "releases",
 // tools（工具箱）会下发命令到目标主机，等同指令下发，因此只给管理员与运维，只读账号不可见。
 var roleDefaultMenus = map[string][]string{
 	RoleAdmin:    allMenus,
-	RoleOperator: {"dashboard", "hosts", "catalogs", "onboard", "releases", "tasks", "alerts", "commands", "tools", "assets", "devices", "inspections", "screens"},
+	RoleOperator: {"dashboard", "hosts", "catalogs", "onboard", "deploy", "releases", "tasks", "alerts", "commands", "tools", "assets", "devices", "inspections", "screens", "logs"},
 	RoleViewer:   {"dashboard", "hosts", "catalogs", "tasks", "alerts", "screens"},
 }
 

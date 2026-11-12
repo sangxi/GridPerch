@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -160,6 +162,34 @@ func (s *Server) hostCatalogAssign(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{"ok": true, "msg": msg})
+}
+
+// hostCatalogAutoAssign 按操作系统把主机批量归入 Windows / Linux / macOS / 其他。
+//
+// 默认只处理「从未归类」的主机；带 overwrite=true 才覆盖已有归属，
+// 防止一次误点把运维整理好的业务目录冲成系统目录。
+func (s *Server) hostCatalogAutoAssign(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "msg": "不支持的方法"})
+		return
+	}
+	var req struct {
+		Overwrite bool `json:"overwrite"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
+	res, err := s.store.AutoAssignCatalogByOS(req.Overwrite)
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
+		return
+	}
+	msg := fmt.Sprintf("已按系统归组 %d 台主机", res.HostsAssigned)
+	if res.CatalogsCreated > 0 {
+		msg += fmt.Sprintf("，新建 %d 个目录", res.CatalogsCreated)
+	}
+	if res.HostsSkipped > 0 {
+		msg += fmt.Sprintf("，跳过 %d 台已有归属的主机", res.HostsSkipped)
+	}
+	writeJSON(w, map[string]any{"ok": true, "msg": msg, "result": res})
 }
 
 // handleHostSysEvents 返回某台主机最近的系统事件。

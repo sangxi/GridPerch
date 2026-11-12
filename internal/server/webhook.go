@@ -192,7 +192,7 @@ func (s *Server) handleWebhookTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	alerts := []notify.Alert{{
-		Hostname: "测试主机", Type: "info", Level: "info",
+		Hostname: "测试主机", IP: "192.168.0.1", Type: "info", Level: "info",
 		Content:    "这是一条来自 GridPerch 的测试消息，说明该机器人通道配置正确。",
 		CreateTime: time.Now().Format("2006-01-02 15:04:05"),
 	}}
@@ -283,6 +283,7 @@ func (s *Server) pushAlertWebhook() {
 	}
 	maxTime := settings["webhookLastSent"]
 	silenced := s.store.SilenceChecker()
+	ipOf := s.hostIPMap()
 	list := make([]notify.Alert, 0, len(items))
 	for _, a := range items {
 		if a.CreateTime > maxTime {
@@ -292,7 +293,7 @@ func (s *Server) pushAlertWebhook() {
 		if silenced(a.Hostname, a.Type, a.Level, a.CreateTime) {
 			continue
 		}
-		list = append(list, notify.Alert{Hostname: a.Hostname, Type: a.Type, Level: a.Level,
+		list = append(list, notify.Alert{Hostname: a.Hostname, IP: ipOf[a.Hostname], Type: a.Type, Level: a.Level,
 			Content: a.Content, CreateTime: a.CreateTime})
 	}
 	if settings["webhookRecover"] == "true" {
@@ -304,7 +305,7 @@ func (s *Server) pushAlertWebhook() {
 			if e.CheckTime > maxTime {
 				maxTime = e.CheckTime
 			}
-			list = append(list, notify.Alert{Hostname: e.Hostname, Type: e.Type, Level: "info",
+			list = append(list, notify.Alert{Hostname: e.Hostname, IP: ipOf[e.Hostname], Type: e.Type, Level: "info",
 				Content: fmt.Sprintf("监控项 %s 已恢复正常（%s）", e.Name, e.Msg), CreateTime: e.CheckTime})
 		}
 	}
@@ -338,6 +339,21 @@ func (s *Server) pushAlertWebhook() {
 		log.Printf("已推送 %d 条告警至机器人「%s」", len(subset), t.cfg.Name)
 	}
 	_ = s.store.SaveSettings(map[string]string{"webhookLastTime": timeNowString()})
+}
+
+// hostIPMap 返回 hostname→ip，供通知正文补主机 IP；查不到的主机留空。
+func (s *Server) hostIPMap() map[string]string {
+	hosts, err := s.store.ListHosts()
+	if err != nil {
+		return nil
+	}
+	m := make(map[string]string, len(hosts))
+	for _, h := range hosts {
+		if h.IP != "" {
+			m[h.Hostname] = h.IP
+		}
+	}
+	return m
 }
 
 // filterByLevels 按机器人订阅的级别过滤告警，空配置表示订阅全部级别。

@@ -298,9 +298,12 @@ type Asset struct {
 
 // DeviceAccount 设备/系统的账号凭据，密码以密文保存且接口不回传明文。
 type DeviceAccount struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	AssetID    string `json:"assetId"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	AssetID string `json:"assetId"`
+	// BindHost 关联的监控主机（hostname）。批量部署按目标 IP 找到主机后，
+	// 即可用这里绑定的账号凭据，无需再手贴密码。
+	BindHost   string `json:"bindHost"`
 	Protocol   string `json:"protocol"`
 	Host       string `json:"host"`
 	Port       int    `json:"port"`

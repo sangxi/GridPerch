@@ -13,11 +13,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sangxi/gridperch/internal/config"
 	"github.com/sangxi/gridperch/internal/version"
+	pshost "github.com/shirou/gopsutil/v3/host"
 )
 
 // oldSuffix 被替换下来的旧二进制后缀，启动时清理。
@@ -65,6 +67,7 @@ func updateLoop(rt *Runtime, client *http.Client, base, wgToken string, exe stri
 	// 启动后先跑一次，但让位给首轮指标上报，避免启动风暴
 	time.Sleep(20 * time.Second)
 	offLogged := false
+	blockedLogged := false
 	for {
 		cfg := rt.Snapshot()
 		if cfg.UpdateMode == "off" {
@@ -72,8 +75,17 @@ func updateLoop(rt *Runtime, client *http.Client, base, wgToken string, exe stri
 				log.Printf("自动更新已关闭（平台配置 updateMode=off），如需自动升级请在「采集端配置」中改为 auto")
 				offLogged = true
 			}
+		} else if !upgradeAllowed() {
+			// 本机系统太旧，装不下正式版（Go 1.21+ 要求 Windows 10 / Server 2016 以上），
+			// 换过去会直接起不来。这里在客户端就挡住，别等换完才发现跑不起来。
+			if !blockedLogged {
+				log.Printf("本机系统版本过低（%s），已拒绝自动升级：正式版要求 Windows 10 / Server 2016 以上。"+
+					"如需在旧系统上使用，请安装「旧系统兼容版」采集端", kernelDesc())
+				blockedLogged = true
+			}
 		} else {
 			offLogged = false
+			blockedLogged = false
 			checkUpdate(cfg, client, base, wgToken, exe)
 		}
 		interval := cfg.UpdateInterval
@@ -82,6 +94,60 @@ func updateLoop(rt *Runtime, client *http.Client, base, wgToken string, exe stri
 		}
 		time.Sleep(interval)
 	}
+}
+
+// upgradeAllowed 判断本机是否允许自动升级到正式版。
+//
+// 背景：Go 1.21 起编译出的程序要求 Windows 10 / Server 2016 以上，
+// 在 Win7 / 8 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 上直接起不来。
+// 平台上发布的最新版永远是正式版，所以旧系统上的采集端如果开着自动升级，
+// 迟早会被换成跑不起来的版本 —— 这台机器就此掉线。
+//
+// 这里做两道判断：
+//  1. 兼容版（Go 1.20 构建）永远不自动升级，它只配旧系统；
+//  2. 正式版采集端在旧系统上也拒绝升级（内核主版本 < 10）。
+//
+// 判断不出内核版本时放行 —— 宁可多问一次平台，也不能把机器改到起不来。
+func upgradeAllowed() bool {
+	if version.LegacyWindows != "" {
+		return false
+	}
+	if runtime.GOOS != "windows" {
+		return true
+	}
+	major := kernelMajor()
+	if major == 0 {
+		return true
+	}
+	return major >= 10
+}
+
+// kernelMajor 返回 Windows 内核主版本（10 表示 Win10 / Server 2016 及以上，
+// 6 表示 Vista / Server 2008 / 2008 R2 / 2012 / 2012 R2）。判断不出时返回 0。
+func kernelMajor() int {
+	info, err := pshost.Info()
+	if err != nil {
+		return 0
+	}
+	// Windows 上 KernelVersion 形如 "10.0.19045"
+	parts := strings.SplitN(info.KernelVersion, ".", 2)
+	if len(parts) == 0 {
+		return 0
+	}
+	major, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0
+	}
+	return major
+}
+
+// kernelDesc 供日志显示的系统版本描述。
+func kernelDesc() string {
+	info, err := pshost.Info()
+	if err != nil || info.Platform == "" {
+		return "未知"
+	}
+	return fmt.Sprintf("%s %s", info.Platform, info.KernelVersion)
 }
 
 // checkUpdate 执行一轮版本检查，必要时升级。

@@ -7,7 +7,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +19,92 @@ import (
 	"github.com/sangxi/gridperch/internal/model"
 	"github.com/sangxi/gridperch/internal/version"
 )
+
+// rotatingWriter 写满上限就把旧文件改名重开，防止常驻进程把日志撑爆磁盘。
+type rotatingWriter struct {
+	path string
+	max  int64
+	size int64
+	f    *os.File
+}
+
+func (w *rotatingWriter) open() error {
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	if st, err := f.Stat(); err == nil {
+		w.size = st.Size()
+	}
+	w.f = f
+	return nil
+}
+
+func (w *rotatingWriter) Write(p []byte) (int, error) {
+	if w.f == nil {
+		if err := w.open(); err != nil {
+			// 日志写不了不能反过来把进程弄死，当作写成功继续跑
+			return len(p), nil
+		}
+	}
+	n, err := w.f.Write(p)
+	w.size += int64(n)
+	if w.size >= w.max {
+		w.f.Close()
+		w.f = nil
+		w.size = 0
+		_ = os.Remove(w.path + ".1")
+	}
+	return n, err
+}
+
+// setupLog 把日志同时送到 stderr 和文件。
+//
+// 采集端常驻在计划任务里，stdout/stderr 没有任何接收方：进程崩溃时 panic 堆栈
+// 和最后几条日志会全部蒸发，事后只剩「主机掉线了」这一个现象，无从查证。
+// 旧系统现场排查尤其依赖这个文件，所以安装脚本必须显式指定 -log。
+func setupLog(path string) error {
+	if path == "" {
+		return nil
+	}
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	rw := &rotatingWriter{path: path, max: 5 << 20}
+	if err := rw.open(); err != nil {
+		return err
+	}
+	log.SetOutput(io.MultiWriter(os.Stderr, rw))
+	return nil
+}
+
+// safeGo 启动受保护的 goroutine。
+//
+// 采集端有五条通道并行，任何一条 panic 都会带走整个进程；计划任务的
+// RestartCount 只有 3 次，重试用完主机就永久掉线了 —— 而且现场无处可查。
+// 这里把 panic 拦下来记进日志，进程继续跑，下一轮再试。
+func safeGo(name string, fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[%s] 协程异常已拦截，采集端继续运行: %v\n%s", name, r, debug.Stack())
+			}
+		}()
+		fn()
+	}()
+}
+
+// safeCall 给主协程用（monitorLoop 是阻塞的，不能丢进 goroutine）。
+func safeCall(name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[%s] 主循环异常已拦截: %v\n%s", name, r, debug.Stack())
+		}
+	}()
+	fn()
+}
 
 // Run 启动采集循环：配置下发、指标上报、监控项检查、指令下发、自动更新五条通道并行。
 func Run(cfg *config.Agent) {
@@ -40,6 +129,9 @@ func Run(cfg *config.Agent) {
 	// 运行期配置：以本地启动参数为初值，随后由服务端下发的配置覆盖
 	rt := NewRuntime(*cfg)
 
+	if err := setupLog(cfg.LogFile); err != nil {
+		log.Printf("打开日志文件失败（继续只用 stderr）: %v", err)
+	}
 	log.Printf("采集端启动：版本 %s，本机名称 %s，服务端 %s，指标上报间隔 %s，更新策略 %s",
 		version.Version, cfg.Hostname, cfg.ServerURL, cfg.Interval, cfg.UpdateMode)
 
@@ -64,14 +156,14 @@ func Run(cfg *config.Agent) {
 		}
 	}
 
-	go configLoop(rt, client, base, wgToken)
-	go metricsLoop(rt, client, base+"/agent/minTask")
-	go commandLoop(rt, client, base, wgToken)
+	safeGo("config", func() { configLoop(rt, client, base, wgToken) })
+	safeGo("metrics", func() { metricsLoop(rt, client, base+"/agent/minTask") })
+	safeGo("command", func() { commandLoop(rt, client, base, wgToken) })
 	if exe != "" {
-		go updateLoop(rt, client, base, wgToken, exe)
+		safeGo("update", func() { updateLoop(rt, client, base, wgToken, exe) })
 	}
 	// monitorLoop 常驻阻塞，主协程停在这里
-	monitorLoop(rt, client, base, wgToken, checker)
+	safeCall("monitor", func() { monitorLoop(rt, client, base, wgToken, checker) })
 }
 
 // metricsLoop 周期采集主机指标并上报。每轮重新取配置快照，

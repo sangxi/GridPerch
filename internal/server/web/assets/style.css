@@ -185,6 +185,59 @@ td.num, th.num { text-align: right; }
 .tag.off { background: #f1f2f6; color: var(--muted); }
 .tag.warn { background: #fef4e6; color: var(--warn); }
 .tag.danger { background: #fdecec; color: var(--danger); }
+/* ---- 操作系统配色 ----
+   Windows / Linux / macOS 混在同一张表里时，光靠文字要逐行读才知道是什么系统。
+   用青—紫—红三色分开：色相彼此拉得够远，饱和度和明度压到和现有 tag 一致，
+   不会比「在线 / 离线」这类状态标签更抢眼。 */
+.tag.os { font-weight: 600; }
+.tag.os-win { background: #e0f7fa; color: #0e7490; }
+.tag.os-linux { background: #f2ecfe; color: #6d28d9; }
+.tag.os-mac { background: #fdeef2; color: #be123c; }
+.tag.os-unix { background: #eef2f7; color: #475569; }
+.tag.os-net { background: #eef2f7; color: #475569; }
+
+/* 版本明细跟在系统标签后面，弱化成灰字，不参与配色。
+   限宽是必须的：Windows 的版本名可以长到「10 Pro for Workstations 10.0.19045.5965」，
+   不限宽会把整张表推宽，顶到右侧吸附的操作列上。完整原文在 title 里。 */
+.os-ver {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  display: inline-block;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* 主机名左侧的系统色点：行数多时靠它扫一眼就能分出系统 */
+.host-cell { display: inline-flex; align-items: center; }
+.os-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; margin-right: 7px; }
+.os-dot.win { background: #0891b2; }
+.os-dot.linux { background: #7c3aed; }
+.os-dot.mac { background: #e11d48; }
+.os-dot.unix { background: #64748b; }
+.os-dot.net { background: #64748b; }
+/* 主机列表的 CPU 型号动辄「AMD Ryzen 5 5625U with Radeon Graphics」，
+   不截断会把整张表推到 1400px 以上，逼出横向滚动条，最右边的操作列直接
+   挤出可视区。这里限宽加省略号，完整型号放 title。
+   宽度要和操作列留出余量：操作列是 sticky right 浮在上层的，表格一超宽它就
+   盖住左边相邻列的内容（表现为 CPU 型号只剩「Xeon」、列头变成「CPU ！」）。 */
+.cell-cpu { display: inline-block; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* ---- 主机列表：操作列右侧吸附 ----
+   这张表有 10 列，1280 宽下必然横向滚动；操作列不吸附的话，最右边的
+   「重命名 / 删除」会被推出可视区，看着像根本没有这两个入口。
+   只作用于主机列表，其他表格（告警、指令等）最后一列多是正文，不跟着动。 */
+.host-table table.data td:last-child,
+.host-table table.data th:last-child {
+  position: sticky;
+  right: 0;
+  background: var(--card);
+  box-shadow: -10px 0 12px -10px rgba(16, 24, 40, 0.25);
+}
+.host-table table.data th:last-child { background: #fafbfe; }
+.host-table table.data tr:hover td:last-child { background: #fafbfe; }
 /* 表格单元格内的次要说明（告警处理备注等），不抢主内容的注意力。
    左侧竖线让它读起来像「附注」，而不是混在告警正文里的第二句话。 */
 .sub-note {
@@ -383,6 +436,21 @@ table.data th { color: var(--muted); font-weight: 600; background: #fafbfe; posi
 table.data td:last-child { white-space: nowrap; }
 table.data tr:hover td { background: #fafbfe; }
 table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* 可排序表头：箭头只在当前排序列出现，避免每列都挂个小三角显得嘈杂 */
+table.data th.sortable { cursor: pointer; user-select: none; }
+table.data th.sortable:hover { color: var(--primary); }
+table.data th.sortable .sort-ar {
+  font-style: normal; font-size: 10px; margin-left: 3px; color: var(--primary); opacity: 0;
+}
+table.data th.sortable:hover .sort-ar { opacity: .4; }
+table.data th.sortable.on { color: var(--primary); }
+table.data th.sortable.on .sort-ar { opacity: 1; }
+/* 巡检报告预览：保留换行与等宽，贴到聊天工具里也不会跑版 */
+.report-pre {
+  margin: 0; padding: 12px; background: #f8fafc; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 12.5px; line-height: 1.75; white-space: pre-wrap;
+  word-break: break-word; max-height: 460px; overflow: auto;
+}
 /* 告警表：行高靠图标按钮撑起，内容垂直居中比顶对齐整齐；
    时间列用等宽数字并对齐颜色，扫视时不会和正文抢注意力 */
 .alert-table table.data td { vertical-align: middle; }
@@ -642,7 +710,10 @@ textarea {
 }
 
 /* ================= 主机目录 + 主机四方格详情 ================= */
-.tag.cat { background: #eef2ff; color: #4338ca; }
+/* 主机目录标签：原本是靛蓝 #4338ca，和系统配色里的紫几乎同色，一排标签看过去
+   分不清哪个是「业务分组」、哪个是「操作系统」。改成中性灰，让颜色只用来表达
+   操作系统，目录退回纯文字分组。 */
+.tag.cat { background: #f2f4f8; color: #5b6472; }
 .muted { color: var(--muted); }
 .hint-line {
   color: var(--muted); font-size: 12.5px; line-height: 1.7;

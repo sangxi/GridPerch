@@ -32,7 +32,9 @@ func (c MailConfig) Enabled() bool {
 
 // Alert 待推送的告警条目。
 type Alert struct {
-	Hostname   string
+	Hostname string
+	// IP 主机 IP，供通知正文展示（离线排查时看 IP 更直观）；为空则不显示。
+	IP         string
 	Type       string
 	Level      string
 	Content    string
@@ -72,6 +74,23 @@ func Send(cfg MailConfig, alerts []Alert) error {
 	if !cfg.Enabled() || len(alerts) == 0 {
 		return nil
 	}
+	return sendMessage(cfg, cfg.Subject(alerts[0]), cfg.Body(alerts), len(alerts))
+}
+
+// SendHTML 发送一封自定义主题与 HTML 正文的邮件。
+//
+// 巡检报告这类「非告警」内容需要自己的标题和版式，走和告警邮件相同的
+// SMTP 通道与加密方式；alertCount 只用于日志措辞。
+func SendHTML(cfg MailConfig, subject, html string) error {
+	if !cfg.Enabled() || strings.TrimSpace(subject) == "" {
+		return nil
+	}
+	return sendMessage(cfg, subject, html, 0)
+}
+
+// sendMessage 是邮件发送的唯一出口，告警邮件与巡检报告共用。
+// alertCount > 0 时日志说「告警」，否则说「报告」。
+func sendMessage(cfg MailConfig, subject, body string, alertCount int) error {
 	port := cfg.Port
 	if port == 0 {
 		port = 25
@@ -80,8 +99,6 @@ func Send(cfg MailConfig, alerts []Alert) error {
 		port = pickDefault(port, 465)
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Host, port)
-	subject := cfg.Subject(alerts[0])
-	body := cfg.Body(alerts)
 	recipients := splitTo(cfg.To)
 	msg := buildMessage(cfg.From, recipients, subject, body)
 
@@ -146,7 +163,11 @@ func Send(cfg MailConfig, alerts []Alert) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("已推送 %d 条告警至 %s", len(alerts), strings.Join(recipients, ","))
+	if alertCount > 0 {
+		log.Printf("已推送 %d 条告警至 %s", alertCount, strings.Join(recipients, ","))
+	} else {
+		log.Printf("已推送「%s」至 %s", subject, strings.Join(recipients, ","))
+	}
 	return nil
 }
 

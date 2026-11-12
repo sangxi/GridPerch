@@ -102,6 +102,9 @@ type Agent struct {
 	// RemoteConfig 是否接受服务端下发的运行配置：auto 接受（默认）/ off 只用本地参数。
 	// 一键安装脚本生成的命令只带必要参数，其余配置由平台统一管理。
 	RemoteConfig string
+	// LogFile 日志文件路径。采集端常驻在计划任务里，stdout/stderr 没有去处，
+	// 进程崩溃的现场（panic 堆栈、最后一条日志）会全部丢失，事后无从查证。
+	LogFile string
 }
 
 // MD5Token 返回原始 token 的 MD5，与原 wgcloud 的鉴权方式一致。
@@ -352,6 +355,7 @@ func ParseAgent() *Agent {
 	flag.IntVar(&updateMin, "update-interval", updateMin, "版本检查间隔（分钟）")
 	flag.StringVar(&cfg.InstallDir, "install-dir", cfg.InstallDir, "安装目录，留空则用可执行文件所在目录")
 	flag.StringVar(&cfg.RemoteConfig, "remote-config", cfg.RemoteConfig, "是否接受服务端下发的运行配置：auto 接受 / off 只用本地参数")
+	flag.StringVar(&cfg.LogFile, "log", cfg.LogFile, "日志文件路径。计划任务下 stdout/stderr 无处可去，崩溃现场会丢，必须指定")
 	flag.BoolVar(&cfg.PrintVersion, "version", false, "打印版本号后退出")
 	flag.Parse()
 	cfg.Interval = time.Duration(intervalSec) * time.Second

@@ -1,0 +1,107 @@
+GridPerch 采集端一键重装命令（2026-11-09 生成，共 11 台）
+=========================================================
+用法：在目标 Windows 机器上以管理员身份打开 PowerShell，整行复制执行（不要拆行）。
+说明：name= 里的主机名已做 URL 编码，请勿修改；主机名必须与控制台一致，
+      否则重装后会在主机表里多出一台 gridperch-host。
+      线上 install.ps1（11-06 11:24 起）已含不限时 PT0S + 开机可用 + 失败自动重启，
+      重跑一次即会用新配置覆盖老的 72 小时任务。
+
+进度（2026-11-09 15:1x 核对 /api/hosts）：
+  总数 55 台，离线 11 台（原本 12 台，.94 已恢复在线）。
+  .94  楚雄虹城服务器 —— 已在线，state=1，agentVersion=1.2.13，最后上报 15:08:49；
+       token 拒绝最后停在 14:24:40。install.ps1 的任务注册在这台仍报「未指定的错误」，
+       所以现在很可能只是临时进程，重启后会再掉 —— 用 tools/fix-94-task.ps1 补开机自启。
+  .168 新零售应用数据服务器 —— 到 9999 的出站被拦，重装命令会报「无法连接到远程服务器」；
+       先用 tools/fix-gridperch-task.ps1 就地修任务，再单独放行出站 9999。
+  .159 推广零售服务器-关机- —— 机器已关机，未列入。
+
+待重装主线（9 台，按 [05]~[11] + [03][04] 执行）：
+  .161 BL_ETL / .162 BL数据库 / .163 ERP医疗器械数据库1 / .99 华招 /
+  .128 启软测试库 / .170 OA新接口服务器 / .140 多仓OMS接口  （以上 1.2.13）
+  .149 电子监管码服务器 / .216 楚雄远程审方服务器              （以上 1.2.10，老安装包）
+  .149 / .216 与 .94 同为 11/06 老安装包，若也报「未指定的错误」，
+  把 tools/fix-94-task.ps1 里的 base64 换成该机主机名的 UTF-8 base64 再用。
+
+[每台装完必做 · 2026-11-09 15:58 新增，9 台都要做]
+原因：.94 实测证明，Windows Server 2012 R2 上 install.ps1 走模块路径注册时，
+      Register-ScheduledTask 会**静默忽略 -Settings / -Principal**，重装完任务仍是
+      <ExecutionTimeLimit>PT72H</ExecutionTimeLimit> + <LogonType>InteractiveToken</...>，
+      72 小时后会被再次强杀 —— 方案 A 就白做了。A 路径的手写 XML 在这批机器上也被
+      schtasks 判「XML 格式不正确或超出范围的值」而拒绝。
+做法：每台执行完自己那条一键命令后，**再粘一行 tools/fix-task-settings-short.txt**
+      （全 ASCII、不含主机名、9 台通用，PowerShell Parser 已校验）。它用 Task Scheduler
+      COM 把 ExecutionTimeLimit 改成 PT0S、主体改成 SYSTEM，并回显结果。
+判定：输出里必须看到
+      <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+      <UserId>SYSTEM</UserId>          （SYSTEM 等价 S-1-5-18，两者都对）
+      只看到 PT72H 就是没生效，把输出贴回。
+.94 已用完整版 tools/fix-94-settings.ps1 修好（15:58 验证 PT0S + SYSTEM），无需再跑。
+
+[01] 新零售应用数据服务器 / 192.168.40.168 / 1.2.10 / 最后上报 2026-11-06 10:30:02
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=%E6%96%B0%E9%9B%B6%E5%94%AE%E5%BA%94%E7%94%A8%E6%95%B0%E6%8D%AE%E6%9C%8D%E5%8A%A1%E5%99%A8').Content
+
+[02] 楚雄虹城服务器 / 192.168.40.94 / 1.2.10 / 最后上报 2026-11-06 10:34:35
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=%E6%A5%9A%E9%9B%84%E8%99%B9%E5%9F%8E%E6%9C%8D%E5%8A%A1%E5%99%A8').Content
+
+[03] 电子监管码服务器 / 192.168.40.149 / 1.2.10 / 最后上报 2026-11-06 10:45:31
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=%E7%94%B5%E5%AD%90%E7%9B%91%E7%AE%A1%E7%A0%81%E6%9C%8D%E5%8A%A1%E5%99%A8').Content
+
+[04] 楚雄远程审方服务器 / 192.168.40.216 / 1.2.10 / 最后上报 2026-11-06 10:49:10
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=%E6%A5%9A%E9%9B%84%E8%BF%9C%E7%A8%8B%E5%AE%A1%E6%96%B9%E6%9C%8D%E5%8A%A1%E5%99%A8').Content
+
+[05] BL_ETL / 192.168.40.161 / 1.2.13 / 最后上报 2026-11-09 10:51:28
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=BL_ETL').Content
+
+[06] BL数据库 / 192.168.40.162 / 1.2.13 / 最后上报 2026-11-09 10:58:26
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=BL%E6%95%B0%E6%8D%AE%E5%BA%93').Content
+
+[07] ERP医疗器械数据库1 / 192.168.40.163 / 1.2.13 / 最后上报 2026-11-09 11:02:08
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=ERP%E5%8C%BB%E7%96%97%E5%99%A8%E6%A2%B0%E6%95%B0%E6%8D%AE%E5%BA%931').Content
+
+[08] 华招 / 192.168.40.99 / 1.2.13 / 最后上报 2026-11-09 11:21:51
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=%E5%8D%8E%E6%8B%9B').Content
+
+[09] 启软测试库 / 192.168.40.128 / 1.2.13 / 最后上报 2026-11-09 11:23:39
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=%E5%90%AF%E8%BD%AF%E6%B5%8B%E8%AF%95%E5%BA%93').Content
+
+[10] OA新接口服务器 / 192.168.40.170 / 1.2.13 / 最后上报 2026-11-09 13:11:42
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=OA%E6%96%B0%E6%8E%A5%E5%8F%A3%E6%9C%8D%E5%8A%A1%E5%99%A8').Content
+
+[11] 多仓OMS接口 / 192.168.40.140 / 1.2.13 / 最后上报 2026-11-09 13:15:10
+Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=%E5%A4%9A%E4%BB%93OMS%E6%8E%A5%E5%8F%A3').Content
+
+[特例] 楚雄虹城服务器 / 192.168.40.94  —— 已完成清理与上线；以下为历史命令，留档备查
+      （现在只需要跑 tools/fix-94-task.ps1 补开机自启，不必再重装）
+情况：这台是老安装包，进程名/任务名可能仍是 opsmonitor-* / strix-*，按 gridperch-agent
+去杀去删全都没命中；且上次 install.ps1 把当前窗口的 $ErrorActionPreference 改成了 Stop，
+schtasks 一报错整条命令链就中断，后面的重装根本没跑。
+下面这一行：先重置错误策略 → 按改名前后所有关键字杀进程、删任务 → 等 2 秒 → 重装。
+整行复制一次执行（仅此台用），失败也不会中断链：
+$ErrorActionPreference='Continue'; Get-Process | Where-Object { $_.ProcessName -match 'gridperch|strix|opsmonitor' } | Stop-Process -Force; Get-ScheduledTask | Where-Object { $_.TaskName -match 'gridperch|strix|opsmonitor' } | Unregister-ScheduledTask -Confirm:$false; Start-Sleep -Seconds 2; Invoke-Expression (Invoke-WebRequest -UseBasicParsing 'http://192.168.40.111:9999/install.ps1?wgToken=ffb977235c34019e5a27f12639a21126&name=%E6%A5%9A%E9%9B%84%E8%99%B9%E5%9F%8E%E6%9C%8D%E5%8A%A1%E5%99%A8').Content
+
+[诊断] 清理已生效但注册仍报「未指定的错误」时，跑这一行并把输出贴回：
+$ErrorActionPreference='Continue'; Get-Service Schedule | Select-Object Status,StartType | Format-List; "IsAdmin=" + ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); schtasks /Create /TN gp-probe /TR "cmd /c echo ok" /SC ONCE /ST 23:59 /F; schtasks /Delete /TN gp-probe /F
+判读：gp-probe 能创建 → 任务计划程序正常，是我们那份 XML 的问题；gp-probe 也失败 → 服务/权限问题。
+服务若为 Stopped/Disabled：Set-Service Schedule -StartupType Automatic; Start-Service Schedule，然后再跑一键命令。
+
+[诊断结论 / 2026-11-09 15:1x] .94 三项探测全部通过，环境无问题：
+  Get-Service Schedule  -> Running / Automatic
+  IsAdmin               -> True
+  gp-probe (默认主体)    -> 创建、删除均成功
+  gp-sys   (/RU SYSTEM) -> 创建、删除均成功
+  schtasks /Create /TN gp-sys /TR "cmd /c echo ok" /SC ONCE /ST 23:59 /RU SYSTEM /F
+  成功: 成功创建计划任务 "gp-sys"。
+  成功: 计划的任务 "gp-sys" 被成功删除。
+  => 不是服务、不是权限、不是 SYSTEM 主体。剩下的唯一变量是 install.ps1 自己生成的
+     任务定义（模块路径的 -RestartCount 999 / -LogonType ServiceAccount 参数组合，
+     或回落 XML 里 Principal 缺 <LogonType>、带 RestartOnFailure）。
+  => 绕开它：tools/fix-94-task.ps1 用最小 XML（补 LogonType、保 PT0S）注册，
+     并带两级降级，不改动正在上报的进程。
+
+[临时上线] 已执行过；直接起进程，重启后不自启，必须用 fix-94-task.ps1 补任务：
+Start-Process -FilePath 'C:\GridPerch\gridperch-agent.exe' -ArgumentList '-server http://192.168.40.111:9999 -token-hash ffb977235c34019e5a27f12639a21126 -name "楚雄虹城服务器" -log "C:\GridPerch\logs\agent.log" -update off -remote-config off' -WindowStyle Hidden
+
+执行后验证（在目标机）：
+  schtasks /Query /TN gridperch-agent /V /FO LIST
+  确认「如果运行了 X 小时 X 分钟，停止任务」不再是 72:00:00，「上次结果」为 0。
+  再到控制台看该主机是否 5 分钟内恢复在线。

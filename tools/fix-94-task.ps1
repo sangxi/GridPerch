@@ -1,0 +1,44 @@
+# GridPerch agent task repair - 192.168.40.94 (Windows Server 2012 R2)
+# Paste this WHOLE block into an elevated PowerShell on .94. Every line is a
+# complete statement: no here-strings, no multi-line blocks, so a paste that
+# loses line breaks still degrades gracefully. All-ASCII on purpose: PS 4.0
+# mangles UTF-8 Chinese piped through Invoke-Expression.
+#
+# gp-probe + gp-sys both passed => service, admin rights and SYSTEM principal
+# are fine. install.ps1's own task definition is the only remaining variable,
+# so we register a minimal XML instead (ServiceAccount logon type + PT0S).
+# Never kills the running agent, never starts a second instance.
+
+$ErrorActionPreference='Continue'
+$tn='gridperch-agent'; $e='C:\GridPerch\gridperch-agent.exe'; $d='C:\GridPerch'
+$a=''
+$p=Get-CimInstance Win32_Process -Filter "Name='gridperch-agent.exe'" -EA SilentlyContinue | Select-Object -First 1
+if($p -and $p.CommandLine){$a=[regex]::Replace($p.CommandLine,'^\s*"?.*?gridperch-agent\.exe"?\s*','')}
+if($a -eq ''){$n=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5qWa6ZuE6Jm55Z+O5pyN5Yqh5Zmo'));$a='-server http://192.168.40.111:9999 -token-hash ffb977235c34019e5a27f12639a21126 -name "'+$n+'" -log "'+$d+'\logs\agent.log" -update off -remote-config off'}
+"ARGS=$a"
+"== BEFORE =="
+$q=& schtasks.exe /Query /TN $tn /XML 2>&1
+"TASK_EXISTS_BEFORE=$($LASTEXITCODE -eq 0)"
+$q | Select-String 'ExecutionTimeLimit|<Command>|<Arguments>' | ForEach-Object{$_.Line.Trim()}
+"== CLEAN =="
+Get-ScheduledTask -EA SilentlyContinue | Where-Object{$_.TaskName -match 'gridperch|strix|opsmonitor'} | Unregister-ScheduledTask -Confirm:$false -EA SilentlyContinue
+& schtasks.exe /Delete /TN $tn /F 2>&1 | Out-Null
+Get-ChildItem 'C:\Windows\System32\Tasks' -File -EA SilentlyContinue | Where-Object{$_.Name -match 'gridperch|strix|opsmonitor'} | ForEach-Object{Remove-Item $_.FullName -Force -EA SilentlyContinue;"removed $($_.FullName)"}
+"== REGISTER A: minimal XML via schtasks =="
+$xe=[Security.SecurityElement]::Escape($e); $xa=[Security.SecurityElement]::Escape($a); $xd=[Security.SecurityElement]::Escape($d)
+$x='<?xml version="1.0" encoding="UTF-16"?><Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><RegistrationInfo><Description>GridPerch Agent</Description></RegistrationInfo><Triggers><BootTrigger><Enabled>true</Enabled></BootTrigger></Triggers><Principals><Principal id="Author"><UserId>S-1-5-18</UserId><LogonType>ServiceAccount</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable><RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable><IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden><RunOnlyIfIdle>false</RunOnlyIfIdle><WakeToRun>false</WakeToRun><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>7</Priority></Settings><Actions Context="Author"><Exec><Command>__EXE__</Command><Arguments>__ARGS__</Arguments><WorkingDirectory>__DIR__</WorkingDirectory></Exec></Actions></Task>'
+$x=$x.Replace('__EXE__',$xe).Replace('__ARGS__',$xa).Replace('__DIR__',$xd)
+$xp=Join-Path $env:TEMP 'gp-task-min.xml'
+[IO.File]::WriteAllText($xp,$x,[Text.Encoding]::Unicode)
+& schtasks.exe /Create /TN $tn /XML $xp /F 2>&1
+$okA=($LASTEXITCODE -eq 0)
+"A_XML=$okA (XML kept at $xp)"
+if(-not $okA){$act=New-ScheduledTaskAction -Execute $e -Argument $a -WorkingDirectory $d;$tr=New-ScheduledTaskTrigger -AtStartup;$pr=New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest;$st=New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -StartWhenAvailable;try{Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Principal $pr -Settings $st -Force -EA Stop|Out-Null;"B_CMDLET=OK";$okA=$true}catch{"B_CMDLET=FAIL $($_.Exception.Message)"}}
+if(-not $okA){try{Register-ScheduledTask -TaskName $tn -Xml $x.Replace(' encoding="UTF-16"','') -Force -EA Stop|Out-Null;"C_XML_CMDLET=OK"}catch{"C_XML_CMDLET=FAIL $($_.Exception.Message)"}}
+"== VERIFY =="
+$v=& schtasks.exe /Query /TN $tn /XML 2>&1
+"TASK_EXISTS_AFTER=$($LASTEXITCODE -eq 0)"
+$v | Select-String 'ExecutionTimeLimit|LogonType|<Command>|<Arguments>' | ForEach-Object{$_.Line.Trim()}
+"AGENT_PROCS=$(@(Get-Process gridperch-agent -EA SilentlyContinue).Count)"
+">> Do NOT run schtasks /Run. Agent is already reporting; BootTrigger applies at next reboot."
+">> If ExecutionTimeLimit above still shows PT72H, run tools/fix-94-settings.ps1 (COM path) to force PT0S."

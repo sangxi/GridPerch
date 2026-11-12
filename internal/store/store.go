@@ -197,6 +197,19 @@ func (s *Store) schema() error {
 		`CREATE INDEX IF NOT EXISTS idx_desk_host_time ON desk_state(hostname, create_time)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_time ON monitor_event(check_time)`,
 		`CREATE INDEX IF NOT EXISTS idx_alert_state ON alert(state, create_time)`,
+		// 删除/改名主机要按 hostname 级联删这两张表；没有 hostname 索引时是全表扫描，
+		// 在几十万行的 monitor_event 上能把删除拖到十几秒（界面表现为「点了确认没反应」）。
+		// 同时加速「某主机的监控项事件」这类查询。
+		`CREATE INDEX IF NOT EXISTS idx_event_host ON monitor_event(hostname, check_time)`,
+		`CREATE INDEX IF NOT EXISTS idx_alert_host ON alert(hostname, create_time)`,
+		// system_info 是每轮上报插一行的时序表，而 ListHosts 要对每台主机各取一次
+		// 最新的 cpu_per / mem_per（两条 `WHERE hostname=? ORDER BY create_time DESC
+		// LIMIT 1` 子查询）。没有这个复合索引时，每条子查询都退化成全表扫描 + 临时
+		// B 树排序：30 万行 / 50 台主机实测 100 次查询要 3.1 秒，`/api/hosts` 因此
+		// 要 6~7 秒，控制台仪表盘一直卡在「加载中…」。加上索引后同样负载 4 毫秒
+		// （约 700 倍）。老库会在启动时由这里自动补建，超大表首次建索引会多花几秒，
+		// 属一次性成本。
+		`CREATE INDEX IF NOT EXISTS idx_system_host_time ON system_info(hostname, create_time)`,
 		// 硬件与运行时扩展指标的「最新有效值」，每个主机一行、随上报覆盖。
 		// 温度 / SMART 这类指标不适合时序化：采集成本高且关注的是当前值，
 		// 历史趋势由 monitor 监控项或外部时序库承接。
@@ -578,35 +591,150 @@ func (s *Store) checkAlerts(r *model.Report, host, now string) {
 }
 
 /* ---------------- 运维维护 ---------------- */
-// RefreshHostStates 将长时间未上报的主机标记为离线。
-func (s *Store) RefreshHostStates() error {
+// DetectOfflineAlerts 检测掉线主机并生成告警，返回本次新增的掉线主机数。
+//
+// 掉线判定、状态更新、告警写入必须放在同一处完成：如果状态刷新先跑，
+// 主机已经是 state='2'，这里就再也分不出「本轮刚掉线」和「早就掉线」，
+// 告警会漏发或者重复发。
+func (s *Store) DetectOfflineAlerts() (int, error) {
 	deadline := time.Now().Add(-time.Duration(s.cfg.OfflineSec) * time.Second).Format(timeLayout)
-	_, err := s.wdb.Exec(`UPDATE host SET state='2' WHERE state='1' AND last_seen < ?`, deadline)
-	return err
+	rows, err := s.rdb.Query(`SELECT hostname FROM host WHERE state='1' AND last_seen < ?`, deadline)
+	if err != nil {
+		return 0, err
+	}
+	var hosts []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err == nil && h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	rows.Close()
+	if len(hosts) == 0 {
+		return 0, nil
+	}
+
+	count := 0
+	now := time.Now().Format(timeLayout)
+	for _, h := range hosts {
+		// 已有未关闭的掉线告警就不重复发
+		var existID string
+		if err := s.rdb.QueryRow(`SELECT id FROM alert WHERE hostname=? AND type='offline' AND state='1'`, h).Scan(&existID); err == nil {
+			continue
+		}
+		content := fmt.Sprintf("主机失联：超过 %d 秒未上报数据", s.cfg.OfflineSec)
+		if _, err := s.wdb.Exec(`INSERT INTO alert(id, hostname, type, level, value, content, state, create_time, update_time)
+			VALUES(?,?, 'offline', 'critical', '', ?, '1', ?, ?)`, newID(), h, content, now, now); err != nil {
+			log.Printf("写入主机掉线告警失败: %v", err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		if _, err := s.wdb.Exec(`UPDATE host SET state='2' WHERE state='1' AND last_seen < ?`, deadline); err != nil {
+			return count, err
+		}
+	}
+	return count, nil
+}
+
+// MarkHostOnline 主机恢复上报：状态改回在线并关闭掉线告警。
+// 返回 true 表示这确实是一次「掉线 → 恢复」。
+//
+// 必须在落库之前调用：批量落盘（flushReports）里 host 的 state 是直接置成 '1' 的，
+// 等落完再判断就看不出之前是不是离线了。
+// 这里同时更新 last_seen，否则在下一轮上报落库前，掉线检测可能把这台机器
+// 又当成「在线但很久没上报」而误报一次掉线。
+func (s *Store) MarkHostOnline(hostname string) (bool, error) {
+	if hostname == "" {
+		return false, nil
+	}
+	now := time.Now().Format(timeLayout)
+	res, err := s.wdb.Exec(`UPDATE host SET state='1', last_seen=? WHERE hostname=? AND state='2'`, now, hostname)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return false, nil
+	}
+	if _, err := s.wdb.Exec(`UPDATE alert SET state='0', update_time=? WHERE hostname=? AND type='offline' AND state='1'`,
+		now, hostname); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+// 清理历史数据的两个线上坑，改之前先看：
+//
+//	① 时间列名并不统一：monitor_event 用 check_time，其余表用 create_time。
+//	   以前对每张表都执行 DELETE ... WHERE create_time < ?，跑到 monitor_event
+//	   就报 "no such column: create_time" 并直接 return，后面的表与指令队列
+//	   全部跳过 —— 保留期形同虚设，DB 一路涨到 5GB+，日志每小时刷一条失败。
+//	② 积压几千万行时，一条 DELETE 会长时间占写锁、把 WAL 撑爆。按 rowid
+//	   分批删，每轮限量，剩下的交给下一轮（默认每小时）继续清。
+const (
+	purgeBatchSize  = 5000
+	purgeMaxBatches = 40
+	purgeBatchPause = 10 * time.Millisecond
+)
+
+// purgeBefore 分批删除 table 中 timeCol 早于 deadline 的行；extra 是附加条件
+// （如 alert 只删已恢复的 state='0'），返回本轮实际删除行数。
+func (s *Store) purgeBefore(table, timeCol, deadline, extra string) (int64, error) {
+	where := timeCol + " < ?"
+	if extra != "" {
+		where += " AND " + extra
+	}
+	q := fmt.Sprintf(`DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE %s LIMIT %d)`,
+		table, table, where, purgeBatchSize)
+	var total int64
+	for i := 0; i < purgeMaxBatches; i++ {
+		res, err := s.wdb.Exec(q, deadline)
+		if err != nil {
+			return total, fmt.Errorf("%s(%s): %w", table, timeCol, err)
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < purgeBatchSize {
+			break
+		}
+		time.Sleep(purgeBatchPause)
+	}
+	return total, nil
 }
 
 // Purge 清理超过保留期的历史数据。Retention<=0 表示永久保留，仅清理队列类数据。
+// 单表失败只记录不中断，避免一张表结构异常就把所有清理全卡住。
 func (s *Store) Purge() error {
+	var errs []error
+	clean := func(table, timeCol, deadline, extra string) {
+		if _, err := s.purgeBefore(table, timeCol, deadline, extra); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if s.cfg.Retention > 0 {
 		deadline := time.Now().AddDate(0, 0, -s.cfg.Retention).Format(timeLayout)
-		tables := []string{"system_info", "cpu_state", "mem_state", "desk_state", "netio_state",
-			"sys_load_state", "diskio_state", "process_state", "monitor_event", "login_event",
-			"audit_log", "mail_log", "sys_event"}
+		// 表名 | 时间列
+		tables := [][2]string{
+			{"system_info", "create_time"}, {"cpu_state", "create_time"},
+			{"mem_state", "create_time"}, {"desk_state", "create_time"},
+			{"netio_state", "create_time"}, {"sys_load_state", "create_time"},
+			{"diskio_state", "create_time"}, {"process_state", "create_time"},
+			{"monitor_event", "check_time"}, {"login_event", "create_time"},
+			{"audit_log", "create_time"}, {"mail_log", "create_time"},
+			{"sys_event", "create_time"},
+		}
 		for _, t := range tables {
-			if _, err := s.wdb.Exec(fmt.Sprintf(`DELETE FROM %s WHERE create_time < ?`, t), deadline); err != nil {
-				return err
-			}
+			clean(t[0], t[1], deadline, "")
 		}
-		if _, err := s.wdb.Exec(`DELETE FROM alert WHERE state='0' AND update_time < ?`, deadline); err != nil {
-			return err
-		}
+		// 只删已恢复的旧告警，未恢复的必须留着，否则待处理告警会被悄悄抹掉
+		clean("alert", "update_time", deadline, "state='0'")
 	}
-	// 指令与最近告警类队列只保留近期记录，避免无限膨胀
+	// 指令队列固定只留 30 天，与保留期设置无关
 	queueDeadline := time.Now().AddDate(0, 0, -30).Format(timeLayout)
-	if _, err := s.wdb.Exec(`DELETE FROM command WHERE create_time < ?`, queueDeadline); err != nil {
-		return err
-	}
-	return nil
+	clean("command", "create_time", queueDeadline, "")
+	return errors.Join(errs...)
 }
 
 // Checkpoint 执行 WAL 检查点，控制 wal 文件体积。
@@ -619,9 +747,8 @@ func (s *Store) Checkpoint() error {
 
 // ListHosts 返回主机列表及最新快照。
 func (s *Store) ListHosts() ([]model.Host, error) {
-	if err := s.RefreshHostStates(); err != nil {
-		return nil, err
-	}
+	// 这里不再刷新在线状态：状态判定与掉线告警由后台的 DetectOfflineAlerts 统一负责。
+	// 读接口里抢先改状态，会让掉线检测查不到「本轮刚掉线」的主机，告警随之漏发。
 	// 目录归属一次取全量，避免逐主机二次查询
 	cats, err := s.HostCatalogMap()
 	if err != nil {

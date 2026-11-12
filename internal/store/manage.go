@@ -110,6 +110,9 @@ func (s *Store) migrateExtra() error {
 		// 发布记录区分「正式版 / 旧系统兼容版」（1.2.3）：Windows 2012 R2 及更早
 		// 系统需要 Go 1.20 构建的采集端，同版本同平台要能并存两份产物。
 		{"release", "variant", "ALTER TABLE release ADD COLUMN variant TEXT DEFAULT ''"},
+		// 设备账号「关联主机」：把账号绑定到某台监控主机（hostname），
+		// 批量部署据此按目标 IP 反查主机后直接取凭据。
+		{"device_account", "bind_host", "ALTER TABLE device_account ADD COLUMN bind_host TEXT"},
 	}
 	for _, a := range adds {
 		exist, err := s.hasColumn(a.table, a.col)
@@ -563,6 +566,31 @@ func (s *Store) AlertsSince(since string) ([]model.Alert, error) {
 	return list, rows.Err()
 }
 
+// AlertLevelCounts 统计某时间点之后新增的告警条数，按级别分组。
+//
+// 巡检报告要说「本周新增多少条、其中严重几条」，这个口径和「未处理告警数」
+// 不是一回事：后者是存量，前者是流量，混用会让周报数字对不上。
+func (s *Store) AlertLevelCounts(since string) (map[string]int, error) {
+	out := map[string]int{}
+	if since == "" {
+		return out, nil
+	}
+	rows, err := s.rdb.Query(`SELECT IFNULL(level,''), COUNT(1) FROM alert WHERE create_time >= ? GROUP BY level`, since)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var lv string
+		var n int
+		if err := rows.Scan(&lv, &n); err != nil {
+			return out, err
+		}
+		out[lv] += n
+	}
+	return out, rows.Err()
+}
+
 // secretKey 由服务端 token 派生，用于加密保存设备口令。
 func (s *Store) secretKey() []byte {
 	// ⚠️ "opsmonitor-device-secret" 是与机器码盐同性质的历史值，**不随品牌更名而改**：
@@ -617,7 +645,7 @@ func (s *Store) DecryptSecret(cipherText string) string {
 
 // ListDeviceAccounts 返回设备账号，secret 字段不回传明文。
 func (s *Store) ListDeviceAccounts(assetID string) ([]model.DeviceAccount, error) {
-	q := `SELECT id, IFNULL(name,''), IFNULL(asset_id,''), IFNULL(protocol,'ssh'), IFNULL(host,''),
+	q := `SELECT id, IFNULL(name,''), IFNULL(asset_id,''), IFNULL(bind_host,''), IFNULL(protocol,'ssh'), IFNULL(host,''),
 		IFNULL(port,22), IFNULL(username,''), IFNULL(secret,''), IFNULL(remark,''),
 		IFNULL(create_time,''), IFNULL(update_time,'') FROM device_account`
 	var args []any
@@ -634,7 +662,7 @@ func (s *Store) ListDeviceAccounts(assetID string) ([]model.DeviceAccount, error
 	var list []model.DeviceAccount
 	for rows.Next() {
 		var a model.DeviceAccount
-		if err := rows.Scan(&a.ID, &a.Name, &a.AssetID, &a.Protocol, &a.Host, &a.Port, &a.Username,
+		if err := rows.Scan(&a.ID, &a.Name, &a.AssetID, &a.BindHost, &a.Protocol, &a.Host, &a.Port, &a.Username,
 			&a.Secret, &a.Remark, &a.CreateTime, &a.UpdateTime); err != nil {
 			return nil, err
 		}
@@ -659,19 +687,19 @@ func (s *Store) SaveDeviceAccount(a *model.DeviceAccount) error {
 		a.ID = newID()
 		a.CreateTime = now
 		a.UpdateTime = now
-		_, err = s.wdb.Exec(`INSERT INTO device_account(id,name,asset_id,protocol,host,port,username,secret,remark,create_time,update_time)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.Name, a.AssetID, a.Protocol, a.Host, a.Port, a.Username, enc, a.Remark, a.CreateTime, a.UpdateTime)
+		_, err = s.wdb.Exec(`INSERT INTO device_account(id,name,asset_id,bind_host,protocol,host,port,username,secret,remark,create_time,update_time)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.Name, a.AssetID, a.BindHost, a.Protocol, a.Host, a.Port, a.Username, enc, a.Remark, a.CreateTime, a.UpdateTime)
 		return err
 	}
 	a.UpdateTime = now
 	if a.Secret == "" {
 		// 未提供新口令时保持原值不变
-		_, err = s.wdb.Exec(`UPDATE device_account SET name=?,asset_id=?,protocol=?,host=?,port=?,username=?,remark=?,update_time=? WHERE id=?`,
-			a.Name, a.AssetID, a.Protocol, a.Host, a.Port, a.Username, a.Remark, a.UpdateTime, a.ID)
+		_, err = s.wdb.Exec(`UPDATE device_account SET name=?,asset_id=?,bind_host=?,protocol=?,host=?,port=?,username=?,remark=?,update_time=? WHERE id=?`,
+			a.Name, a.AssetID, a.BindHost, a.Protocol, a.Host, a.Port, a.Username, a.Remark, a.UpdateTime, a.ID)
 		return err
 	}
-	_, err = s.wdb.Exec(`UPDATE device_account SET name=?,asset_id=?,protocol=?,host=?,port=?,username=?,secret=?,remark=?,update_time=? WHERE id=?`,
-		a.Name, a.AssetID, a.Protocol, a.Host, a.Port, a.Username, enc, a.Remark, a.UpdateTime, a.ID)
+	_, err = s.wdb.Exec(`UPDATE device_account SET name=?,asset_id=?,bind_host=?,protocol=?,host=?,port=?,username=?,secret=?,remark=?,update_time=? WHERE id=?`,
+		a.Name, a.AssetID, a.BindHost, a.Protocol, a.Host, a.Port, a.Username, enc, a.Remark, a.UpdateTime, a.ID)
 	return err
 }
 
@@ -685,15 +713,45 @@ func (s *Store) DeleteDeviceAccount(id string) error {
 func (s *Store) DeviceCredential(id string) (*model.DeviceAccount, error) {
 	var a model.DeviceAccount
 	var secret string
-	err := s.rdb.QueryRow(`SELECT id, IFNULL(name,''), IFNULL(asset_id,''), IFNULL(protocol,'ssh'), IFNULL(host,''),
+	err := s.rdb.QueryRow(`SELECT id, IFNULL(name,''), IFNULL(asset_id,''), IFNULL(bind_host,''), IFNULL(protocol,'ssh'), IFNULL(host,''),
 		IFNULL(port,22), IFNULL(username,''), IFNULL(secret,''), IFNULL(remark,'') FROM device_account WHERE id=?`, id).
-		Scan(&a.ID, &a.Name, &a.AssetID, &a.Protocol, &a.Host, &a.Port, &a.Username, &secret, &a.Remark)
+		Scan(&a.ID, &a.Name, &a.AssetID, &a.BindHost, &a.Protocol, &a.Host, &a.Port, &a.Username, &secret, &a.Remark)
 	if err != nil {
 		return nil, err
 	}
 	a.Secret = s.DecryptSecret(secret)
 	a.HasSecret = secret != ""
 	return &a, nil
+}
+
+// DeviceCredentialForHost 为一台主机挑选可用的 SSH 凭据：
+//  1. 先按设备账号的「地址」精确匹配（地址填成目标 IP 最简单）；
+//  2. 再按「关联主机」匹配：设备账号绑定的主机 hostname 对应的 IP == 目标；
+//  3. 最后按关联资产的 IP 匹配（旧路径，兼容资产台账）。
+//
+// 供批量部署自动取用，省去每次手贴密码。找不到返回 (nil, nil)，不是错误。
+func (s *Store) DeviceCredentialForHost(host string) (*model.DeviceAccount, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return nil, nil
+	}
+	var id string
+	err := s.rdb.QueryRow(`SELECT id FROM device_account
+		WHERE lower(protocol)='ssh' AND lower(host)=lower(?) ORDER BY update_time DESC LIMIT 1`, host).Scan(&id)
+	if err != nil {
+		// 关联主机：设备账号 bind_host 指向的主机，其 ip == 目标
+		err = s.rdb.QueryRow(`SELECT d.id FROM device_account d JOIN host h ON h.hostname=d.bind_host
+			WHERE lower(d.protocol)='ssh' AND lower(h.ip)=lower(?) ORDER BY d.update_time DESC LIMIT 1`, host).Scan(&id)
+	}
+	if err != nil {
+		// 退一步：通过关联资产的 IP 匹配
+		err = s.rdb.QueryRow(`SELECT d.id FROM device_account d JOIN asset a ON a.id=d.asset_id
+			WHERE lower(d.protocol)='ssh' AND lower(a.ip)=lower(?) ORDER BY d.update_time DESC LIMIT 1`, host).Scan(&id)
+	}
+	if err != nil || id == "" {
+		return nil, nil
+	}
+	return s.DeviceCredential(id)
 }
 
 /* ---------------- 指令下发 ---------------- */

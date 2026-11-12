@@ -26,6 +26,9 @@ func main() {
 		fmt.Println()
 		return
 	}
+	// 控制台「运行日志」页要能查服务端日志：在继续打日志之前先把输出接到内存缓冲，
+	// stderr 依然保留，systemd / Docker 的原有日志收集不受影响。
+	server.InstallLogCapture()
 	// 更名后默认库文件名从 opsmonitor.db 改成了 gridperch.db。老部署若仍按默认值启动，
 	// 这里自动沿用旧文件，避免在旁边新建空库（现象就是「数据全没了」）。
 	if p, ok := config.ResolveLegacyDBPath(cfg.DBPath); ok {

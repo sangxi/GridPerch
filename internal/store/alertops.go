@@ -22,6 +22,97 @@ import (
 // ackAlertMaxNote 备注长度上限（字符，按 rune 计）。
 const ackAlertMaxNote = 500
 
+// DelAlert 删除一条告警记录。
+//
+// 只删这一行，不动同一故障的其他行：告警是按冷却窗口逐次入库的，删一条
+// 不等于故障被处理掉了，后续行上的认领与备注仍然保留。
+func (s *Store) DelAlert(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("告警 ID 为空")
+	}
+	res, err := s.wdb.Exec(`DELETE FROM alert WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("告警不存在或已被删除")
+	}
+	return nil
+}
+
+// DelAlerts 批量删除告警记录（按 ID）。返回实际删除条数。
+//
+// 与 DelAlert 不同，这里一次性用 IN 删除，适合「前端勾选多条后批量清理」，
+// 而不是在循环里发 N 次单条删除请求。空列表直接返回 0，不算错误。
+func (s *Store) DelAlerts(ids []string) (int, error) {
+	keep := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if strings.TrimSpace(id) != "" {
+			keep = append(keep, id)
+		}
+	}
+	if len(keep) == 0 {
+		return 0, nil
+	}
+	ph := strings.Repeat("?,", len(keep))
+	args := make([]any, 0, len(keep))
+	for _, id := range keep {
+		args = append(args, id)
+	}
+	res, err := s.wdb.Exec(`DELETE FROM alert WHERE id IN (`+ph[:len(ph)-1]+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// DelAlertsByState 删除指定状态的全部告警（如 state='1' 表示未恢复）。
+//
+// 用于「一键清空未恢复」：告警是按冷却窗口逐次入库的，一次故障往往插一整片
+// 重复报，按状态整批清比逐条点高效得多。state 为空视为非法，避免误清全表。
+func (s *Store) DelAlertsByState(state string) (int, error) {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		return 0, fmt.Errorf("请指定要删除的告警状态")
+	}
+	res, err := s.wdb.Exec(`DELETE FROM alert WHERE state=?`, state)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// HostRecovery 描述一次「主机掉线 → 恢复上报」。
+type HostRecovery struct {
+	Hostname    string
+	Content     string
+	RecoveredAt string
+}
+
+// RecentHostRecoveriesSince 返回 since 之后恢复上报的主机，用于「恢复通知」。
+//
+// 掉线恢复时只是把告警的 state 置 0（记录留着可追溯），恢复事件从这里取，
+// 而不是另写一条告警 —— 否则告警列表里会塞满「主机已恢复」这种噪声。
+func (s *Store) RecentHostRecoveriesSince(since string) ([]HostRecovery, error) {
+	rows, err := s.rdb.Query(`SELECT hostname, content, update_time FROM alert
+		WHERE type='offline' AND state='0' AND update_time > ? ORDER BY update_time`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []HostRecovery
+	for rows.Next() {
+		var r HostRecovery
+		if err := rows.Scan(&r.Hostname, &r.Content, &r.RecoveredAt); err != nil {
+			return nil, err
+		}
+		list = append(list, r)
+	}
+	return list, rows.Err()
+}
+
 // UnackedAlerts 返回超过 minAge 仍无人认领、且尚未升级过的未恢复告警。
 //
 // 「已升级」用独立列标记而不是时间游标：游标一旦被推进，中间补认领再释放的

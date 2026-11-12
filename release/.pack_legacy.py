@@ -38,7 +38,7 @@ with open("SHA256SUMS.txt", "w", newline="\r\n", encoding="utf-8") as f:
     f.write("\n".join(lines) + "\n")
 print("SHA256SUMS.txt entries:", len(lines))
 
-TOP = "gridperch-winlegacy-1.2.6"
+TOP = os.path.basename(os.path.abspath(os.getcwd()))
 out = os.path.join("..", TOP + ".zip")
 names = sorted(glob.glob("*"))
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
