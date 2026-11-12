@@ -228,6 +228,7 @@ const ICONS = {
   check: '<path d="M20 6.5 9.6 17 4 11.4"/>',
   download: '<path d="M12 4v12M7.5 11.5 12 16l4.5-4.5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/>',
   terminal: '<path d="M5 8.5 8.5 12 5 15.5"/><path d="M11 16h6"/><rect x="2.5" y="3.5" width="19" height="17" rx="2.5"/>',
+  desktop: '<rect x="2.5" y="4" width="19" height="12.5" rx="2"/><path d="M9 20.5h6M12 16.5v4"/>',
   sliders: '<path d="M5 5v5M5 14v5M12 5v3M12 12v7M19 5v8M19 17v2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="19" cy="15" r="2"/>',
   folder: '<path d="M3 7.5A2 2 0 0 1 5 5.5h4l2 2.5h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   trash: '<path d="M4 7h16"/><path d="M9 7V4.8h6V7"/><path d="M6.5 7l.9 12.2a1.8 1.8 0 0 0 1.8 1.6h5.6a1.8 1.8 0 0 0 1.8-1.6L17.5 7"/><path d="M10 11v6M14 11v6"/>',
@@ -3426,21 +3427,33 @@ async function renderDevices() {
     a.hasSecret ? '<span class="tag ok">已保存</span>' : '<span class="tag off">未设置</span>',
     esc(a.remark || '-'),
     `<span class="row-acts">
+       <button class="ico-btn" data-term="${esc(a.id)}" title="SSH 网页终端（新窗口）">${icon('terminal')}</button>
+       <button class="ico-btn" data-rdp="${esc(a.id)}" title="Windows 远程桌面（新窗口）">${icon('desktop')}</button>
        <button class="ico-btn" data-test="${esc(a.id)}" title="用已保存的凭据检测连通性">${icon('pulse')}</button>
        <button class="ico-btn" data-edit="${esc(a.id)}" title="编辑账号">${icon('edit')}</button>
        <button class="ico-btn danger" data-del="${esc(a.id)}" title="删除账号">${icon('trash')}</button>
      </span>`,
   ]);
   let html = `<div class="toolbar">
+    <span class="muted">表格导入支持 .xlsx / .csv，按 IP 或主机名自动关联监控主机。</span>
     <span class="spacer"></span>
+    <button class="btn ghost small" id="devImport">${icon('upload')} 导入表格</button>
     <button class="btn primary" id="devNew">+ 新增账号</button>
   </div>
   <div class="hint-box">账号口令使用服务端密钥加密存储，列表页与接口均不返回明文。点击「检测」会用保存的凭据对设备发起一次真实连通性测试（SSH/SFTP/FTP/MySQL/Redis/SNMP/IPMI/Web 走协议校验，RDP 仅判断端口可达）。<br>
+  行首两个按钮分别是<b>网页终端</b>（SSH，浏览器里直接敲命令）和<b>远程桌面</b>（下载 .rdp，由系统 mstsc 打开），都在新窗口里打开。<br>
   在监控项的 target 中填写 <code>{"deviceId":"账号 ID"}</code>，即可让服务端探测直接复用这里的地址与口令；target 里显式写的字段优先级更高。</div>
   <div class="test-result" id="devTestBox" hidden></div>`;
   html += panel('设备账号', dataTable(['名称', '关联主机', '协议', '地址', '端口', '用户名', '口令', '备注', '操作'], rows, '暂无设备账号'));
   app().innerHTML = html;
   $('#devNew').onclick = () => openDeviceEditor(null, accounts, assets, hosts);
+  $('#devImport').onclick = () => openDeviceImport();
+  document.querySelectorAll('[data-term]').forEach((b) => {
+    b.onclick = () => window.open('/term?id=' + encodeURIComponent(b.dataset.term), '_blank', 'noopener');
+  });
+  document.querySelectorAll('[data-rdp]').forEach((b) => {
+    b.onclick = () => window.open('/rdp?id=' + encodeURIComponent(b.dataset.rdp), '_blank', 'noopener');
+  });
   document.querySelectorAll('[data-edit]').forEach((b) => {
     b.onclick = () => openDeviceEditor(accounts.find((x) => x.id === b.dataset.edit), accounts, assets, hosts);
   });
@@ -3470,6 +3483,71 @@ async function renderDevices() {
       try { await del(`/api/device-accounts/${b.dataset.del}`); toast('已删除'); render(); } catch (e) { toast('删除失败：' + e.message, true); }
     };
   });
+}
+// 设备账号表格导入。两种来源都要吃：
+//  - 表格格式：人工维护的 Excel，带中文表头；
+//  - 数据库格式：从 CMDB / DBA 表 select 出来的结果，往往没有表头，
+//    就是 ip,username,password 三列，按位置兜底解析。
+function openDeviceImport() {
+  const modal = ensureModal();
+  modal.show(`
+    <div class="modal-head"><h3>导入设备账号</h3></div>
+    <div class="modal-body">
+      <div class="hint-box">
+        支持 <code>.xlsx</code> 与 <code>.csv</code>（逗号 / 制表符分隔，UTF-8 或 GBK 都能读）。<br>
+        <b>表格格式：</b>带表头，列名认「名称 / 关联主机 / 地址 / 协议 / 端口 / 账号 / 密码 / 备注」及对应英文；<br>
+        <b>数据库格式：</b>没有表头时按 <code>地址, 账号, 密码 [, 端口, 备注]</code> 的位置解析。
+      </div>
+      <div class="form-row"><label>选择文件</label><input type="file" id="impFile" accept=".xlsx,.csv,.txt"></div>
+      <div class="seg-note">按「协议 + 地址 + 账号」去重：已存在的只更新口令与备注，不会产生重复记录。
+        地址或关联主机能匹配到监控主机的会自动绑定，匹配不上的仍会导入，只是不关联主机。</div>
+      <div id="impResult"></div>
+      <div class="modal-actions">
+        <a class="btn ghost" href="/api/device-accounts/import/template">下载 CSV 模板</a>
+        <span class="spacer"></span>
+        <button class="btn" id="impClose">关闭</button>
+        <button class="btn primary" id="impRun">开始导入</button>
+      </div>
+    </div>`);
+  let imported = false;
+  $('#impClose').onclick = () => {
+    modal.close();
+    if (imported) render();
+  };
+  $('#impRun').onclick = async () => {
+    const file = ($('#impFile').files || [])[0];
+    const box = $('#impResult');
+    const btn = $('#impRun');
+    if (!file) { toast('请先选择要导入的文件', true); return; }
+    btn.disabled = true;
+    box.innerHTML = '<div class="test-result running">正在导入…</div>';
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/device-accounts/import', {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j.ok === false) throw new Error(j.msg || ('HTTP ' + res.status));
+      const r = j.result || {};
+      let extra = '';
+      if (r.unmatchedList && r.unmatchedList.length) {
+        extra += `<div class="seg-note">未匹配到监控主机的地址（已导入但不关联）：
+          <span class="mono">${r.unmatchedList.map((x) => esc(x)).join('、')}</span>
+          ${r.hostUnmatched > r.unmatchedList.length ? ` 等 ${r.hostUnmatched} 个` : ''}</div>`;
+      }
+      if (r.errors && r.errors.length) {
+        extra += `<div class="seg-note" style="color:#b91c1c">${r.errors.map((x) => esc(x)).join('<br>')}</div>`;
+      }
+      box.innerHTML = `<div class="test-result ok">${esc(j.msg || '导入完成')}</div>${extra}`;
+      toast(j.msg || '导入完成');
+      imported = true;
+    } catch (e) {
+      box.innerHTML = `<div class="test-result bad">导入失败：${esc(e.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  };
 }
 const PROTOCOL_CN = { ssh: 'SSH', sftp: 'SFTP', ftp: 'FTP', rdp: '远程桌面', mysql: 'MySQL', redis: 'Redis', snmp: 'SNMP', ipmi: 'IPMI', web: 'Web 控制台' };
 function openDeviceEditor(item, accounts, assets, hosts) {

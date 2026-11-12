@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程桌面 · GridPerch</title>
+<style>
+  :root { --bg:#f4f6fb; --card:#fff; --border:#e4e8f0; --text:#1f2937; --muted:#6b7280; --primary:#2563eb; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px; background: var(--bg); color: var(--text);
+    font-family: "Microsoft YaHei", -apple-system, Arial, sans-serif;
+  }
+  .card {
+    max-width: 620px; margin: 0 auto; background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 8px 24px rgba(16,24,40,.08); overflow: hidden;
+  }
+  .head { padding: 18px 22px; border-bottom: 1px solid var(--border); }
+  .head h1 { margin: 0 0 4px; font-size: 17px; }
+  .head p { margin: 0; color: var(--muted); font-size: 12.5px; }
+  .body { padding: 18px 22px 22px; }
+  .kv { display: grid; grid-template-columns: 90px 1fr; gap: 8px 12px; font-size: 13.5px; margin-bottom: 18px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-family: Consolas, monospace; word-break: break-all; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--primary); color: #fff; border: 0; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; cursor: pointer; text-decoration: none;
+  }
+  .btn:hover { filter: brightness(1.06); }
+  .btn.ghost { background: #eef2ff; color: #1e3a8a; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tip { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 12.5px; color: var(--muted); line-height: 1.8; }
+  .tip b { color: var(--text); }
+  code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; }
+  .err { color: #b91c1c; font-size: 13px; }
+  #autoNote { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <h1 id="name">远程桌面</h1>
+    <p id="sub">正在读取连接信息…</p>
+  </div>
+  <div class="body">
+    <dl class="kv">
+      <dt>地址</dt><dd id="addr">-</dd>
+      <dt>用户名</dt><dd id="user">-</dd>
+      <dt>关联主机</dt><dd id="bind">-</dd>
+    </dl>
+    <div class="row">
+      <a class="btn" id="dl" href="#">下载 .rdp 连接文件</a>
+      <button class="btn ghost" id="copy">复制 mstsc 命令</button>
+    </div>
+    <div id="autoNote"></div>
+    <div class="tip" style="margin-top:16px">
+      <b>怎么用：</b>下载后双击 <code>.rdp</code> 文件，Windows 会自动用「远程桌面连接」打开；
+      Windows 会再问一次密码，这是系统行为，平台不会把口令写进文件。<br>
+      <b>Mac / 手机：</b>装 Microsoft Remote Desktop，新建 PC 填上面的地址与用户名即可。<br>
+      <b>端口不通：</b>确认目标机已开启「远程桌面」且防火墙放行 3389，必要时在地址后带端口（如 <code>IP:13389</code>）。
+    </div>
+    <div id="err" class="err"></div>
+  </div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var id = new URLSearchParams(location.search).get('id') || '';
+  var nameEl = document.getElementById('name');
+  var subEl = document.getElementById('sub');
+  var addrEl = document.getElementById('addr');
+  var userEl = document.getElementById('user');
+  var bindEl = document.getElementById('bind');
+  var dl = document.getElementById('dl');
+  var copyBtn = document.getElementById('copy');
+  var autoNote = document.getElementById('autoNote');
+  var errEl = document.getElementById('err');
+  var address = '';
+
+  function fail(msg) {
+    subEl.textContent = '无法获取连接信息';
+    errEl.textContent = msg;
+  }
+
+  if (!id) { fail('缺少账号 ID，请从「设备账号」页面点「桌面」进入。'); return; }
+
+  fetch('/api/device-accounts', { credentials: 'same-origin' }).then(function (r) {
+    if (r.status === 401) throw new Error('登录状态已失效，请先回到控制台登录。');
+    return r.json();
+  }).then(function (list) {
+    list = Array.isArray(list) ? list : [];
+    var acc = null;
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) acc = list[i];
+    if (!acc) throw new Error('设备账号不存在，或已被删除。');
+    var port = acc.port || 3389;
+    address = acc.host + (port === 3389 ? '' : ':' + port);
+    nameEl.textContent = acc.name || '远程桌面';
+    subEl.textContent = '用系统自带的「远程桌面连接」打开，凭据由 Windows 自行询问';
+    addrEl.textContent = acc.host + ':' + port;
+    userEl.textContent = acc.username || '（未填写）';
+    bindEl.textContent = acc.bindHost || '未关联';
+    dl.href = '/api/device-accounts/' + encodeURIComponent(id) + '/rdp';
+    // 有些浏览器会拦截非用户手势的下载，这里试一次，失败就让用户点按钮
+    try {
+      var a = document.createElement('a');
+      a.href = dl.href;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      autoNote.textContent = '已开始下载；若没有反应，请点上面的按钮。';
+    } catch (e) {
+      autoNote.textContent = '请点上面的按钮下载连接文件。';
+    }
+  }).catch(function (e) {
+    fail(String(e.message || e));
+  });
+
+  copyBtn.addEventListener('click', function () {
+    var cmd = 'mstsc /v:' + address;
+    var done = function () {
+      copyBtn.textContent = '已复制';
+      setTimeout(function () { copyBtn.textContent = '复制 mstsc 命令'; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).then(done).catch(function () { window.prompt('复制下面的命令：', cmd); });
+    } else {
+      window.prompt('复制下面的命令：', cmd);
+    }
+  });
+})();
+</script>
+</body>
+</html>

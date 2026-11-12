@@ -61,6 +61,10 @@ type Server struct {
 	// 与授权系统（更新与授权中心）的同步状态
 	hubMu sync.Mutex
 	hub   HubStatus
+
+	// 设备账号的网页终端会话（SSH），空值时按需初始化
+	termMu   sync.Mutex
+	termSess map[string]*sshTermSession
 }
 
 // New 创建服务端实例。
@@ -179,9 +183,22 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/assets/{id}", s.auth(s.audit(http.HandlerFunc(s.handleAssetItem))))
 	mux.Handle("GET /api/device-accounts", s.auth(http.HandlerFunc(s.handleDeviceAccounts)))
 	mux.Handle("POST /api/device-accounts", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccounts))))
+	// 表格导入：xlsx/csv 批量建档，按 IP 或主机名自动关联监控主机
+	mux.Handle("POST /api/device-accounts/import",
+		s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleDeviceAccountImport)))))
+	mux.Handle("GET /api/device-accounts/import/template",
+		s.auth(s.adminOrOperator(http.HandlerFunc(s.handleDeviceImportTemplate))))
 	mux.Handle("PUT /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("DELETE /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("POST /api/device-accounts/{id}/test", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountTest))))
+	// 网页终端（SSH）与远程桌面（.rdp 文件）
+	term := func(h http.HandlerFunc) http.Handler { return s.auth(s.adminOrOperator(h)) }
+	mux.Handle("POST /api/device-accounts/{id}/ssh/open", term(s.handleSSHOpen))
+	mux.Handle("GET /api/device-accounts/{id}/ssh/stream", term(s.handleSSHStream))
+	mux.Handle("POST /api/device-accounts/{id}/ssh/input", term(s.handleSSHInput))
+	mux.Handle("POST /api/device-accounts/{id}/ssh/resize", term(s.handleSSHResize))
+	mux.Handle("DELETE /api/device-accounts/{id}/ssh/session", term(s.handleSSHClose))
+	mux.Handle("GET /api/device-accounts/{id}/rdp", term(s.handleDeviceRDP))
 
 	// 巡检报告（手动生成的存档报告）
 	mux.Handle("GET /api/inspections", s.auth(http.HandlerFunc(s.handleInspections)))
@@ -280,6 +297,13 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
 		serveFile(w, r, static, "docs.html")
+	})
+	// 设备账号的远程入口：终端与远程桌面都在独立窗口打开，不挤占控制台
+	mux.HandleFunc("GET /term", func(w http.ResponseWriter, r *http.Request) {
+		serveFile(w, r, static, "term.html")
+	})
+	mux.HandleFunc("GET /rdp", func(w http.ResponseWriter, r *http.Request) {
+		serveFile(w, r, static, "rdp.html")
 	})
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		serveFile(w, r, static, "index.html")

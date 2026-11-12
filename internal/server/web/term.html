@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>网页终端 · GridPerch</title>
+<style>
+  :root { --bg:#0b1020; --fg:#d7e0ea; --dim:#7b8aa0; --ok:#22c55e; --bad:#ef4444; --line:#1e2740; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); display: flex; flex-direction: column;
+    font-family: "Cascadia Mono", Consolas, "Courier New", "Microsoft YaHei", monospace;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: #0f172e; border-bottom: 1px solid var(--line); font-size: 13px;
+  }
+  header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+  header .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(34,197,94,.7); }
+  header .dot.off { background: var(--bad); }
+  header .meta { color: var(--dim); font-size: 12px; }
+  header .spacer { flex: 1; }
+  header button {
+    background: #16203a; color: var(--fg); border: 1px solid #26334f; border-radius: 6px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer;
+  }
+  header button:hover { background: #1d2a49; }
+  header button:disabled { opacity: .45; cursor: not-allowed; }
+  #out {
+    flex: 1; margin: 0; padding: 10px 12px; overflow: auto; white-space: pre-wrap;
+    word-break: break-all; font-size: 13px; line-height: 1.45;
+  }
+  #out::selection { background: #2c4a7a; }
+  #sink {
+    position: fixed; left: -9999px; top: 0; width: 10px; height: 10px; opacity: 0;
+  }
+  #banner {
+    position: fixed; left: 50%; top: 42%; transform: translate(-50%,-50%);
+    background: #101a33; border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 22px; font-size: 13px; line-height: 1.8; max-width: 520px; text-align: center;
+  }
+  #banner.hide { display: none; }
+  #banner a { color: #60a5fa; }
+  #measure { position: fixed; left: -9999px; top: -9999px; white-space: pre; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <strong id="title">网页终端</strong>
+  <span class="meta" id="meta"></span>
+  <span class="spacer"></span>
+  <button id="btnReconnect" disabled>重新连接</button>
+  <button id="btnClose" disabled>断开</button>
+</header>
+<pre id="out"></pre>
+<div id="banner">正在连接…</div>
+<textarea id="sink" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+<span id="measure">XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX</span>
+
+<script>
+(function () {
+  'use strict';
+
+  var ESC_RE = /\u001b\[[0-9;?]*[ -\/]*[@-~]|\u001b\][^\u0007]*(?:\u0007|\u001b\\)|\u001b[@-_]/g;
+  var out = document.getElementById('out');
+  var banner = document.getElementById('banner');
+  var dot = document.getElementById('dot');
+  var titleEl = document.getElementById('title');
+  var metaEl = document.getElementById('meta');
+  var sink = document.getElementById('sink');
+  var btnClose = document.getElementById('btnClose');
+  var btnReconnect = document.getElementById('btnReconnect');
+
+  var accId = new URLSearchParams(location.search).get('id') || '';
+  var sid = null;
+  var aborter = null;
+  var connected = false;
+
+  // 行级屏幕缓冲：只处理 \r \n \b \t，其余 ANSI 序列丢弃。
+  // 目标是「能看能敲」，不是完整的终端仿真。
+  var lines = [''];
+  var row = 0;
+  var col = 0;
+  var dirty = false;
+
+  function padTo(s, n) { while (s.length < n) s += ' '; return s; }
+
+  function feed(text) {
+    var s = String(text).replace(ESC_RE, '');
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i];
+      if (ch === '\n') {
+        row++;
+        while (lines.length <= row) lines.push('');
+        col = 0;
+      } else if (ch === '\r') {
+        col = 0;
+      } else if (ch === '\b') {
+        if (col > 0) {
+          var l0 = lines[row] || '';
+          lines[row] = l0.slice(0, col - 1) + l0.slice(col);
+          col--;
+        }
+      } else if (ch === '\t') {
+        var n = 4 - (col % 4);
+        var l1 = padTo(lines[row] || '', col);
+        lines[row] = l1.slice(0, col) + new Array(n + 1).join(' ') + l1.slice(col);
+        col += n;
+      } else if (ch >= ' ') {
+        var l2 = padTo(lines[row] || '', col);
+        lines[row] = l2.slice(0, col) + ch + l2.slice(col + 1);
+        col++;
+      }
+    }
+    // 长会话只保留最近 1500 行，避免 DOM 无限增长
+    if (lines.length > 2000) {
+      lines = lines.slice(lines.length - 1500);
+      row = lines.length - 1;
+    }
+    scheduleRender();
+  }
+
+  function scheduleRender() {
+    if (dirty) return;
+    dirty = true;
+    requestAnimationFrame(function () {
+      dirty = false;
+      var atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
+      out.textContent = lines.join('\n');
+      if (atBottom) out.scrollTop = out.scrollHeight;
+    });
+  }
+
+  function setStatus(kind, text) {
+    dot.className = 'dot' + (kind ? ' ' + kind : '');
+    metaEl.textContent = text || '';
+  }
+
+  function showBanner(html) {
+    banner.className = '';
+    banner.innerHTML = html;
+  }
+  function hideBanner() { banner.className = 'hide'; }
+
+  function termSize() {
+    var meas = document.getElementById('measure');
+    var w = meas.getBoundingClientRect().width / meas.textContent.length;
+    var cols = Math.max(40, Math.floor((out.clientWidth - 24) / Math.max(w, 1)));
+    var lineH = 13 * 1.45;
+    var rows = Math.max(10, Math.floor((out.clientHeight - 20) / lineH));
+    return { cols: cols, rows: rows };
+  }
+
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok || j.ok === false) throw new Error(j.msg || ('HTTP ' + r.status));
+        return j;
+      });
+    });
+  }
+
+  function loadAccount() {
+    return fetch('/api/device-accounts', { credentials: 'same-origin' }).then(function (r) {
+      if (r.status === 401) throw new Error('NOT_LOGIN');
+      return r.json();
+    }).then(function (list) {
+      list = Array.isArray(list) ? list : [];
+      for (var i = 0; i < list.length; i++) if (list[i].id === accId) return list[i];
+      return null;
+    });
+  }
+
+  function startStream() {
+    aborter = new AbortController();
+    fetch('/api/device-accounts/' + encodeURIComponent(accId) + '/ssh/stream?sid=' + encodeURIComponent(sid), {
+      credentials: 'same-origin', signal: aborter.signal
+    }).then(function (resp) {
+      if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder('utf-8');
+      function pump() {
+        return reader.read().then(function (res) {
+          if (res.done) return;
+          feed(decoder.decode(res.value, { stream: true }));
+          return pump();
+        });
+      }
+      return pump();
+    }).catch(function (e) {
+      if (e && e.name === 'AbortError') return;
+    }).then(function () {
+      if (connected) {
+        connected = false;
+        setStatus('off', '连接已断开');
+        btnClose.disabled = true;
+        btnReconnect.disabled = false;
+        feed('\n\r\n[会话已结束]\n');
+      }
+    });
+  }
+
+  function connect() {
+    btnReconnect.disabled = true;
+    btnClose.disabled = true;
+    showBanner('正在连接…');
+    setStatus('', '连接中');
+    loadAccount().then(function (acc) {
+      if (!acc) throw new Error('设备账号不存在，或已被删除');
+      titleEl.textContent = acc.name || acc.host || '网页终端';
+      var size = termSize();
+      return post('/api/device-accounts/' + encodeURIComponent(accId) + '/ssh/open', size).then(function (r) {
+        sid = r.sid;
+        connected = true;
+        setStatus('on', (r.user || acc.username) + '@' + (r.target || acc.host));
+        hideBanner();
+        btnClose.disabled = false;
+        btnReconnect.disabled = false;
+        sink.focus();
+        startStream();
+      });
+    }).catch(function (e) {
+      connected = false;
+      setStatus('off', '连接失败');
+      btnReconnect.disabled = false;
+      if (e.message === 'NOT_LOGIN') {
+        showBanner('登录状态已失效，请先打开 <a href="/" target="_blank">控制台</a> 登录，再回到本页点「重新连接」。');
+      } else {
+        showBanner('连接失败：' + String(e.message || e).replace(/[<>&]/g, ''));
+      }
+    });
+  }
+
+  function sendInput(data) {
+    if (!connected || !sid || !data) return;
+    post('/api/device-accounts/' + encodeURIComponent(accId) + '/ssh/input', { sid: sid, data: data }).catch(function (e) {
+      if (/会话/.test(e.message)) {
+        connected = false;
+        setStatus('off', '连接已断开');
+      }
+    });
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (!connected) return;
+    if (e.metaKey) return; // 保留 Cmd 组合键给浏览器
+    var k = e.key;
+    var data = null;
+    if (e.ctrlKey && !e.altKey && k.length === 1) {
+      var code = k.toUpperCase().charCodeAt(0);
+      if (code >= 64 && code <= 95) data = String.fromCharCode(code - 64);
+    } else if (e.altKey) {
+      if (k.length === 1) data = '\u001b' + k;
+    } else if (k === 'Enter') {
+      data = '\r';
+    } else if (k === 'Backspace') {
+      data = '\u007f';
+    } else if (k === 'Tab') {
+      data = '\t';
+    } else if (k === 'Escape') {
+      data = '\u001b';
+    } else if (k === 'ArrowUp') {
+      data = '\u001b[A';
+    } else if (k === 'ArrowDown') {
+      data = '\u001b[B';
+    } else if (k === 'ArrowRight') {
+      data = '\u001b[C';
+    } else if (k === 'ArrowLeft') {
+      data = '\u001b[D';
+    } else if (k === 'Home') {
+      data = '\u001b[H';
+    } else if (k === 'End') {
+      data = '\u001b[F';
+    } else if (k === 'Delete') {
+      data = '\u001b[3~';
+    } else if (k === 'PageUp') {
+      data = '\u001b[5~';
+    } else if (k === 'PageDown') {
+      data = '\u001b[6~';
+    } else if (k.length === 1) {
+      data = k;
+    }
+    if (data !== null) {
+      e.preventDefault();
+      sendInput(data);
+    }
+  });
+
+  // 中文输入法：组合结束后把上屏的文字一次性发过去
+  sink.addEventListener('compositionend', function () {
+    var v = sink.value;
+    sink.value = '';
+    if (v) sendInput(v);
+  });
+  sink.addEventListener('input', function () {
+    if (sink.value && !sink.composing) {
+      var v = sink.value;
+      sink.value = '';
+      sendInput(v);
+    }
+  });
+  document.addEventListener('paste', function (e) {
+    if (!connected) return;
+    var text = (e.clipboardData || window.clipboardData).getData('text');
+    if (text) {
+      e.preventDefault();
+      sendInput(text);
+    }
+  });
+  document.addEventListener('click', function () { if (connected) sink.focus(); });
+
+  var resizeTimer = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      if (!connected || !sid) return;
+      var s = termSize();
+      post('/api/device-accounts/' + encodeURIComponent(accId) + '/ssh/resize',
+        { sid: sid, cols: s.cols, rows: s.rows }).catch(function () {});
+    }, 250);
+  });
+
+  btnClose.addEventListener('click', function () {
+    var old = sid;
+    connected = false;
+    sid = null;
+    if (aborter) { try { aborter.abort(); } catch (e) {} }
+    if (old) {
+      fetch('/api/device-accounts/' + encodeURIComponent(accId) + '/ssh/session?sid=' + encodeURIComponent(old),
+        { method: 'DELETE', credentials: 'same-origin' }).catch(function () {});
+    }
+    setStatus('off', '已断开');
+    btnClose.disabled = true;
+    btnReconnect.disabled = false;
+    feed('\n[已断开]\n');
+  });
+  btnReconnect.addEventListener('click', function () {
+    lines = [''];
+    row = 0;
+    col = 0;
+    out.textContent = '';
+    connect();
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>

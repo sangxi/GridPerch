@@ -60,6 +60,7 @@ var auditRules = map[string]auditRule{
 	"PUT /api/device-accounts/{id}":         {Action: "修改设备账号", Category: "device", Target: "name", Detail: "protocol,host,port"},
 	"DELETE /api/device-accounts/{id}":      {Action: "删除设备账号", Category: "device", Target: ":path"},
 	"POST /api/device-accounts/{id}/test":   {Action: "设备连通性检测", Category: "device", Target: ":path"},
+	"POST /api/device-accounts/import":      {Action: "表格导入设备账号", Category: "device"},
 	"POST /api/inspections":                 {Action: "生成巡检报告", Category: "inspection", Target: "title", Detail: "scope"},
 	"DELETE /api/inspections/{id}":          {Action: "删除巡检报告", Category: "inspection", Target: ":path"},
 	"POST /api/members":                     {Action: "新建成员账号", Category: "member", Target: "username", Detail: "role,nickname"},
