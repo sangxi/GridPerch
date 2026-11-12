@@ -3523,13 +3523,11 @@ function openDeviceSyncOS() {
         <b>Windows</b> → 用户名 <code>administrator</code>，远程桌面端口 3389
       </div>
       <div class="form-row"><label>协议</label>
-        <label class="chk"><input type="checkbox" id="syncProto"> 同时把 Windows 账号改成「远程桌面」协议</label>
+        <label class="chk"><input type="checkbox" id="syncProto" checked> 按系统对齐协议（Windows → 远程桌面 3389，Linux → SSH 22）</label>
       </div>
       <div class="seg-note">
-        默认<b>只补用户名，不动协议</b>：Windows 账号保持 SSH 时，网页终端和远程桌面两个入口都能用；
-        勾上后 Windows 账号会切成远程桌面（端口 3389），对应的网页终端入口会置灰。<br>
         用户名已经填了的不动；端口只在当前是 22 / 3389 / 空 时才改，自定义端口保留；
-        找不到对应监控主机的账号会跳过。
+        找不到对应监控主机的账号会跳过。取消勾选则只补用户名、不动协议。
       </div>
       <div id="syncResult"></div>
       <div class="modal-actions">

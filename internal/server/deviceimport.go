@@ -157,10 +157,34 @@ func (s *Server) handleDeviceSyncOS(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
 
-	hosts, err := s.store.ListHosts()
+	res, err := s.syncDeviceAccounts(req.SwitchProtocol)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
 		return
+	}
+	msg := fmt.Sprintf("已补全 %d 条用户名", res["userFilled"])
+	if req.SwitchProtocol {
+		msg += fmt.Sprintf("，按系统调整协议 %d 条", res["protocolSwitched"])
+	}
+	if res["unknownHost"] > 0 {
+		msg += fmt.Sprintf("；%d 条找不到对应主机，未处理", res["unknownHost"])
+	}
+	writeJSON(w, map[string]any{"ok": true, "msg": msg, "result": res})
+}
+
+// autoFillDeviceAccounts 由后台定期调用，只补用户名、不碰协议，
+// 让「先导入账号、后装采集端」的机器在主机出现后自动具备可登录的用户名。
+func (s *Server) autoFillDeviceAccounts() {
+	if res, err := s.syncDeviceAccounts(false); err == nil && res["userFilled"] > 0 {
+		log.Printf("已按主机系统补全 %d 条设备账号的用户名", res["userFilled"])
+	}
+}
+
+// syncDeviceAccounts 是「按系统补全」的实现，handler 与定时任务共用。
+func (s *Server) syncDeviceAccounts(switchProtocol bool) (map[string]int, error) {
+	hosts, err := s.store.ListHosts()
+	if err != nil {
+		return nil, err
 	}
 	byName, byIP := map[string]model.Host{}, map[string]model.Host{}
 	for _, h := range hosts {
@@ -171,8 +195,7 @@ func (s *Server) handleDeviceSyncOS(w http.ResponseWriter, r *http.Request) {
 	}
 	accounts, err := s.store.ListDeviceAccounts("")
 	if err != nil {
-		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": err.Error()})
-		return
+		return nil, err
 	}
 	var userFilled, protoSwitched, unknownHost int
 	for _, a := range accounts {
@@ -192,7 +215,7 @@ func (s *Server) handleDeviceSyncOS(w http.ResponseWriter, r *http.Request) {
 			changed = true
 			userFilled++
 		}
-		if req.SwitchProtocol && !strings.EqualFold(a.Protocol, defProto) {
+		if switchProtocol && !strings.EqualFold(a.Protocol, defProto) {
 			// 端口只在「还是另一套默认值」时才改，避免把用户自定义的端口冲掉
 			if a.Port == 0 || a.Port == 22 || a.Port == 3389 {
 				a.Port = defPort
@@ -211,17 +234,10 @@ func (s *Server) handleDeviceSyncOS(w http.ResponseWriter, r *http.Request) {
 			log.Printf("按系统补全 %s 失败: %v", a.Name, err)
 		}
 	}
-	msg := fmt.Sprintf("已补全 %d 条用户名", userFilled)
-	if req.SwitchProtocol {
-		msg += fmt.Sprintf("，按系统调整协议 %d 条", protoSwitched)
-	}
-	if unknownHost > 0 {
-		msg += fmt.Sprintf("；%d 条找不到对应主机，未处理", unknownHost)
-	}
-	writeJSON(w, map[string]any{"ok": true, "msg": msg, "result": map[string]int{
+	return map[string]int{
 		"scanned": len(accounts), "userFilled": userFilled,
 		"protocolSwitched": protoSwitched, "unknownHost": unknownHost,
-	}})
+	}, nil
 }
 
 // normalizeProtocol 统一协议写法，返回协议代号与默认端口。
@@ -420,13 +436,20 @@ func (s *Server) importDeviceRows(rows [][]string) (*deviceImportResult, error) 
 		port, _ := strconv.Atoi(portRaw)
 		rawProto := field("protocol")
 		protocol, port := normalizeProtocol(rawProto, port)
-		// 表里没写用户名时，按关联主机的系统补默认值：Linux → root，Windows → administrator。
-		//
-		// 协议不动：Windows 账号保持 SSH 反而两种入口都能用（终端走 SSH、桌面按主机
-		// 系统判断），真用不上 SSH 的机器再手工改成「远程桌面」即可。
+		// 表里没写协议 / 用户名时，按关联主机的系统补默认值：
+		// Linux → root + SSH 22，Windows → administrator + 远程桌面 3389。
+		// 表里写了的以表为准。
 		if matched != nil {
-			if _, _, defUser := osDefaults(matched.OS); defUser != "" && username == "" {
-				username = defUser
+			if defProto, defPort, defUser := osDefaults(matched.OS); defProto != "" {
+				if strings.TrimSpace(rawProto) == "" {
+					protocol = defProto
+					if portRaw == "" {
+						port = defPort
+					}
+				}
+				if username == "" {
+					username = defUser
+				}
 			}
 		}
 		if username == "" {

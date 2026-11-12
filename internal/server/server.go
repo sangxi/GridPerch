@@ -529,8 +529,10 @@ func (s *Server) maintenance() {
 			// 开了「新主机自动按系统归组」后，新接入的机器最迟 5 分钟内进目录；
 			// 已有归属的主机不会被改动。
 			s.autoAssignCatalogByOS()
-			// 设备账号同理：先导入账号、后装采集端的机器，靠这一步补上关联
+			// 设备账号同理：先导入账号、后装采集端的机器，靠这一步补上关联，
+			// 再按主机系统补一个默认用户名（Windows=administrator / Linux=root）
 			s.relinkDeviceAccounts()
+			s.autoFillDeviceAccounts()
 		case <-purge.C:
 			if err := s.store.Purge(); err != nil {
 				log.Printf("清理历史数据失败: %v", err)
