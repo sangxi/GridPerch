@@ -197,6 +197,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("DELETE /api/device-accounts/{id}", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountItem))))
 	mux.Handle("POST /api/device-accounts/{id}/test", s.auth(s.audit(http.HandlerFunc(s.handleDeviceAccountTest))))
+	// 复制口令：接口不回显明文，只在用户主动点「复制密码」时取一次（走审计）
+	mux.Handle("POST /api/device-accounts/{id}/secret",
+		s.auth(s.adminOrOperator(s.audit(http.HandlerFunc(s.handleDeviceSecret)))))
 	// 网页终端（SSH）与远程桌面（.rdp 文件）
 	term := func(h http.HandlerFunc) http.Handler { return s.auth(s.adminOrOperator(h)) }
 	mux.Handle("POST /api/device-accounts/{id}/ssh/open", term(s.handleSSHOpen))

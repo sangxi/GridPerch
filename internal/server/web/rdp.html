@@ -50,13 +50,14 @@
       <dt>关联主机</dt><dd id="bind">-</dd>
     </dl>
     <div class="row">
-      <a class="btn" id="dl" href="#">下载 .rdp 连接文件</a>
+      <button class="btn" id="copyPwd">复制密码</button>
       <button class="btn ghost" id="copy">复制 mstsc 命令</button>
+      <button class="btn ghost" id="copyUser">复制用户名</button>
     </div>
     <div id="autoNote"></div>
     <div class="tip" style="margin-top:16px">
-      <b>怎么用：</b>下载后双击 <code>.rdp</code> 文件，Windows 会自动用「远程桌面连接」打开；
-      Windows 会再问一次密码，这是系统行为，平台不会把口令写进文件。<br>
+      <b>怎么用：</b>按 <code>Win+R</code> 输入 <code>mstsc</code> 回车，把上面的地址粘进去，
+      用户名和密码从这两个按钮复制过去。<br>
       <b>Mac / 手机：</b>装 Microsoft Remote Desktop，新建 PC 填上面的地址与用户名即可。<br>
       <b>端口不通：</b>确认目标机已开启「远程桌面」且防火墙放行 3389，必要时在地址后带端口（如 <code>IP:13389</code>）。
     </div>
@@ -72,11 +73,27 @@
   var addrEl = document.getElementById('addr');
   var userEl = document.getElementById('user');
   var bindEl = document.getElementById('bind');
-  var dl = document.getElementById('dl');
   var copyBtn = document.getElementById('copy');
+  var copyUserBtn = document.getElementById('copyUser');
+  var copyPwdBtn = document.getElementById('copyPwd');
   var autoNote = document.getElementById('autoNote');
   var errEl = document.getElementById('err');
   var address = '';
+  var username = '';
+
+  // 统一走 clipboard API，失败就退回到 prompt（浏览器非 https 时没有 clipboard）
+  function copyText(text, btn, doneLabel) {
+    var restore = function () { btn.textContent = doneLabel || '复制密码'; };
+    var ok = function () {
+      btn.textContent = '已复制';
+      setTimeout(restore, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(function () { window.prompt('复制下面的内容：', text); });
+    } else {
+      window.prompt('复制下面的内容：', text);
+    }
+  }
 
   function fail(msg) {
     subEl.textContent = '无法获取连接信息';
@@ -103,37 +120,41 @@
       ? '用系统自带的「远程桌面连接」打开，凭据由 Windows 自行询问'
       : '该账号是 ' + String(acc.protocol || 'ssh').toUpperCase() + ' 协议，远程桌面按默认端口 3389 连接';
     addrEl.textContent = acc.host + ':' + port;
-    userEl.textContent = acc.username || '（未填写）';
+    username = acc.username || '';
+    userEl.textContent = username || '（未填写）';
     bindEl.textContent = acc.bindHost || '未关联';
-    dl.href = '/api/device-accounts/' + encodeURIComponent(id) + '/rdp';
-    // 有些浏览器会拦截非用户手势的下载，这里试一次，失败就让用户点按钮
-    try {
-      var a = document.createElement('a');
-      a.href = dl.href;
-      a.download = '';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      autoNote.textContent = '已开始下载；若没有反应，请点上面的按钮。'
-        + (isRdp ? '' : '（这条账号不是「远程桌面」协议，端口按 3389 生成；实际端口不同请另建一条 RDP 账号）');
-    } catch (e) {
-      autoNote.textContent = '请点上面的按钮下载连接文件。';
-    }
+    copyUserBtn.disabled = !username;
+    copyPwdBtn.disabled = !acc.hasSecret;
+    autoNote.textContent = acc.hasSecret
+      ? '密码已加密保存，点「复制密码」才解密一次。'
+      : '这条账号还没有保存密码，连不上远程桌面。';
   }).catch(function (e) {
     fail(String(e.message || e));
   });
 
   copyBtn.addEventListener('click', function () {
-    var cmd = 'mstsc /v:' + address;
-    var done = function () {
-      copyBtn.textContent = '已复制';
-      setTimeout(function () { copyBtn.textContent = '复制 mstsc 命令'; }, 1500);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(cmd).then(done).catch(function () { window.prompt('复制下面的命令：', cmd); });
-    } else {
-      window.prompt('复制下面的命令：', cmd);
-    }
+    copyText('mstsc /v:' + address, copyBtn, '复制 mstsc 命令');
+  });
+  copyUserBtn.addEventListener('click', function () {
+    if (username) copyText(username, copyUserBtn, '复制用户名');
+  });
+  copyPwdBtn.addEventListener('click', function () {
+    copyPwdBtn.disabled = true;
+    var restore = function () { copyPwdBtn.disabled = false; };
+    fetch('/api/device-accounts/' + encodeURIComponent(id) + '/secret', {
+      method: 'POST', credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok || j.ok === false) throw new Error(j.msg || ('HTTP ' + r.status));
+        return j;
+      });
+    }).then(function (j) {
+      copyText(String(j.secret || ''), copyPwdBtn, '复制密码');
+      restore();
+    }).catch(function (e) {
+      autoNote.textContent = '取密码失败：' + String(e.message || e);
+      restore();
+    });
   });
 })();
 </script>

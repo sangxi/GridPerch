@@ -549,6 +549,31 @@ func containsString(list []string, v string) bool {
 	return false
 }
 
+// handleDeviceSecret 返回解密后的口令，供「复制密码」按钮使用。
+//
+// 刻意用 POST 而不是 GET：审计中间件只记录写操作，而「查看明文口令」是敏感动作，
+// 必须留下「谁在什么时候看了哪条账号」的记录。响应也带 no-store，避免被缓存。
+func (s *Server) handleDeviceSecret(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "msg": "不支持的方法"})
+		return
+	}
+	acc, err := s.store.DeviceCredential(r.PathValue("id"))
+	if err != nil {
+		writeJSONStatus(w, http.StatusNotFound, map[string]any{"ok": false, "msg": "设备账号不存在"})
+		return
+	}
+	if acc.Secret == "" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "该账号还没有保存口令"})
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{
+		"ok": true, "secret": acc.Secret, "username": acc.Username,
+		"host": acc.Host, "port": acc.Port, "protocol": acc.Protocol, "name": acc.Name,
+	})
+}
+
 // handleDeviceRelink 给尚未关联主机的账号补关联。
 //
 // 导入时的匹配只反映「当时」的主机表；之后新装采集端的机器、改过 IP 的机器，

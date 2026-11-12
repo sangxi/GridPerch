@@ -51,6 +51,7 @@
   <strong id="title">网页终端</strong>
   <span class="meta" id="meta"></span>
   <span class="spacer"></span>
+  <button id="btnPwd" disabled title="复制该账号保存的密码（su / sudo 时用得上）">复制密码</button>
   <button id="btnReconnect" disabled>重新连接</button>
   <button id="btnClose" disabled>断开</button>
 </header>
@@ -72,6 +73,7 @@
   var sink = document.getElementById('sink');
   var btnClose = document.getElementById('btnClose');
   var btnReconnect = document.getElementById('btnReconnect');
+  var btnPwd = document.getElementById('btnPwd');
 
   var accId = new URLSearchParams(location.search).get('id') || '';
   var sid = null;
@@ -215,6 +217,7 @@
     loadAccount().then(function (acc) {
       if (!acc) throw new Error('设备账号不存在，或已被删除');
       titleEl.textContent = acc.name || acc.host || '网页终端';
+      btnPwd.disabled = !acc.hasSecret;
       var size = termSize();
       return post('/api/device-accounts/' + encodeURIComponent(accId) + '/ssh/open', size).then(function (r) {
         sid = r.sid;
@@ -347,6 +350,34 @@
     col = 0;
     out.textContent = '';
     connect();
+  });
+
+  // 复制密码：su / sudo 提示要口令时，直接从窗口顶上复制，不用回去翻台账
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    window.prompt('复制下面的内容：', text);
+    return Promise.resolve();
+  }
+
+  btnPwd.addEventListener('click', function () {
+    btnPwd.disabled = true;
+    fetch('/api/device-accounts/' + encodeURIComponent(accId) + '/secret', {
+      method: 'POST', credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok || j.ok === false) throw new Error(j.msg || ('HTTP ' + r.status));
+        return j;
+      });
+    }).then(function (j) {
+      return copyText(String(j.secret || '')).then(function () {
+        btnPwd.textContent = '已复制';
+        setTimeout(function () { btnPwd.textContent = '复制密码'; }, 1500);
+      });
+    }).catch(function (e) {
+      metaEl.textContent = '取密码失败：' + String(e.message || e);
+    }).then(function () { btnPwd.disabled = false; });
   });
 
   connect();
