@@ -50,6 +50,28 @@ func TestNormalizeProtocol(t *testing.T) {
 	}
 }
 
+// TestSplitHostPort 地址列里带端口要能拆开，否则会拼出 IP:9801:22 这种非法地址。
+func TestSplitHostPort(t *testing.T) {
+	cases := []struct {
+		in, host, port string
+		ok             bool
+	}{
+		{"192.168.40.69:9801", "192.168.40.69", "9801", true},
+		{"192.168.40.69", "", "", false},
+		{"host:abc", "", "", false},
+		{"host:70000", "", "", false},
+		{"::1", "", "", false},
+		{":22", "", "", false},
+		{"host:", "", "", false},
+	}
+	for _, c := range cases {
+		h, p, ok := splitHostPort(c.in)
+		if ok != c.ok || h != c.host || p != c.port {
+			t.Errorf("splitHostPort(%q)=(%q,%q,%v)，期望 (%q,%q,%v)", c.in, h, p, ok, c.host, c.port, c.ok)
+		}
+	}
+}
+
 // TestRDPFile 生成的 .rdp 必须带地址与端口，且是 CRLF（mstsc 对换行敏感）。
 func TestRDPFile(t *testing.T) {
 	body := rdpFile("192.168.40.88", 13389, "administrator")

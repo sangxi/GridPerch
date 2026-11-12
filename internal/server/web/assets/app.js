@@ -3421,14 +3421,29 @@ function openAssetBatch() {
 async function renderDevices() {
   const [accounts, assets, hosts] = await Promise.all([getList('/api/device-accounts'), getList('/api/assets'), getList('/api/hosts').catch(() => [])]);
   const hostLabel = (hn) => { const h = hosts.find((x) => x.hostname === hn); return h ? `${h.hostname}（${h.ip || '-'}）` : (hn || '-'); };
+  // 两个远程入口各有限制：终端只对 SSH 协议有意义，桌面只对 Windows 主机有意义。
+  // 不满足时保留图标但置灰，比直接隐藏更好解释「为什么这台没有」。
+  const osOfHost = (hn) => {
+    const h = hosts.find((x) => x.hostname === hn);
+    return h ? String(h.os || '').toLowerCase() : '';
+  };
+  const canTerm = (a) => ['ssh', 'sftp'].indexOf(String(a.protocol || '').toLowerCase()) >= 0;
+  const canRdp = (a) => String(a.protocol || '').toLowerCase() === 'rdp'
+    || !a.bindHost || osOfHost(a.bindHost) === 'windows';
+  const termBtn = (a) => (canTerm(a)
+    ? `<button class="ico-btn" data-term="${esc(a.id)}" title="SSH 网页终端（新窗口）">${icon('terminal')}</button>`
+    : `<button class="ico-btn" disabled title="该账号协议是 ${esc(PROTOCOL_CN[a.protocol] || a.protocol || '-')}，网页终端只支持 SSH / SFTP">${icon('terminal')}</button>`);
+  const rdpBtn = (a) => (canRdp(a)
+    ? `<button class="ico-btn" data-rdp="${esc(a.id)}" title="Windows 远程桌面（新窗口）">${icon('desktop')}</button>`
+    : `<button class="ico-btn" disabled title="关联主机不是 Windows，无法远程桌面；如确需连接请新建一条「远程桌面」协议的账号">${icon('desktop')}</button>`);
   const rows = accounts.map((a) => [
     esc(a.name), esc(hostLabel(a.bindHost)), esc(PROTOCOL_CN[a.protocol] || a.protocol),
     esc(a.host || '-'), String(a.port || '-'), esc(a.username || '-'),
     a.hasSecret ? '<span class="tag ok">已保存</span>' : '<span class="tag off">未设置</span>',
     esc(a.remark || '-'),
     `<span class="row-acts">
-       <button class="ico-btn" data-term="${esc(a.id)}" title="SSH 网页终端（新窗口）">${icon('terminal')}</button>
-       <button class="ico-btn" data-rdp="${esc(a.id)}" title="Windows 远程桌面（新窗口）">${icon('desktop')}</button>
+       ${termBtn(a)}
+       ${rdpBtn(a)}
        <button class="ico-btn" data-test="${esc(a.id)}" title="用已保存的凭据检测连通性">${icon('pulse')}</button>
        <button class="ico-btn" data-edit="${esc(a.id)}" title="编辑账号">${icon('edit')}</button>
        <button class="ico-btn danger" data-del="${esc(a.id)}" title="删除账号">${icon('trash')}</button>
@@ -3535,6 +3550,9 @@ function openDeviceImport() {
         extra += `<div class="seg-note">未匹配到监控主机的地址（已导入但不关联）：
           <span class="mono">${r.unmatchedList.map((x) => esc(x)).join('、')}</span>
           ${r.hostUnmatched > r.unmatchedList.length ? ` 等 ${r.hostUnmatched} 个` : ''}</div>`;
+      }
+      if (r.noUser) {
+        extra += `<div class="seg-note" style="color:#b45309">有 ${r.noUser} 条没有用户名：账号已建档，但网页终端与远程桌面都要用用户名，补全后才能连接。</div>`;
       }
       if (r.errors && r.errors.length) {
         extra += `<div class="seg-note" style="color:#b91c1c">${r.errors.map((x) => esc(x)).join('<br>')}</div>`;

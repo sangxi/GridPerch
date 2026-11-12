@@ -93,10 +93,15 @@
     var acc = null;
     for (var i = 0; i < list.length; i++) if (list[i].id === id) acc = list[i];
     if (!acc) throw new Error('设备账号不存在，或已被删除。');
-    var port = acc.port || 3389;
+    // 端口按协议取：RDP 账号用自己配的端口，SSH 账号一律按 3389，
+    // 否则会把 IP:22 写进 .rdp，mstsc 连过去必然失败。
+    var isRdp = String(acc.protocol || '').toLowerCase() === 'rdp';
+    var port = isRdp ? (acc.port || 3389) : 3389;
     address = acc.host + (port === 3389 ? '' : ':' + port);
     nameEl.textContent = acc.name || '远程桌面';
-    subEl.textContent = '用系统自带的「远程桌面连接」打开，凭据由 Windows 自行询问';
+    subEl.textContent = isRdp
+      ? '用系统自带的「远程桌面连接」打开，凭据由 Windows 自行询问'
+      : '该账号是 ' + String(acc.protocol || 'ssh').toUpperCase() + ' 协议，远程桌面按默认端口 3389 连接';
     addrEl.textContent = acc.host + ':' + port;
     userEl.textContent = acc.username || '（未填写）';
     bindEl.textContent = acc.bindHost || '未关联';
@@ -109,7 +114,8 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      autoNote.textContent = '已开始下载；若没有反应，请点上面的按钮。';
+      autoNote.textContent = '已开始下载；若没有反应，请点上面的按钮。'
+        + (isRdp ? '' : '（这条账号不是「远程桌面」协议，端口按 3389 生成；实际端口不同请另建一条 RDP 账号）');
     } catch (e) {
       autoNote.textContent = '请点上面的按钮下载连接文件。';
     }

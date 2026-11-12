@@ -60,6 +60,7 @@ type deviceImportResult struct {
 	Skipped       int      `json:"skipped"`
 	HostMatched   int      `json:"hostMatched"`
 	HostUnmatched int      `json:"hostUnmatched"`
+	NoUser        int      `json:"noUser"` // 没有用户名的行：能建档，但登录不了
 	UnmatchedList []string `json:"unmatchedList"`
 	Errors        []string `json:"errors"`
 }
@@ -181,6 +182,9 @@ func (s *Server) handleDeviceAccountImport(w http.ResponseWriter, r *http.Reques
 	if res.Skipped > 0 {
 		msg += fmt.Sprintf("，跳过 %d 行", res.Skipped)
 	}
+	if res.NoUser > 0 {
+		msg += fmt.Sprintf("；其中 %d 条没有用户名，补全前无法登录", res.NoUser)
+	}
 	writeJSON(w, map[string]any{"ok": true, "msg": msg, "result": res})
 }
 
@@ -243,6 +247,14 @@ func (s *Server) importDeviceRows(rows [][]string) (*deviceImportResult, error) 
 		bindRaw := field("bindHost")
 		username := field("username")
 		secret := field("secret")
+		portRaw := field("port")
+		// 地址列里常把端口写在一起（192.168.40.69:9801），直接当主机名会拼成
+		// 「192.168.40.69:9801:22」这种非法地址，这里拆开
+		if portRaw == "" {
+			if h, p, ok := splitHostPort(hostRaw); ok {
+				hostRaw, portRaw = h, p
+			}
+		}
 		if username == "" && hostRaw == "" && bindRaw == "" {
 			res.Skipped++
 			continue
@@ -290,8 +302,11 @@ func (s *Server) importDeviceRows(rows [][]string) (*deviceImportResult, error) 
 			}
 			continue
 		}
-		port, _ := strconv.Atoi(field("port"))
+		port, _ := strconv.Atoi(portRaw)
 		protocol, port := normalizeProtocol(field("protocol"), port)
+		if username == "" {
+			res.NoUser++
+		}
 		name := field("name")
 		if name == "" {
 			name = fmt.Sprintf("%s-%s", hostRaw, username)
@@ -345,6 +360,27 @@ func accountKey(protocol, host, username string) string {
 	return strings.ToLower(strings.TrimSpace(protocol)) + "|" +
 		strings.ToLower(strings.TrimSpace(host)) + "|" +
 		strings.ToLower(strings.TrimSpace(username))
+}
+
+// splitHostPort 把「192.168.40.69:9801」拆成主机与端口。
+// 只在冒号后是纯数字且端口在合法范围内时才拆，避免把 IPv6 或带冒号的
+// 主机别名误拆。
+func splitHostPort(s string) (host, port string, ok bool) {
+	s = strings.TrimSpace(s)
+	i := strings.LastIndex(s, ":")
+	if i <= 0 || i == len(s)-1 {
+		return "", "", false
+	}
+	p := strings.TrimSpace(s[i+1:])
+	n, err := strconv.Atoi(p)
+	if err != nil || n <= 0 || n > 65535 {
+		return "", "", false
+	}
+	h := strings.TrimSpace(s[:i])
+	if h == "" || strings.Contains(h, ":") {
+		return "", "", false
+	}
+	return h, p, true
 }
 
 func isBlankRow(row []string) bool {

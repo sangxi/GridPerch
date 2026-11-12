@@ -446,9 +446,12 @@ func (s *Server) handleDeviceRDP(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "该账号缺少地址"})
 		return
 	}
-	port := acc.Port
-	if port <= 0 {
-		port = 3389
+	// 端口按「这条账号是不是远程桌面账号」来取，不能直接照搬账号里的端口：
+	// 同一个 Windows 主机往往既有 SSH 账号（22）又有 RDP，照搬会把 .rdp
+	// 写成 IP:22，mstsc 连过去必然失败（截图里就是这个现象）。
+	port := 3389
+	if strings.EqualFold(acc.Protocol, "rdp") && acc.Port > 0 {
+		port = acc.Port
 	}
 	body := rdpFile(acc.Host, port, acc.Username)
 	name := strings.TrimSpace(acc.Name)
