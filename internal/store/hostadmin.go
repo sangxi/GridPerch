@@ -179,31 +179,68 @@ func (s *Store) DeleteHost(name string) error {
 		return ErrHostNotFound
 	}
 
+	// 分批删，每批一个独立事务。
+	//
+	// 写连接只有一个（wdb 的 MaxOpenConns=1），如果整台主机的历史数据塞进
+	// 一个事务，几百万行的删除会把写连接占住一分钟——期间采集端上报、审计、
+	// 其它人的删除全部排队，表现出来就是「删不动 / 像锁表了」。
+	// 改成 5000 行一批后，单次持锁只有几十毫秒，其它写操作可以插进来。
+	//
+	// 代价是失去「要么全删要么不删」的原子性，所以顺序上把 host 行放在最后：
+	// 中途失败时主机还在，重试可以从断点继续，不会留下一个查不到根的数据孤岛。
+	for _, t := range hostnameRefTables {
+		if t == "host" {
+			continue // 主机行最后单独删
+		}
+		if err := s.deleteByHostBatched(t, "hostname", name); err != nil {
+			return fmt.Errorf("清理 %s 数据失败: %w", t, err)
+		}
+	}
+	if err := s.deleteByHostBatched("command", "host", name); err != nil {
+		return fmt.Errorf("清理指令记录失败: %w", err)
+	}
+	if _, err := s.wdb.Exec(`UPDATE asset SET monitor_bind='' WHERE monitor_bind=?`, name); err != nil {
+		return fmt.Errorf("解除资产关联失败: %w", err)
+	}
+	// rewriteTaskHosts 需要事务，单独开一个小的：它只改监控项的一列，行数很少
 	tx, err := s.wdb.Begin()
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-
-	for _, t := range hostnameRefTables {
-		if _, err := tx.Exec(`DELETE FROM `+t+` WHERE hostname=?`, name); err != nil {
-			return fmt.Errorf("清理 %s 数据失败: %w", t, err)
-		}
-	}
-	if _, err := tx.Exec(`DELETE FROM command WHERE host=?`, name); err != nil {
-		return fmt.Errorf("清理指令记录失败: %w", err)
-	}
-	if _, err := tx.Exec(`UPDATE asset SET monitor_bind='' WHERE monitor_bind=?`, name); err != nil {
-		return fmt.Errorf("解除资产关联失败: %w", err)
-	}
 	if err := rewriteTaskHosts(tx, name, ""); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	// 映射一并清掉：否则旧名上报会被解析到一台已删除的主机上、把它凭空建回来
-	if _, err := tx.Exec(`DELETE FROM host_rename WHERE from_name=? OR to_name=?`, name, name); err != nil {
+	if _, err := s.wdb.Exec(`DELETE FROM host_rename WHERE from_name=? OR to_name=?`, name, name); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if _, err := s.wdb.Exec(`DELETE FROM host WHERE hostname=?`, name); err != nil {
+		return fmt.Errorf("删除主机记录失败: %w", err)
+	}
+	return nil
+}
+
+// deleteBatchSize 单批删除的行数。取值偏小是为了让写连接能及时让出去，
+// 不是越大越好——越大越占锁。
+const deleteBatchSize = 5000
+
+// deleteByHostBatched 按 rowid 分批删除某列等于 name 的行，直到删干净。
+func (s *Store) deleteByHostBatched(table, column, name string) error {
+	for {
+		res, err := s.wdb.Exec(`DELETE FROM `+table+` WHERE rowid IN (
+			SELECT rowid FROM `+table+` WHERE `+column+`=? LIMIT ?)`, name, deleteBatchSize)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		if n < deleteBatchSize {
+			return nil
+		}
+	}
 }
 
 // rewriteTaskHosts 改写监控项的「作用主机」名单（逗号分隔，'*' 表示全部主机）。

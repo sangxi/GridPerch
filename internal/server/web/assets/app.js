@@ -992,6 +992,14 @@ async function confirmHostDelete(hostname) {
     <button class="btn ghost danger" id="hdOk">确认删除</button></div>`);
   $('#hdCancel').onclick = () => m.close();
   $('#hdOk').onclick = async () => {
+    const btn = $('#hdOk');
+    // 历史数据多的主机要删几十万到几百万行，实测能到一分钟。
+    // 不禁用按钮的话用户会以为没反应，连点几次就是几个并发删除排队。
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '正在删除…';
+    $('#hdMsg').textContent = '正在清理历史数据，机器数据多时可能需要 1 分钟，请勿重复点击。';
+    $('#hdMsg').className = 'modal-msg';
     try {
       const r = await del(`/api/hosts/${encodeURIComponent(hostname)}`);
       m.close();
@@ -1000,6 +1008,8 @@ async function confirmHostDelete(hostname) {
     } catch (e) {
       $('#hdMsg').textContent = e.message;
       $('#hdMsg').className = 'modal-msg err';
+      btn.disabled = false;
+      btn.textContent = '确认删除';
     }
   };
 }
