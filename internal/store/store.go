@@ -126,6 +126,38 @@ func maxInt(a, b int) int {
 	return b
 }
 
+// BackupTo 把数据库一致性快照写到 dest，返回快照大小。
+//
+// 用 SQLite 的 VACUUM INTO：它在读事务里生成一个干净副本，不需要停服，
+// 也不会像 cp 那样漏掉还留在 WAL 里的数据；顺带把空闲页压掉，
+// 所以出来的文件通常比原库小很多（库长期没 VACUUM 时尤其明显）。
+func BackupTo(dbPath, dest string) (int64, error) {
+	if _, err := os.Stat(dest); err == nil {
+		return 0, fmt.Errorf("目标文件已存在，请换一个名字：%s", dest)
+	}
+	if dir := filepath.Dir(dest); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return 0, err
+		}
+	}
+	// 只开一条连接、不跑迁移，纯粹做快照
+	dsn := dbPath + "?_pragma=busy_timeout(15000)&_pragma=journal_mode(WAL)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`VACUUM INTO ?`, dest); err != nil {
+		return 0, err
+	}
+	st, err := os.Stat(dest)
+	if err != nil {
+		return 0, err
+	}
+	return st.Size(), nil
+}
+
 // Close 停止写队列并关闭连接。
 func (s *Store) Close() error {
 	s.once.Do(func() { close(s.stop) })

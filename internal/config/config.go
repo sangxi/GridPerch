@@ -65,6 +65,9 @@ type Server struct {
 	HubUserAgent string
 
 	PrintVersion bool // 只打印版本号后退出
+	// BackupPath 非空表示「做一次一致性快照后退出」，不启动服务。
+	// 供 --backup 与定时任务使用，不需要停服。
+	BackupPath string
 }
 
 // DefaultHubURL 内置的授权系统地址。
@@ -265,6 +268,8 @@ func ParseServer() *Server {
 	flag.StringVar(&cfg.HubUserAgent, "hub-ua", cfg.HubUserAgent,
 		"访问授权系统时的 User-Agent，留空用默认 gridperch-server/<版本>；被网关按 UA 拦截时可改")
 	flag.BoolVar(&cfg.PrintVersion, "version", false, "打印版本号后退出")
+	flag.StringVar(&cfg.BackupPath, "backup", "",
+		"把数据库一致性快照写到指定文件后退出（不停服；目标文件不能已存在）")
 	flag.Parse()
 	// 未显式传 -hub 时保留配置里的值（来自 GRIDPERCH_HUB 环境变量，或内置默认地址）；
 	// 显式传入才覆盖——传空值（-hub=）即「完全离线」，与原语义一致。

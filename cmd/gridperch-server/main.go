@@ -35,6 +35,16 @@ func main() {
 		log.Printf("沿用更名前的数据库文件：%s（新默认值为 gridperch.db，需要归位改名后重启即可）", p)
 		cfg.DBPath = p
 	}
+	// 备份模式：做一次一致性快照就退出，不启动服务、不跑迁移。
+	// 用 VACUUM INTO 而不是 cp：不停服、不漏 WAL、顺带压实空闲页。
+	if cfg.BackupPath != "" {
+		size, err := store.BackupTo(cfg.DBPath, cfg.BackupPath)
+		if err != nil {
+			log.Fatalf("备份失败: %v", err)
+		}
+		fmt.Printf("已备份到 %s（%.1f MB）\n", cfg.BackupPath, float64(size)/(1<<20))
+		return
+	}
 	st, err := store.Open(cfg)
 	if err != nil {
 		log.Fatalf("打开数据库失败: %v", err)
