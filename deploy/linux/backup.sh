@@ -97,6 +97,7 @@ fi
   echo "备份时间: $(date '+%Y-%m-%d %H:%M:%S')"
   echo "版本: $("$BIN" -version 2>/dev/null || echo 未知)"
   echo "数据库大小: $(du -h "$WORK/gridperch.db" | cut -f1)"
+  echo "说明: 快照由 VACUUM INTO 生成，自包含，恢复时不需要额外的 -wal / -shm"
   echo ""
   echo "⚠️ gridperch.env 里含 GRIDPERCH_TOKEN，是设备账号密码的解密钥匙。"
   echo "   本归档请按密码同等级别保管，不要放进公开网盘。"
@@ -106,6 +107,9 @@ fi
 ARCHIVE="$DEST/gridperch-$STAMP.tar.gz"
 tar -czf "$ARCHIVE" -C "$WORK" .
 chmod 600 "$ARCHIVE"
+# 附一份校验和：归档搬来搬去、走网络传输后，用来确认没坏
+( cd "$(dirname "$ARCHIVE")" && sha256sum "$(basename "$ARCHIVE")" > "$(basename "$ARCHIVE").sha256" )
+chmod 600 "$ARCHIVE.sha256"
 
 SIZE=$(du -h "$ARCHIVE" | cut -f1)
 echo "==> 完成：$ARCHIVE（$SIZE）"
