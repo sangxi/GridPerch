@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/sangxi/gridperch/internal/model"
 )
@@ -51,6 +52,71 @@ func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "msg": "不支持的方法"})
 	}
+}
+
+// handleBatchCommands 批量向多台主机下发同一条指令。
+// 单台失败不影响其它主机：逐台写入队列并回传结果，前端据此展示哪些成功、哪些被跳过。
+func (s *Server) handleBatchCommands(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Hosts      []string `json:"hosts"`
+		Cmd        string   `json:"cmd"`
+		TimeoutSec int      `json:"timeoutSec"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<18)).Decode(&req); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "参数解析失败"})
+		return
+	}
+	req.Cmd = strings.TrimSpace(req.Cmd)
+	if req.Cmd == "" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "指令内容不能为空"})
+		return
+	}
+	if len(req.Cmd) > 4000 {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "指令内容过长"})
+		return
+	}
+	if len(req.Hosts) == 0 {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "请至少选择一台目标主机"})
+		return
+	}
+	const maxBatchHosts = 200
+	if len(req.Hosts) > maxBatchHosts {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"ok": false, "msg": "单次最多下发 " + strconv.Itoa(maxBatchHosts) + " 台主机"})
+		return
+	}
+	user := ""
+	if m := s.currentUser(r); m != nil {
+		user = m.Username
+	}
+	type result struct {
+		Host string `json:"host"`
+		ID   string `json:"id,omitempty"`
+		OK   bool   `json:"ok"`
+		Msg  string `json:"msg,omitempty"`
+	}
+	results := make([]result, 0, len(req.Hosts))
+	seen := map[string]bool{}
+	created := 0
+	for _, h := range req.Hosts {
+		h = strings.TrimSpace(h)
+		if h == "" || seen[h] {
+			continue
+		}
+		seen[h] = true
+		if !s.store.HostExists(h) {
+			results = append(results, result{Host: h, Msg: "主机不存在"})
+			continue
+		}
+		c, err := s.store.CreateCommand(h, req.Cmd, user, req.TimeoutSec)
+		if err != nil {
+			results = append(results, result{Host: h, Msg: err.Error()})
+			continue
+		}
+		results = append(results, result{Host: h, ID: c.ID, OK: true})
+		created++
+	}
+	writeJSON(w, map[string]any{"ok": true, "created": created,
+		"failed": len(results) - created, "results": results})
 }
 
 // handleCommandItem 删除（撤销）指令记录。

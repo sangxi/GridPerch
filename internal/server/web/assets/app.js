@@ -290,6 +290,57 @@ async function loadPublicSettings() {
   if (p.footerText) $('#footerText').textContent = p.footerText;
 }
 
+// 更新公告：每个成员每个版本只提示一次，已读标记存 localStorage（按版本标识区分）。
+const NOTICE_SEEN_KEY = 'gp.noticeSeen';
+
+function noticeSeenOf(version) {
+  try {
+    const raw = localStorage.getItem(NOTICE_SEEN_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    return map && map[version] === true;
+  } catch (e) { return false; }
+}
+
+function markNoticeSeen(version) {
+  try {
+    const raw = localStorage.getItem(NOTICE_SEEN_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[version] = true;
+    // 只留最近 20 个版本，避免长期积累
+    const keys = Object.keys(map);
+    if (keys.length > 20) keys.slice(0, keys.length - 20).forEach((k) => { delete map[k]; });
+    localStorage.setItem(NOTICE_SEEN_KEY, JSON.stringify(map));
+  } catch (e) { /* 存储不可用不影响登录 */ }
+}
+
+// showNoticeModal 用纯文本展示公告正文（换行保留），不解析 HTML，避免注入。
+// preview=true 时是管理员预览，不写已读标记、也不受开关影响。
+function showNoticeModal(notice, preview) {
+  const m = ensureModal();
+  const title = notice.title || '更新说明';
+  const body = String(notice.content || '').replace(/\r\n/g, '\n');
+  m.show(`<div class="modal-head"><h3>${esc(title)}</h3><button class="btn ghost" data-close aria-label="关闭">✕</button></div>
+    <div class="modal-body">
+      <div class="notice-meta">${notice.version ? `版本 <span class="mono">${esc(notice.version)}</span>` : ''}</div>
+      <div class="notice-text">${esc(body)}</div>
+    </div>
+    <div class="modal-actions"><button class="btn primary" data-close>${preview ? '关闭预览' : '我知道了'}</button></div>`);
+  bindModalClose();
+  if (!preview && notice.version) markNoticeSeen(notice.version);
+}
+
+// maybeShowNotice 在登录成功后调用：公告开启且该版本未读过则弹窗。
+async function maybeShowNotice() {
+  const p = state.public || {};
+  if (p.noticeEnabled !== 'true') return;
+  const version = String(p.noticeVersion || '').trim();
+  const content = String(p.noticeContent || '');
+  if (!version || !content.trim() || noticeSeenOf(version)) return;
+  // 等首屏渲染完再弹，避免和 router 的首个页面绘制抢 DOM
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  showNoticeModal({ title: p.noticeTitle, content: content, version: version }, false);
+}
+
 async function bootstrap() {
   try {
     const prof = await get('/api/profile');
@@ -301,6 +352,7 @@ async function bootstrap() {
     renderVersionBadge();
     renderNav();
     router();
+    maybeShowNotice();
   } catch (e) {
     showLogin(true);
   }
@@ -2267,28 +2319,97 @@ async function openCommandBox(host, preset) {
   const d = ensureDrawer();
   d.el.classList.add('show');
   d.mask.classList.add('show');
-  const hosts = window.__hosts || await getList('/api/hosts');
-  let html = `<div class="drawer-head"><h3>下发指令</h3><span class="spacer"></span><button class="btn small ghost" id="cmdClose">关闭</button></div>`;
-  html += `<div class="hint-box">指令会推送到目标主机的采集端执行，采集端需以默认配置启动（<span class="mono">-allow-command</span> 未关闭）。结果在「指令下发」模块查看。</div>`;
+  const [hosts, accounts] = await Promise.all([
+    window.__hosts ? Promise.resolve(window.__hosts) : getList('/api/hosts'),
+    getList('/api/device-accounts').catch(() => []),
+  ]);
+  window.__hosts = hosts;
+  const osOf = (hn) => {
+    const h = hosts.find((x) => x.hostname === hn);
+    return h ? String(h.os || '').toLowerCase() : '';
+  };
+  const canTerm = (a) => ['ssh', 'sftp'].indexOf(String(a.protocol || '').toLowerCase()) >= 0;
+  const canRdp = (a) => String(a.protocol || '').toLowerCase() === 'rdp' || osOf(a.bindHost) === 'windows';
+
+  let html = `<div class="drawer-head"><h3>下发指令 / 主机控制</h3><span class="spacer"></span><button class="btn small ghost" id="cmdClose">关闭</button></div>`;
+  html += `<div class="hint-box">指令会推送到目标主机的采集端执行，采集端需以默认配置启动（<span class="mono">-allow-command</span> 未关闭）。勾选多台主机可一次下发到全部主机，逐台记录结果。</div>`;
   html += `<div class="form-grid">
-    <label>目标主机<select id="cmdHost">${hosts.map((h) => `<option ${h.hostname === host ? 'selected' : ''}>${esc(h.hostname)}</option>`).join('')}</select></label>
+    <label class="full">目标主机（可多选）
+      <div style="max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:6px 8px">
+        ${hosts.map((h) => `<label style="display:inline-flex;align-items:center;gap:4px;margin:3px 12px 3px 0"><input type="checkbox" class="cmd-host-chk" value="${esc(h.hostname)}" ${h.hostname === host ? 'checked' : ''}> ${esc(h.hostname)}${h.ip ? ` <span class="muted">(${esc(h.ip)})</span>` : ''}</label>`).join('') || '<span class="muted">暂无主机</span>'}
+      </div>
+    </label>
+    <div class="full"><button type="button" class="btn ghost small" id="cmdSelAll">全选</button> <button type="button" class="btn ghost small" id="cmdSelNone">清空</button> <span class="muted" id="cmdSelInfo"></span></div>
     <label>超时时间（秒）<input type="number" id="cmdTimeout" value="30" min="5" max="600"></label>
     <label class="full">指令内容<textarea id="cmdText" rows="4" placeholder="例如：systemctl restart nginx">${esc(preset || '')}</textarea></label>
   </div>
   <div class="modal-actions"><button class="btn primary" id="cmdSend">下发执行</button></div>
+  <h3 style="margin-top:20px">主机控制</h3>
+  <div id="cmdControls" class="hint-box" style="padding:10px"></div>
   <h3 style="margin-top:20px">最近下发记录</h3><div id="cmdHistory"><div class="empty">加载中…</div></div>`;
   d.body.innerHTML = html;
   $('#cmdClose').onclick = closeDrawer;
-  $('#cmdSend').onclick = async () => {
-    try {
-      await post('/api/commands', {
-        host: $('#cmdHost').value, cmd: $('#cmdText').value, timeoutSec: Number($('#cmdTimeout').value) || 30,
-      });
-      toast('指令已下发，等待采集端回包');
-      loadCmdHistory($('#cmdHost').value);
-    } catch (e) { toast('下发失败：' + e.message, true); }
+
+  const selectedHosts = () => Array.from(document.querySelectorAll('.cmd-host-chk:checked')).map((x) => x.value);
+  const refreshControls = () => {
+    const box = $('#cmdControls');
+    if (!box) return;
+    const sel = selectedHosts();
+    const info = $('#cmdSelInfo');
+    if (info) info.textContent = `已选 ${sel.length} 台`;
+    if (!sel.length) { box.textContent = '请先勾选主机，再使用 SSH 终端或远程桌面。'; return; }
+    const list = accounts.filter((a) => sel.indexOf(a.bindHost) >= 0);
+    if (!list.length) {
+      box.innerHTML = '所选主机还没有关联设备账号。请到「设备账号」页按 IP / 主机名关联，或新增账号后回来操作。';
+      return;
+    }
+    box.innerHTML = list.map((a) => {
+      const t = canTerm(a) ? `<button type="button" class="btn ghost small" data-cterm="${esc(a.id)}">SSH 终端</button>` : '';
+      const r = canRdp(a) ? `<button type="button" class="btn ghost small" data-crdp="${esc(a.id)}">远程桌面</button>` : '';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <span class="mono">${esc(a.bindHost || '-')}</span>
+        <span class="muted">${esc(a.name || '')} · ${esc(PROTOCOL_CN[a.protocol] || a.protocol || '-')} · ${esc(a.username || '')}</span>
+        <span class="spacer"></span>${t}${r}</div>`;
+    }).join('');
+    box.querySelectorAll('[data-cterm]').forEach((b) => {
+      b.onclick = () => window.open('/term?id=' + encodeURIComponent(b.dataset.cterm), '_blank', 'noopener');
+    });
+    box.querySelectorAll('[data-crdp]').forEach((b) => {
+      b.onclick = () => window.open('/rdp?id=' + encodeURIComponent(b.dataset.crdp), '_blank', 'noopener');
+    });
   };
-  loadCmdHistory(host);
+  document.querySelectorAll('.cmd-host-chk').forEach((x) => { x.onchange = refreshControls; });
+  $('#cmdSelAll').onclick = () => {
+    document.querySelectorAll('.cmd-host-chk').forEach((x) => { x.checked = true; });
+    refreshControls();
+  };
+  $('#cmdSelNone').onclick = () => {
+    document.querySelectorAll('.cmd-host-chk').forEach((x) => { x.checked = false; });
+    refreshControls();
+  };
+  refreshControls();
+
+  $('#cmdSend').onclick = async () => {
+    const targets = selectedHosts();
+    const cmd = $('#cmdText').value;
+    const timeoutSec = Number($('#cmdTimeout').value) || 30;
+    if (!targets.length) { toast('请至少选择一台目标主机', true); return; }
+    if (!cmd.trim()) { toast('请填写指令内容', true); return; }
+    const btn = $('#cmdSend');
+    if (btn) { btn.disabled = true; }
+    try {
+      if (targets.length === 1) {
+        await post('/api/commands', { host: targets[0], cmd, timeoutSec });
+        toast('指令已下发，等待采集端回包');
+      } else {
+        const r = await post('/api/commands/batch', { hosts: targets, cmd, timeoutSec });
+        toast(`已下发 ${r.created} 台${r.failed ? `，失败 ${r.failed} 台` : ''}`);
+      }
+      loadCmdHistory(targets[0]);
+    } catch (e) { toast('下发失败：' + e.message, true); }
+    finally { if (btn) btn.disabled = false; }
+  };
+  loadCmdHistory(host || (hosts[0] || {}).hostname || '');
 }
 
 async function loadCmdHistory(host) {
@@ -4054,6 +4175,7 @@ async function renderSettings() {
   const val = (k, def) => cfg[k] === undefined ? (def || '') : cfg[k];
   let html = `<div class="tabs" id="setTabs">
     <button data-tab="brand" class="active">界面定制</button>
+    <button data-tab="notice">更新公告</button>
     <button data-tab="agent">采集端配置</button>
     <button data-tab="alert">告警与提醒</button>
     <button data-tab="mail">邮件推送</button>
@@ -4078,6 +4200,21 @@ async function renderSettings() {
       </div>
       <div class="seg-note">大屏标题作用于「可视化大屏」页顶部的名称（浏览器标签页标题同步变化）。
         留空时跟随「系统名称」自动生成，改系统名称即可整体换名；想单独起名就在这里填。</div>`;
+    } else if (tab === 'notice') {
+      const enabled = val('noticeEnabled') === 'true';
+      body = `<div class="form-grid">
+        <label class="full"><input type="checkbox" id="nEnabled" ${enabled ? 'checked' : ''}> 启用更新公告弹窗</label>
+        <label>公告版本标识
+          <input id="nVersion" value="${esc(val('noticeVersion'))}" placeholder="例如：1.2.15 / 2026-11-16">
+        </label>
+        <label>公告标题<input id="nTitle" value="${esc(val('noticeTitle'))}" placeholder="例如：1.2.15 更新说明"></label>
+        <label class="full">公告正文（纯文本，换行会被保留）
+          <textarea id="nContent" rows="10" placeholder="本次更新内容，例如：&#10;1. 修复登录页自动带出超管账号&#10;2. 指令下发支持批量">${esc(val('noticeContent'))}</textarea>
+        </label>
+      </div>
+      <div class="hint-box">开启后，<strong>所有成员登录成功时</strong>都会看到这个弹窗。每人每个版本只提示一次：
+        改动「公告版本标识」即视为新公告，所有人下次登录会再看到一次；标识不变则不再打扰。
+        正文按纯文本展示（换行保留），不会渲染 HTML，避免注入风险。</div>`;
     } else if (tab === 'agent') {
       body = `<div class="hint-box">
         这些是<strong>平台统一下发</strong>给采集端的运行配置。采集端启动后自动拉取，
@@ -4203,9 +4340,17 @@ async function renderSettings() {
       </div>
       <div id="mailLogBox"></div>`;
     }
-    if (tab !== 'mail' && tab !== 'webhook' && tab !== 'report') body += `<div class="modal-actions"><button class="btn primary" id="sSave">保存设置</button></div>`;
+    if (tab === 'notice') body += `<div class="modal-actions"><button class="btn" id="nPreview">预览公告</button><button class="btn primary" id="sSave">保存设置</button></div>`;
+    else if (tab !== 'mail' && tab !== 'webhook' && tab !== 'report') body += `<div class="modal-actions"><button class="btn primary" id="sSave">保存设置</button></div>`;
     $('#setBody').innerHTML = body;
     if ($('#sSave')) $('#sSave').onclick = saveSettings;
+    if (tab === 'notice' && $('#nPreview')) $('#nPreview').onclick = () => {
+      showNoticeModal({
+        title: $('#nTitle').value.trim() || '更新说明',
+        content: $('#nContent').value,
+        version: $('#nVersion').value.trim(),
+      });
+    };
     if (tab === 'agent') loadAgentConfig();
     if (tab === 'webhook') loadWebhooks();
     if (tab === 'report') {
@@ -4287,6 +4432,19 @@ async function renderSettings() {
       set('systemName', $('#sName')); set('hideFooter', $('#sHideFooter')); set('footerText', $('#sFooter'));
       set('screenTitle', $('#sScreenTitle'));
       if (window.__logo) patch.logoData = window.__logo;
+    } else if (tab === 'notice') {
+      patch.noticeEnabled = String($('#nEnabled').checked);
+      patch.noticeVersion = $('#nVersion').value.trim();
+      patch.noticeTitle = $('#nTitle').value.trim();
+      patch.noticeContent = $('#nContent').value;
+      if (patch.noticeEnabled === 'true' && !patch.noticeVersion) {
+        toast('请填写公告版本标识，成员靠它判断是否为新公告', true);
+        return false;
+      }
+      if (patch.noticeEnabled === 'true' && !patch.noticeContent.trim()) {
+        toast('请填写公告正文', true);
+        return false;
+      }
     } else if (tab === 'agent') {
       patch.agentInterval = $('#agInterval').value.trim();
       patch.agentUpdateInterval = $('#agUpdateInterval').value.trim();
@@ -4704,6 +4862,11 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#logoutBtn').onclick = async () => {
     try { await post('/api/logout', {}); } catch (e) { /* 忽略 */ }
     state.user = null;
+    state.menus = [];
+    // 登出后清空凭证输入框，避免下一位使用者看到上一位的账号/密码残留。
+    if ($('#username')) $('#username').value = '';
+    if ($('#password')) $('#password').value = '';
+    if ($('#loginErr')) $('#loginErr').textContent = '';
     showLogin(true);
   };
   $('#refreshBtn').onclick = () => render();

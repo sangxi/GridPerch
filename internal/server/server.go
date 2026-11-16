@@ -170,6 +170,7 @@ func (s *Server) Handler() http.Handler {
 	// 指令下发
 	mux.Handle("GET /api/commands", s.auth(http.HandlerFunc(s.handleCommands)))
 	mux.Handle("POST /api/commands", s.auth(s.audit(http.HandlerFunc(s.handleCommands))))
+	mux.Handle("POST /api/commands/batch", s.auth(s.audit(http.HandlerFunc(s.handleBatchCommands))))
 	mux.Handle("GET /api/commands/{id}", s.auth(http.HandlerFunc(s.handleCommandGet)))
 	mux.Handle("DELETE /api/commands/{id}", s.auth(s.audit(http.HandlerFunc(s.handleCommandItem))))
 

@@ -405,7 +405,9 @@ func (s *Server) handleTokenItem(w http.ResponseWriter, r *http.Request) {
 /* ---------------- 系统设置与界面定制 ---------------- */
 
 // publicSettingKeys 无需登录即可读取的界面定制项。
-var publicSettingKeys = []string{"systemName", "logoData", "hideFooter", "footerText", "alertSound", "screenTitle"}
+var publicSettingKeys = []string{"systemName", "logoData", "hideFooter", "footerText", "alertSound", "screenTitle",
+	// 更新公告：内容不敏感，公开下发，供成员登录后弹窗展示
+	"noticeEnabled", "noticeVersion", "noticeTitle", "noticeContent"}
 
 // screenTitleDefault 系统名称也未设置时的兜底标题。
 const screenTitleDefault = "GridPerch 运维监控中心"

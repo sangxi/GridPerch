@@ -50,6 +50,7 @@ var auditRules = map[string]auditRule{
 	"PUT /api/tasks/{id}":                     {Action: "修改监控项", Category: "monitor", Target: "name", Detail: "type,runner,hosts,enabled"},
 	"DELETE /api/tasks/{id}":                  {Action: "删除监控项", Category: "monitor", Target: ":path"},
 	"POST /api/commands":                      {Action: "下发指令", Category: "command", Target: "host", Detail: "cmd"},
+	"POST /api/commands/batch":                {Action: "批量下发指令", Category: "command", Target: "hosts", Detail: "cmd"},
 	"POST /api/tools/probe":                   {Action: "执行网络探测", Category: "tools", Target: "type"},
 	"DELETE /api/commands/{id}":               {Action: "删除指令记录", Category: "command", Target: ":path"},
 	"POST /api/assets":                        {Action: "新增资产", Category: "asset", Target: "name", Detail: "category,ip"},
