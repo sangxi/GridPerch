@@ -3099,12 +3099,75 @@ async function renderDeploy() {
 }
 
 /* ================= 指令下发模块 ================= */
+// openBatchCommand 在「指令下发」主界面里批量下发：勾选多台主机，同一条指令一次下发。
+function openBatchCommand(hosts) {
+  const m = ensureModal();
+  if (!hosts.length) {
+    m.show(`<div class="modal-head"><h3>批量下发指令</h3><button class="btn ghost" data-close>✕</button></div>
+      <div class="modal-body"><div class="empty">暂无主机，请先接入主机</div></div>
+      <div class="modal-actions"><button class="btn" data-close>关闭</button></div>`);
+    bindModalClose();
+    return;
+  }
+  m.show(`<div class="modal-head"><h3>批量下发指令</h3><button class="btn ghost" data-close>✕</button></div>
+    <div class="modal-body">
+      <div class="hint-box">勾选目标主机，一条指令会同时下发到所有勾选的主机，逐台记录执行结果。结果可在下方「指令执行历史」查看。</div>
+      <div style="margin:10px 0">
+        <button type="button" class="btn ghost small" id="bcAll">全选</button>
+        <button type="button" class="btn ghost small" id="bcNone">清空</button>
+        <span class="muted" id="bcCount"></span>
+      </div>
+      <div class="check-grid" id="bcHosts">
+        ${hosts.map((h) => `<label><input type="checkbox" class="bcHost" value="${esc(h.hostname)}"> ${esc(h.hostname)}${h.ip ? ` <span class="muted">(${esc(h.ip)})</span>` : ''}</label>`).join('')}
+      </div>
+      <div class="form-grid" style="margin-top:14px">
+        <label class="full">指令内容<textarea id="bcCmd" rows="4" placeholder="例如：uptime"></textarea></label>
+        <label>超时时间（秒）<input type="number" id="bcTimeout" value="30" min="5" max="600"></label>
+      </div>
+      <div id="bcResult"></div>
+    </div>
+    <div class="modal-actions"><button class="btn" data-close>取消</button><button class="btn primary" id="bcSend">下发到所选主机</button></div>`, 'wide');
+  bindModalClose();
+  const count = () => {
+    const n = document.querySelectorAll('.bcHost:checked').length;
+    const el = $('#bcCount');
+    if (el) el.textContent = `已选 ${n} / ${hosts.length} 台`;
+  };
+  document.querySelectorAll('.bcHost').forEach((x) => { x.onchange = count; });
+  $('#bcAll').onclick = () => { document.querySelectorAll('.bcHost').forEach((x) => { x.checked = true; }); count(); };
+  $('#bcNone').onclick = () => { document.querySelectorAll('.bcHost').forEach((x) => { x.checked = false; }); count(); };
+  count();
+  $('#bcSend').onclick = async () => {
+    const targets = Array.from(document.querySelectorAll('.bcHost:checked')).map((x) => x.value);
+    const cmd = $('#bcCmd').value.trim();
+    const box = $('#bcResult');
+    if (!targets.length) { toast('请至少勾选一台主机', true); return; }
+    if (!cmd) { toast('请填写指令内容', true); return; }
+    const btn = $('#bcSend');
+    btn.disabled = true;
+    box.innerHTML = '<div class="test-result running">正在下发…</div>';
+    try {
+      const r = await post('/api/commands/batch', { hosts: targets, cmd, timeoutSec: Number($('#bcTimeout').value) || 30 });
+      const failed = (r.results || []).filter((x) => !x.ok);
+      let detail = `已下发 ${r.created} 台`;
+      if (r.failed) detail += `，失败 ${r.failed} 台`;
+      box.innerHTML = `<div class="test-result ok">${esc(detail)}</div>`
+        + (failed.length ? `<pre class="output">${esc(failed.map((x) => x.host + '：' + (x.msg || '失败')).join('\n'))}</pre>` : '');
+      toast(detail);
+    } catch (e) {
+      box.innerHTML = `<div class="test-result bad">下发失败：${esc(e.message)}</div>`;
+      toast('下发失败：' + e.message, true);
+    } finally { btn.disabled = false; }
+  };
+}
+
 async function renderCommands() {
   const [cmds, hosts] = await Promise.all([getList('/api/commands?limit=200'), getList('/api/hosts')]);
   window.__hosts = hosts;
   let html = `<div class="toolbar">
-    <select id="cmdHostFilter"><option value="">全部主机</option>${hosts.map((h) => `<option>${esc(h.hostname)}</option>`).join('')}</select>
-    <input type="text" id="cmdQuick" placeholder="输入一次性命令，回车快速下发">
+    <select id="cmdHostFilter"><option value="">全部主机（批量下发到所有主机）</option>${hosts.map((h) => `<option>${esc(h.hostname)}</option>`).join('')}</select>
+    <input type="text" id="cmdQuick" placeholder="输入命令，回车下发（选「全部主机」即批量下发所有主机）">
+    <button class="btn ghost" id="cmdBatch">批量下发到多台</button>
     <span class="spacer"></span>
     <button class="btn primary" id="cmdOpen">+ 下发指令</button>
     <a class="btn ghost small" href="/api/export/commands?format=csv">导出 CSV</a>
@@ -3121,12 +3184,25 @@ async function renderCommands() {
   html += panel('指令执行历史', dataTable(['下发时间', '主机', '指令', '执行人', '状态', '退出码', '完成时间', '操作'], rows, '暂无下发记录'));
   app().innerHTML = html;
   $('#cmdOpen').onclick = () => openCommandBox(hosts.length ? hosts[0].hostname : '');
+  $('#cmdBatch').onclick = () => openBatchCommand(hosts);
   $('#cmdQuick').onkeydown = async (ev) => {
     if (ev.key !== 'Enter') return;
-    const host = $('#cmdHostFilter').value || (hosts[0] || {}).hostname;
-    if (!host) { toast('请先接入主机', true); return; }
-    try { await post('/api/commands', { host, cmd: $('#cmdQuick').value, timeoutSec: 30 }); toast('已下发'); $('#cmdQuick').value = ''; render(); }
-    catch (e) { toast('下发失败：' + e.message, true); }
+    const cmd = $('#cmdQuick').value.trim();
+    if (!cmd) { toast('请输入命令', true); return; }
+    const picked = $('#cmdHostFilter').value;
+    if (!hosts.length) { toast('请先接入主机', true); return; }
+    try {
+      if (!picked) {
+        // 「全部主机」= 批量下发到所有主机
+        const r = await post('/api/commands/batch', { hosts: hosts.map((h) => h.hostname), cmd, timeoutSec: 30 });
+        toast(`已批量下发 ${r.created} 台${r.failed ? `，失败 ${r.failed} 台` : ''}`);
+      } else {
+        await post('/api/commands', { host: picked, cmd, timeoutSec: 30 });
+        toast('已下发');
+      }
+      $('#cmdQuick').value = '';
+      render();
+    } catch (e) { toast('下发失败：' + e.message, true); }
   };
   document.querySelectorAll('[data-view]').forEach((b) => {
     b.onclick = () => {
