@@ -3139,7 +3139,15 @@ async function renderDeploy() {
 
 /* ================= 指令下发模块 ================= */
 // openBatchCommand 在「指令下发」主界面里批量下发：勾选多台主机，同一条指令一次下发。
-function openBatchCommand(hosts) {
+function batchOsGroup(h) {
+  const os = String(h.os || '').toLowerCase();
+  const ver = String(h.version || '').toLowerCase();
+  if (os === 'windows' || ver.includes('windows')) return 'windows';
+  if (os === 'linux' || os === 'unix' || os === 'darwin'
+    || /centos|ubuntu|debian|redhat|rhel|suse|alpine|fedora|linux|darwin|macos/.test(ver)) return 'linux';
+  return 'other';
+}
+async function openBatchCommand(hosts) {
   const m = ensureModal();
   if (!hosts.length) {
     m.show(`<div class="modal-head"><h3>批量下发指令</h3><button class="btn ghost" data-close>✕</button></div>
@@ -3148,40 +3156,98 @@ function openBatchCommand(hosts) {
     bindModalClose();
     return;
   }
+  // 目录列表用于筛选；拿不到不影响主流程
+  let catalogs = [];
+  try { catalogs = asList((await get('/api/host-catalogs')).list); } catch (e) { catalogs = []; }
+  const catName = {};
+  catalogs.forEach((c) => { catName[c.id] = c.name; });
+
+  // 默认落在数量最多的系统分组
+  const counts = { linux: 0, windows: 0, other: 0 };
+  hosts.forEach((h) => { counts[batchOsGroup(h)]++; });
+  let curOs = counts.linux >= counts.windows ? 'linux' : 'windows';
+
   m.show(`<div class="modal-head"><h3>批量下发指令</h3><button class="btn ghost" data-close>✕</button></div>
     <div class="modal-body">
-      <div class="hint-box">勾选目标主机，一条指令会同时下发到所有勾选的主机，逐台记录执行结果。结果可在下方「指令执行历史」查看。</div>
-      <div style="margin:10px 0">
+      <div class="hint-box">按操作系统分组下发：<b>Linux 用 shell 命令、Windows 用 PowerShell/CMD 命令</b>，两者不通用，请勿混选。切换系统分组会清空已选主机。逐台结果可在「指令执行历史」查看。</div>
+      <div class="tabs" id="bcOsTabs" style="margin:8px 0">
+        <button type="button" data-g="linux" class="${curOs === 'linux' ? 'active' : ''}">Linux / Unix（${counts.linux}）</button>
+        <button type="button" data-g="windows" class="${curOs === 'windows' ? 'active' : ''}">Windows（${counts.windows}）</button>
+        <button type="button" data-g="other" class="${curOs === 'other' ? 'active' : ''}">其他（${counts.other}）</button>
+      </div>
+      <div class="toolbar" style="margin:8px 0">
+        <select id="bcCatalog" class="sel"><option value="">全部分类</option>${catalogs.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}（${c.hostCount || 0}）</option>`).join('')}</select>
+        <input type="search" id="bcSearch" placeholder="搜索主机名 / IP">
+        <span class="spacer"></span>
         <button type="button" class="btn ghost small" id="bcAll">全选</button>
         <button type="button" class="btn ghost small" id="bcNone">清空</button>
         <span class="muted" id="bcCount"></span>
       </div>
-      <div class="check-grid" id="bcHosts">
-        ${hosts.map((h) => `<label><input type="checkbox" class="bcHost" value="${esc(h.hostname)}"> ${esc(h.hostname)}${h.ip ? ` <span class="muted">(${esc(h.ip)})</span>` : ''}</label>`).join('')}
-      </div>
+      <div id="bcList" style="max-height:340px;overflow:auto"></div>
       <div class="form-grid" style="margin-top:14px">
-        <label class="full">指令内容<textarea id="bcCmd" rows="4" placeholder="例如：uptime"></textarea></label>
+        <label class="full" id="bcCmdLabel">指令内容（Linux / Unix：shell 命令）<textarea id="bcCmd" rows="4" placeholder="例如：uptime"></textarea></label>
         <label>超时时间（秒）<input type="number" id="bcTimeout" value="30" min="5" max="600"></label>
       </div>
       <div id="bcResult"></div>
     </div>
     <div class="modal-actions"><button class="btn" data-close>取消</button><button class="btn primary" id="bcSend">下发到所选主机</button></div>`, 'wide');
   bindModalClose();
-  const count = () => {
-    const n = document.querySelectorAll('.bcHost:checked').length;
-    const el = $('#bcCount');
-    if (el) el.textContent = `已选 ${n} / ${hosts.length} 台`;
+
+  const labelFor = (g) => ({
+    linux: 'Linux / Unix：shell 命令，例如 uptime、systemctl status nginx',
+    windows: 'Windows：PowerShell / CMD 命令，例如 systeminfo、ipconfig',
+    other: '其他系统：请按目标系统填写可执行的命令',
+  }[g] || '指令内容');
+  const paintList = () => {
+    const kw = ($('#bcSearch').value || '').toLowerCase();
+    const cat = $('#bcCatalog').value;
+    const list = hosts.filter((h) => batchOsGroup(h) === curOs
+      && (!cat || h.catalogId === cat)
+      && ((h.hostname + h.ip).toLowerCase().includes(kw)));
+    const rows = list.map((h) => [
+      `<input type="checkbox" class="bcHost" value="${esc(h.hostname)}">`,
+      esc(h.hostname), esc(h.ip || '-'),
+      h.catalogId ? `<span class="tag cat">${esc(catName[h.catalogId] || h.catalogName || '')}</span>` : '<span class="muted">未分组</span>',
+      `<span class="os-dot ${osMeta(h).cls}"></span> ${esc(osMeta(h).label)}`,
+      h.state === '1' ? '<span class="tag ok">在线</span>' : '<span class="tag danger">离线</span>',
+    ]);
+    $('#bcList').innerHTML = dataTable(['选择', '主机名', 'IP', '分类', '系统', '状态'], rows, '当前分组没有主机');
+    document.querySelectorAll('.bcHost').forEach((x) => { x.onchange = count; });
+    count();
   };
-  document.querySelectorAll('.bcHost').forEach((x) => { x.onchange = count; });
+  const count = () => {
+    const box = $('#bcCount');
+    if (box) box.textContent = `已选 ${document.querySelectorAll('.bcHost:checked').length} 台`;
+  };
+  document.querySelectorAll('#bcOsTabs button').forEach((b) => {
+    b.onclick = () => {
+      curOs = b.dataset.g;
+      document.querySelectorAll('#bcOsTabs button').forEach((x) => x.classList.toggle('active', x === b));
+      $('#bcCmdLabel').firstChild.textContent = `指令内容（${labelFor(curOs)}）`;
+      $('#bcCmd').placeholder = curOs === 'windows' ? '例如：systeminfo' : (curOs === 'linux' ? '例如：uptime' : '请输入命令');
+      $('#bcResult').innerHTML = '';
+      paintList();
+    };
+  });
+  $('#bcCatalog').onchange = paintList;
+  $('#bcSearch').oninput = paintList;
   $('#bcAll').onclick = () => { document.querySelectorAll('.bcHost').forEach((x) => { x.checked = true; }); count(); };
   $('#bcNone').onclick = () => { document.querySelectorAll('.bcHost').forEach((x) => { x.checked = false; }); count(); };
-  count();
+  $('#bcCmdLabel').firstChild.textContent = `指令内容（${labelFor(curOs)}）`;
+  paintList();
+
   $('#bcSend').onclick = async () => {
     const targets = Array.from(document.querySelectorAll('.bcHost:checked')).map((x) => x.value);
     const cmd = $('#bcCmd').value.trim();
     const box = $('#bcResult');
     if (!targets.length) { toast('请至少勾选一台主机', true); return; }
     if (!cmd) { toast('请填写指令内容', true); return; }
+    // 二次校验：选中的主机必须都属于当前系统分组（防止列表外混入）
+    const wrong = targets.filter((hn) => {
+      const h = hosts.find((x) => x.hostname === hn);
+      return h && batchOsGroup(h) !== curOs;
+    });
+    if (wrong.length) { toast(`有 ${wrong.length} 台主机不属于当前系统分组，已阻止下发`, true); return; }
     const btn = $('#bcSend');
     btn.disabled = true;
     box.innerHTML = '<div class="test-result running">正在下发…</div>';
