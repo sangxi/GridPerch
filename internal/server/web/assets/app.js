@@ -827,8 +827,13 @@ function sortHosts(list) {
 }
 
 async function renderHosts() {
-  const hosts = await getList('/api/hosts');
+  const [hosts, devAccounts] = await Promise.all([
+    getList('/api/hosts'),
+    getList('/api/device-accounts').catch(() => []),
+  ]);
   window.__hosts = hosts;
+  // 远程控制图标按主机名找关联的设备账号，缓存供行内按钮点击时用
+  window.__hostAccounts = devAccounts;
   // 目录用于按业务/机房/环境归类，名称可以是中文
   let catalogs = [];
   try { catalogs = asList((await get('/api/host-catalogs')).list); } catch (e) { catalogs = []; }
@@ -838,8 +843,12 @@ async function renderHosts() {
   // 行内操作统一用图标按钮：文案按钮五个并排能把操作列撑到 300px，
   // 表格横向溢出后「最后上报」这类时间列最先被挤掉。title 里保留完整文案。
   const canCfg = !(state.user && state.user.role === 'viewer');
+  // 第一个图标是「远程控制」：按操作系统决定图标与去向——
+  // Linux/类 Unix 走 SSH 网页终端（命令行图标），Windows 走远程桌面（显示器图标）。
+  const isWindowsHost = (h) => String(h.os || '').toLowerCase() === 'windows';
   const hostActions = (h) => `<span class="row-acts">
-      <button class="ico-btn" data-cmd="${esc(h.hostname)}" title="向 ${esc(h.hostname)} 下发指令">${icon('terminal')}</button>
+      <button class="ico-btn" data-ctl="${esc(h.hostname)}" title="${isWindowsHost(h) ? '远程桌面连接' : 'SSH 网页终端'} · ${esc(h.hostname)}">${icon(isWindowsHost(h) ? 'desktop' : 'terminal')}</button>
+      <button class="ico-btn" data-cmd="${esc(h.hostname)}" title="向 ${esc(h.hostname)} 下发指令">${icon('pulse')}</button>
       ${canCfg ? `<button class="ico-btn" data-hcfg="${esc(h.hostname)}" title="采集端配置（单机覆盖）">${icon('sliders')}</button>` : ''}
       ${canCfg ? `<button class="ico-btn" data-hcat="${esc(h.hostname)}" title="归类到主机目录">${icon('folder')}</button>` : ''}
       ${isAdmin ? `<button class="ico-btn" data-hren="${esc(h.hostname)}" title="重命名（历史数据一并迁移）">${icon('edit')}</button>` : ''}
@@ -971,7 +980,37 @@ function bindHostDblClick() {
     };
   });
 }
+// openHostControl 从主机列表的远程控制图标进入：按主机名/系统找关联的设备账号，
+// Linux 走 SSH（命令行），Windows 走远程桌面（显示器），复用 /term、/rdp 的新窗口与二次确认。
+function openHostControl(hostname) {
+  const hosts = window.__hosts || [];
+  const accounts = window.__hostAccounts || [];
+  const h = hosts.find((x) => x.hostname === hostname) || {};
+  const isWin = String(h.os || '').toLowerCase() === 'windows';
+  const ip = String(h.ip || '').toLowerCase();
+  const name = String(hostname || '').toLowerCase();
+  // 该主机关联的账号：bind_host 命中主机名优先，其次账号地址=主机名或 IP
+  const mine = accounts.filter((a) => {
+    const bind = String(a.bindHost || '').toLowerCase();
+    const addr = String(a.host || '').toLowerCase();
+    return bind === name || addr === name || (ip && addr === ip);
+  });
+  const proto = (a) => String(a.protocol || '').toLowerCase();
+  // Windows 只认 rdp 账号；Linux/其他找 ssh 或 sftp
+  const pick = isWin
+    ? mine.find((a) => proto(a) === 'rdp')
+    : (mine.find((a) => proto(a) === 'ssh') || mine.find((a) => proto(a) === 'sftp'));
+  if (!pick) {
+    toast(`未在「设备账号」里找到 ${hostname} 的${isWin ? '远程桌面(RDP)' : 'SSH'}账号，请先到设备账号页添加并按 IP/主机名关联`, true);
+    return;
+  }
+  window.open((isWin ? '/rdp?id=' : '/term?id=') + encodeURIComponent(pick.id), '_blank', 'noopener');
+}
+
 function bindHostActions() {
+  document.querySelectorAll('[data-ctl]').forEach((btn) => {
+    btn.onclick = () => openHostControl(btn.dataset.ctl);
+  });
   document.querySelectorAll('[data-cmd]').forEach((btn) => {
     btn.onclick = () => openCommandBox(btn.dataset.cmd);
   });
