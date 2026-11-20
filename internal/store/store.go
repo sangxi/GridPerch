@@ -818,8 +818,8 @@ func (s *Store) ListHosts() ([]model.Host, error) {
 	// 用子查询一次性取出最新指标，避免逐主机二次查询
 	rows, err := s.rdb.Query(`SELECT hostname, IFNULL(ip,''), IFNULL(version,''), IFNULL(version_detail,''), IFNULL(state,'2'),
 		IFNULL(cpu_core_num,''), IFNULL(cpu_xh,''), IFNULL(last_seen,''),
-		(SELECT IFNULL(cpu_per,0) FROM system_info s WHERE s.hostname = h.hostname ORDER BY s.create_time DESC LIMIT 1),
-		(SELECT IFNULL(mem_per,0) FROM system_info s WHERE s.hostname = h.hostname ORDER BY s.create_time DESC LIMIT 1),
+		IFNULL((SELECT cpu_per FROM system_info s WHERE s.hostname = h.hostname ORDER BY s.create_time DESC LIMIT 1), 0),
+		IFNULL((SELECT mem_per FROM system_info s WHERE s.hostname = h.hostname ORDER BY s.create_time DESC LIMIT 1), 0),
 		IFNULL(agent_version,'')
 		FROM host h ORDER BY hostname`)
 	if err != nil {
